@@ -4,43 +4,11 @@
 //! `<g id="layer-...">` wrappers survive usvg's simplification (Option A) or
 //! have to be re-applied by Forma afterwards (Option B).
 
-use design_core::LayerId;
+use design_core::{LayerId, Rect};
 
 use crate::error::RenderError;
 use crate::fonts::FontRegistry;
 use crate::svg::LAYER_ID_PREFIX;
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Rect {
-    pub x: f32,
-    pub y: f32,
-    pub width: f32,
-    pub height: f32,
-}
-
-impl Rect {
-    pub fn right(&self) -> f32 {
-        self.x + self.width
-    }
-
-    pub fn bottom(&self) -> f32 {
-        self.y + self.height
-    }
-
-    /// The overlap of two rectangles, or `None` when they do not touch.
-    fn intersect(&self, other: &Rect) -> Option<Rect> {
-        let x = self.x.max(other.x);
-        let y = self.y.max(other.y);
-        let right = self.right().min(other.right());
-        let bottom = self.bottom().min(other.bottom());
-        (right > x && bottom > y).then_some(Rect {
-            x,
-            y,
-            width: right - x,
-            height: bottom - y,
-        })
-    }
-}
 
 fn rect_of(bbox: usvg::Rect) -> Rect {
     Rect {

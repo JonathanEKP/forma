@@ -5,6 +5,7 @@ members = [
     "apps/server",
     "crates/design-core",
     "crates/renderer",
+    "crates/validator",
 ]
 
 [workspace.package]
@@ -15,6 +16,7 @@ license = "MIT"
 [workspace.dependencies]
 design-core = { path = "crates/design-core" }
 renderer = { path = "crates/renderer" }
+validator = { path = "crates/validator" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

@@ -15,7 +15,7 @@ use design_core::{DesignDocument, Page};
 
 pub use cache::RenderCache;
 pub use error::RenderError;
-pub use flatten::{LayerBounds, Rect, RenderInspection};
+pub use flatten::{LayerBounds, RenderInspection};
 pub use fonts::FontRegistry;
 pub use images::{AssetSource, InMemoryAssets, NoAssets, RasterAsset};
 pub use svg::BrandPalette;

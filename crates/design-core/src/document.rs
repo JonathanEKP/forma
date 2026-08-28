@@ -129,8 +129,11 @@ impl DesignDocument {
             .unwrap_or(0) as u32;
 
         match version {
+            // Any parse failure is a malformed document, whatever the field:
+            // reporting it as INVALID_DIMENSION would mislead an agent that
+            // branches on the code.
             SCHEMA_VERSION => serde_json::from_value(value)
-                .map_err(|e| DomainError::InvalidDimension(e.to_string())),
+                .map_err(|e| DomainError::InvalidDocument(e.to_string())),
             other => Err(DomainError::UnsupportedSchemaVersion(other)),
         }
     }

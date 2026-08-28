@@ -3175,6 +3175,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4e8257fbc510f0a46eb602c10215901938b5c2a7d5e70fc11483b1d3c9b5b18c"
 
 [[package]]
+name = "validator"
+version = "0.1.0"
+dependencies = [
+ "design-core",
+ "renderer",
+ "serde",
+ "serde_json",
+ "ts-rs",
+ "uuid",
+]
+
+[[package]]
 name = "valuable"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

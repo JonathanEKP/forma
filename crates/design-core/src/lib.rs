@@ -19,7 +19,7 @@ pub use brand::{BrandColors, BrandKit, BrandRules, BrandTypography, COLOR_TOKENS
 pub use color::{Color, DesignColor};
 pub use document::{DesignDocument, DesignFormat, FormatPreset, SCHEMA_VERSION};
 pub use error::DomainError;
-pub use geometry::Transform;
+pub use geometry::{Rect, Transform};
 pub use ids::{AssetId, BrandId, DesignId, LayerId, PageId, ProjectId};
 pub use layer::{
     FocalPoint, ImageFit, ImageLayer, Layer, LayerCommon, LayerRole, ShapeKind, ShapeLayer,

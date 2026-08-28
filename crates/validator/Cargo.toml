@@ -1,0 +1,17 @@
+[package]
+name = "validator"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+design-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+ts-rs.workspace = true
+
+[dev-dependencies]
+uuid.workspace = true
+# Only for the integration test: the validator itself must not depend on the
+# renderer, so the two typographic implementations can never diverge.
+renderer.workspace = true

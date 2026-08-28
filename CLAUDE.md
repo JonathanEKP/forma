@@ -8,15 +8,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Before implementing anything, read the relevant section (numbered headings —
 `grep -n '^#\{1,3\} '` lists them).
 
-**Phases 0 to 2 are complete.** The workspace, domain core, operations, full render
+**Phases 0 to 3 are complete.** The workspace, domain core, operations, full render
 pipeline (text, shapes, images), REST server and MCP stdio server all exist and are tested.
 The blocking spike of §36 resolved to **Option A**: `<g id="layer-{uuid}">` wrappers survive
 usvg normalization, so the editor can address rendered geometry by layer id directly.
 
-Next is **Phase 3 (Validator)**. What does NOT exist yet: design persistence (only a
-`projects` table), the REST/MCP surface for designs, the validator crate, and the editor.
-The golden-test baseline of §63 is also still missing — §93.3 says not to invent a
-pixel-diff threshold before there are real renders to measure, and now there are.
+Next is **Phase 4 (Persistence)**. What does NOT exist yet: design persistence (only a
+`projects` table), the REST/MCP surface for designs, and the editor. The golden-test
+baseline of §63 is also still missing — §93.3 says not to invent a pixel-diff threshold
+before there are real renders to measure, and now there are.
 
 ## What the product is
 
@@ -50,7 +50,7 @@ Rust workspace crates and their boundaries (§8):
 | `design-core` | domain types, operations, versions | Actix, SQLx, MCP, HTTP, filesystem |
 | `application` | use cases (`ApplyDesignOperations`, `RenderPreview`, …) | Actix, MCP |
 | `renderer` | scene → SVG → PNG, fonts, text bbox | Actix |
-| `validator` | deterministic checks (bounds, text, assets, brand) | |
+| `validator` | deterministic checks (bounds, text, assets, brand) | renderer, usvg |
 | `assets` | upload, hashing, MIME, dimensions, sanitization | agents/MCP concepts |
 | `persistence` | repository traits + sqlite/local_fs adapters (postgres/supabase later) | |
 | `mcp-api` | MCP tool schemas + handlers calling forma-server | design logic |
@@ -87,6 +87,16 @@ state: selection, zoom, pan, in-progress drag/resize), Tailwind. No WASM, no Yew
   valid-but-suspicious states.
 - **`ImageLayer` holds only `asset_id`** — never a URL or a local path. Importing a remote
   image is a separate operation that first creates an `Asset`.
+- **The validator measures nothing.** Text bounds come from the renderer and are handed in
+  as `MeasuredLayer`; without them the overflow checks are *skipped*, never approximated.
+  A second typographic implementation would drift from the render authority. The validator
+  therefore depends on `design-core` only — the renderer is a dev-dependency for one
+  integration test.
+- **Severity decides export, so choose it deliberately.** `OUTSIDE_CANVAS` is an error for
+  text (lost copy) but a warning for a bleeding shape (§15 says leaving the canvas is not
+  automatically wrong), and an error for anything *entirely* off-canvas. An off-brand
+  literal color is a warning, never a rejection (§43). Checks never short-circuit: an agent
+  fixing a design wants the whole list.
 - **Two bounding boxes, never one.** `RenderInspection` reports `layout` (usvg's object
   box — for text it spans the line boxes, so it is what TEXT_OVERFLOW_* must compare
   against a frame) and `painted` (what survives clipping, which is what OUTSIDE_CANVAS

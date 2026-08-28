@@ -3,17 +3,22 @@
 # the checked-in TypeScript bindings no longer match it.
 #
 # ts-rs exports during `cargo test`, so regenerating is just running the tests
-# and then asking git whether anything moved.
+# and then asking whether that changed anything on disk.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
 cargo test --workspace --quiet >/dev/null
 
-changed="$(git status --porcelain -- bindings/generated)"
-if [[ -n "$changed" ]]; then
+# Only working-tree changes count. A file that is staged but identical to what
+# regeneration produced is fine: it is already correct, just not committed yet.
+modified="$(git diff --name-only -- bindings/generated)"
+untracked="$(git ls-files --others --exclude-standard -- bindings/generated)"
+
+if [[ -n "$modified$untracked" ]]; then
     echo "Generated bindings are out of date:"
-    echo "$changed"
+    [[ -n "$modified" ]] && echo "$modified" | sed 's/^/  changed:   /'
+    [[ -n "$untracked" ]] && echo "$untracked" | sed 's/^/  new:       /'
     echo
     echo "Run 'cargo test --workspace' and commit bindings/generated."
     exit 1
