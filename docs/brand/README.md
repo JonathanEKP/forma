@@ -100,7 +100,7 @@ rounding, gloss and decoration everywhere.
 
 ## Where this applies
 
-The editor chrome of Phase 6 — `apps/web`. The UI mock in the HTML is consistent with the
+The editor chrome — `apps/web`. The UI mock in the HTML is consistent with the
 layout of plan §10 (pages and layers left, canvas center, properties right, Preview and
 Export top right), so it reads as a rendering of that spec rather than a competing one.
 

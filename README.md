@@ -17,15 +17,18 @@ The full specification is [forma-plan.md](forma-plan.md).
 
 ## Status
 
-Phases 0 to 5 of the plan are complete: the domain core and its operations, the
+Phases 0 to 6 of the plan are complete: the domain core and its operations, the
 render pipeline, the validator, SQLite persistence with optimistic versioning,
-asset ingest with SVG sanitizing, and the whole REST API of the plan's section
-31 — projects, brand kits, designs, the operations batch, undo, history,
-validation, previews, uploads, asset requests and exports.
+asset ingest with SVG sanitizing, the whole REST API of the plan's section 31 —
+projects, brand kits, designs, the operations batch, undo, history, validation,
+previews, uploads, asset requests and exports — and the React editor, which
+edits a design through the same typed operations an agent would send.
 
-The editor does not exist yet: the frontend is still a status page. The MCP
-server works over stdio but exposes only its two Phase 0 tools, which Phase 8
-will extend now that the REST routes they call exist.
+Still to come: the AssetRequest UX of Phase 7, along with the assets and brand
+panels; the eleven remaining MCP tools of Phase 8, which wire to REST routes
+that already exist; and the agent skill of Phase 9. The MCP server works over
+stdio but still exposes only its two Phase 0 tools. The golden-render baseline
+of the plan's section 63 is not set yet either.
 
 ## Requirements
 

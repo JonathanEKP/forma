@@ -462,17 +462,99 @@ fn missing_brand_font() {
 
 // --- Report behaviour -----------------------------------------------------
 
+/// Without a Brand Kit the checks that need a palette or brand rules cannot run.
+/// The ones that only need the document still do.
 #[test]
-fn brand_checks_are_skipped_without_a_brand_kit() {
-    let document = document_with(vec![Layer::Text(text_layer(
-        "Headline",
-        Transform::new(100.0, 100.0, 800.0, 200.0),
-    ))]);
+fn checks_needing_a_palette_are_skipped_without_a_brand_kit() {
+    let mut layer = text_layer("Headline", Transform::new(100.0, 100.0, 800.0, 200.0));
+    layer.color = DesignColor::Literal(Color::rgb(0x12, 0x34, 0x56));
+    layer.font_size = 8.0;
+
+    let mut document = document_with(vec![Layer::Text(layer)]);
+    // A literal background too, so nothing here depends on a token.
+    document.pages[0].background = Some(DesignColor::Literal(Color::rgb(0x10, 0x10, 0x10)));
 
     let report = validate(&ValidationContext::new(&document).with_fonts(["DejaVu Sans"]));
-    assert!(!report.has("COLOR_OUTSIDE_BRAND"));
-    assert!(!report.has("OUTSIDE_SAFE_AREA"));
-    assert!(!report.has("FONT_TOO_SMALL"));
+
+    // No palette to be off, no safe margin, no minimum font size.
+    assert!(!report.has("COLOR_OUTSIDE_BRAND"), "{:?}", report.issues);
+    assert!(!report.has("OUTSIDE_SAFE_AREA"), "{:?}", report.issues);
+    assert!(!report.has("FONT_TOO_SMALL"), "{:?}", report.issues);
+    assert!(!report.has("MISSING_BRAND_FONT"), "{:?}", report.issues);
+    assert!(report.valid, "{:?}", report.issues);
+}
+
+/// Regression: a design using $brand.* in a project with no Brand Kit used to
+/// validate clean and then fail to render with UNKNOWN_BRAND_TOKEN, which broke
+/// the validate-fix-render-export loop the agent depends on.
+#[test]
+fn a_color_token_without_a_brand_kit_is_an_error() {
+    let mut layer = text_layer("Headline", Transform::new(100.0, 100.0, 800.0, 200.0));
+    layer.color = DesignColor::token("brand.text");
+
+    let mut document = document_with(vec![Layer::Text(layer)]);
+    document.pages[0].background = None;
+
+    let report = validate(&ValidationContext::new(&document).with_fonts(["DejaVu Sans"]));
+
+    assert_only(&report, "UNKNOWN_BRAND_TOKEN", Severity::Error);
+    assert!(
+        !report.valid,
+        "an unrenderable design must not report as valid"
+    );
+    assert!(
+        report.issues[0].message.contains("no Brand Kit"),
+        "the message should say why the token cannot resolve: {}",
+        report.issues[0].message
+    );
+}
+
+/// The two token paths must agree: it made no sense for a font token to be an
+/// error without a Brand Kit while a color token was waved through.
+#[test]
+fn font_and_color_tokens_agree_when_there_is_no_brand_kit() {
+    let mut with_font_token = text_layer("A", Transform::new(100.0, 100.0, 800.0, 200.0));
+    with_font_token.font_family = "$brand.display".to_string();
+    with_font_token.color = DesignColor::Literal(Color::rgb(0xFF, 0xFF, 0xFF));
+
+    let mut with_color_token = text_layer("B", Transform::new(100.0, 400.0, 800.0, 200.0));
+    with_color_token.color = DesignColor::token("brand.text");
+
+    let mut document = document_with(vec![
+        Layer::Text(with_font_token),
+        Layer::Text(with_color_token),
+    ]);
+    document.pages[0].background = None;
+
+    let report = validate(&ValidationContext::new(&document).with_fonts(["DejaVu Sans"]));
+
+    let unresolved: Vec<_> = report
+        .issues
+        .iter()
+        .filter(|i| i.code == "UNKNOWN_BRAND_TOKEN")
+        .collect();
+    assert_eq!(
+        unresolved.len(),
+        2,
+        "both tokens must be reported: {:?}",
+        report.issues
+    );
+    assert!(unresolved.iter().all(|i| i.severity == Severity::Error));
+}
+
+/// A page background is not a layer, so it needs its own coverage.
+#[test]
+fn a_background_token_without_a_brand_kit_is_an_error() {
+    let mut layer = text_layer("Headline", Transform::new(100.0, 100.0, 800.0, 200.0));
+    layer.color = DesignColor::Literal(Color::rgb(0xFF, 0xFF, 0xFF));
+
+    let document = document_with(vec![Layer::Text(layer)]);
+    // document_with sets a $brand.background page background.
+
+    let report = validate(&ValidationContext::new(&document).with_fonts(["DejaVu Sans"]));
+    assert_only(&report, "UNKNOWN_BRAND_TOKEN", Severity::Error);
+    assert_eq!(report.issues[0].page_id, Some(document.pages[0].id));
+    assert_eq!(report.issues[0].layer_id, None);
 }
 
 #[test]

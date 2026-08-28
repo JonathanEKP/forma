@@ -8,18 +8,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Before implementing anything, read the relevant section (numbered headings —
 `grep -n '^#\{1,3\} '` lists them).
 
-**Phases 0 to 5 are complete.** The workspace, domain core and its operations, the full
+**Phases 0 to 6 are complete.** The workspace, domain core and its operations, the full
 render pipeline (text, shapes, images), the validator, SQLite persistence with optimistic
 versioning and a snapshot per version, the `application` use cases of §8.2, the `assets`
-ingest of §8.5, and the whole REST surface of §31 all exist and are tested. The blocking
-spike of §36 resolved to **Option A**: `<g id="layer-{uuid}">` wrappers survive usvg
-normalization, so the editor can address rendered geometry by layer id directly.
+ingest of §8.5, the whole REST surface of §31, and the React editor all exist and are
+tested. The blocking spike of §36 resolved to **Option A**: `<g id="layer-{uuid}">`
+wrappers survive usvg normalization, and the editor addresses rendered geometry by layer
+id directly.
 
-Next is **Phase 6 (React editor)**. What does NOT exist yet: the editor itself — the
-frontend is still the Phase 0 status page — and the remaining eleven MCP tools, which
-Phase 8 wires to the REST routes that now exist. The golden-test baseline of §63 is also
-still missing; §93.3 says not to invent a pixel-diff threshold before there are real
-renders to measure, and now there are.
+Next is **Phase 7 (AssetRequest UX)**. What does NOT exist yet: the asset and brand panels
+(deliberately left out of the editor layout for now), the AssetRequest flow, the remaining
+eleven MCP tools that Phase 8 wires to the REST routes that already exist, and the agent
+skill of §9. The golden-test baseline of §63 is also still missing; §93.3 says not to
+invent a pixel-diff threshold before there are real renders to measure, and now there are.
 
 ## What the product is
 
@@ -113,6 +114,14 @@ from Signal and unrelated to it; do not unify them.
   valid-but-suspicious states.
 - **`ImageLayer` holds only `asset_id`** — never a URL or a local path. Importing a remote
   image is a separate operation that first creates an `Asset`.
+- **A design the validator calls valid must render.** That is the contract the agent's
+  validate → fix → render → export loop (§51.7) rests on, and it is easy to break by
+  skipping a check: an unresolvable `$brand.*` token has to be an error even when the
+  project has no `BrandKit` at all, because the renderer treats it as fatal. Only checks
+  that genuinely need a palette (`COLOR_OUTSIDE_BRAND`) or brand rules (`OUTSIDE_SAFE_AREA`,
+  `FONT_TOO_SMALL`) are skipped when there is no kit. `application::renders::validate`
+  skips a page that fails to render, on the assumption that the failure already has its own
+  issue — so any new render failure mode needs a matching check, or it will be swallowed.
 - **The validator measures nothing.** Text bounds come from the renderer and are handed in
   as `MeasuredLayer`; without them the overflow checks are *skipped*, never approximated.
   A second typographic implementation would drift from the render authority. The validator
