@@ -22,3 +22,13 @@ base64.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["io-util", "macros", "process", "rt-multi-thread", "time"] }
+# The acceptance test drives the real MCP binary against a real forma-server,
+# because the seam between them is where this phase can actually be wrong.
+forma-server = { path = "../server" }
+actix-web.workspace = true
+persistence.workspace = true
+renderer.workspace = true
+tempfile.workspace = true
+reqwest.workspace = true
+resvg.workspace = true
+sqlx.workspace = true

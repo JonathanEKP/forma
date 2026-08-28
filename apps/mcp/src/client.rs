@@ -1,29 +1,80 @@
 //! Internal REST client for `forma-server`.
 //!
 //! Plan section 5: the MCP process never opens SQLite. It goes through the same
-//! HTTP API the React editor uses, so there is one mutation authority.
+//! HTTP API the React editor uses, so there is one mutation authority and the
+//! agent and the human get identical behaviour.
 
-use serde::Deserialize;
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+/// A failure the agent can act on.
+///
+/// The code and the hint both survive the trip: plan section 51.9 is a recovery
+/// table keyed by code, and an agent that only saw prose would have to guess
+/// whether to refetch, fix the design, or stop.
+#[derive(Debug, Clone)]
+pub struct ServerError {
+    pub code: String,
+    pub message: String,
+    pub hint: Option<String>,
+    pub details: Option<Value>,
+}
+
+impl ServerError {
+    fn local(code: &str, message: impl Into<String>, hint: &str) -> Self {
+        Self {
+            code: code.to_string(),
+            message: message.into(),
+            hint: Some(hint.to_string()),
+            details: None,
+        }
+    }
+
+    pub fn as_json(&self) -> Value {
+        serde_json::json!({
+            "error": {
+                "code": self.code,
+                "message": self.message,
+                "hint": self.hint,
+                "details": self.details,
+            }
+        })
+    }
+}
+
+impl std::fmt::Display for ServerError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.code, self.message)?;
+        if let Some(hint) = &self.hint {
+            write!(f, "\n{hint}")?;
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for ServerError {}
+
+pub type Result<T> = std::result::Result<T, ServerError>;
+
+#[derive(Debug, Deserialize)]
+struct ErrorEnvelope {
+    error: ErrorBody,
+}
+
+#[derive(Debug, Deserialize)]
+struct ErrorBody {
+    code: String,
+    message: String,
+    #[serde(default)]
+    hint: Option<String>,
+    #[serde(default)]
+    details: Option<Value>,
+}
 
 pub struct ServerClient {
     base_url: String,
     http: reqwest::Client,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ErrorEnvelope {
-    pub error: ErrorBody,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ErrorBody {
-    pub code: String,
-    pub message: String,
-}
-
-pub struct RenderedCard {
-    pub png: Vec<u8>,
-    pub canvas: Option<String>,
 }
 
 impl ServerClient {
@@ -42,64 +93,75 @@ impl ServerClient {
         format!("{}/api/v1{path}", self.base_url)
     }
 
-    /// Turns a non-2xx response into the plan's stable error shape, so the agent
-    /// sees `code` and `message` instead of an HTML error page.
-    async fn decode_error(response: reqwest::Response) -> anyhow::Error {
+    fn unreachable(&self, error: &reqwest::Error) -> ServerError {
+        ServerError::local(
+            "SERVER_UNREACHABLE",
+            format!("cannot reach forma-server at {} ({error})", self.base_url),
+            "Start forma-server and try again. Retrying without starting it will keep failing.",
+        )
+    }
+
+    /// Turns a non-2xx response into the stable error shape of plan section 32.
+    async fn decode_error(response: reqwest::Response) -> ServerError {
         let status = response.status();
         match response.json::<ErrorEnvelope>().await {
-            Ok(envelope) => {
-                anyhow::anyhow!("{}: {}", envelope.error.code, envelope.error.message)
-            }
-            Err(_) => anyhow::anyhow!("SERVER_ERROR: forma-server returned HTTP {status}"),
+            Ok(envelope) => ServerError {
+                code: envelope.error.code,
+                message: envelope.error.message,
+                hint: envelope.error.hint,
+                details: envelope.error.details,
+            },
+            // A body that is not the documented envelope means something
+            // upstream of the handlers failed; say so rather than inventing a
+            // domain code the agent would try to recover from.
+            Err(_) => ServerError::local(
+                "SERVER_ERROR",
+                format!("forma-server returned HTTP {status}"),
+                "This is not a design problem. Check the server logs.",
+            ),
         }
     }
 
-    pub async fn status(&self) -> anyhow::Result<serde_json::Value> {
-        let response = self
-            .http
-            .get(self.url("/status"))
-            .send()
-            .await
-            .map_err(|e| {
-                anyhow::anyhow!(
-                    "SERVER_UNREACHABLE: cannot reach forma-server at {} ({e})",
-                    self.base_url
-                )
-            })?;
-
+    async fn read<T: DeserializeOwned>(response: reqwest::Response) -> Result<T> {
         if !response.status().is_success() {
             return Err(Self::decode_error(response).await);
         }
-        Ok(response.json().await?)
-    }
-
-    pub async fn render_test_card(&self, label: Option<String>) -> anyhow::Result<RenderedCard> {
-        let response = self
-            .http
-            .post(self.url("/render/test-card"))
-            .json(&serde_json::json!({ "label": label }))
-            .send()
-            .await
-            .map_err(|e| {
-                anyhow::anyhow!(
-                    "SERVER_UNREACHABLE: cannot reach forma-server at {} ({e})",
-                    self.base_url
-                )
-            })?;
-
-        if !response.status().is_success() {
-            return Err(Self::decode_error(response).await);
-        }
-
-        let canvas = response
-            .headers()
-            .get("x-forma-canvas")
-            .and_then(|v| v.to_str().ok())
-            .map(str::to_string);
-
-        Ok(RenderedCard {
-            png: response.bytes().await?.to_vec(),
-            canvas,
+        response.json::<T>().await.map_err(|e| {
+            ServerError::local(
+                "SERVER_ERROR",
+                format!("forma-server sent a body this client could not read: {e}"),
+                "This is a version mismatch between forma-mcp and forma-server.",
+            )
         })
+    }
+
+    pub async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
+        let response = self
+            .http
+            .get(self.url(path))
+            .send()
+            .await
+            .map_err(|e| self.unreachable(&e))?;
+        Self::read(response).await
+    }
+
+    /// Every mutation carries the actor, so the history of plan section 61
+    /// records which agent made each version rather than attributing it to a
+    /// human who was not there.
+    pub async fn post<T: DeserializeOwned, B: Serialize>(
+        &self,
+        path: &str,
+        actor: &str,
+        body: &B,
+    ) -> Result<T> {
+        let response = self
+            .http
+            .post(self.url(path))
+            .header("x-forma-actor", actor)
+            .json(body)
+            .send()
+            .await
+            .map_err(|e| self.unreachable(&e))?;
+        Self::read(response).await
     }
 }

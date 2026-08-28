@@ -8,19 +8,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Before implementing anything, read the relevant section (numbered headings —
 `grep -n '^#\{1,3\} '` lists them).
 
-**Phases 0 to 7 are complete.** The workspace, domain core and its operations, the full
+**Phases 0 to 8 are complete.** The workspace, domain core and its operations, the full
 render pipeline (text, shapes, images), the validator, SQLite persistence with optimistic
 versioning and a snapshot per version, the `application` use cases of §8.2, the `assets`
-ingest of §8.5, the whole REST surface of §31, the React editor, and the AssetRequest flow
-all exist and are tested. The blocking spike of §36 resolved to **Option A**: `<g id="layer-{uuid}">`
+ingest of §8.5, the whole REST surface of §31, the React editor, the AssetRequest flow, and
+all thirteen MCP tools all exist and are tested. The blocking spike of §36 resolved to **Option A**: `<g id="layer-{uuid}">`
 wrappers survive usvg normalization, and the editor addresses rendered geometry by layer
 id directly.
 
-Next is **Phase 8 (MCP)**: the eleven remaining tools, wired to REST routes that already
-exist. What does NOT exist yet: the brand panel — `Panel` in `store.ts` still carries a
-`"brand"` variant with no component behind it — the agent skill of §9, and the golden-test
-baseline of §63; §93.3 says not to invent a pixel-diff threshold before there are real
-renders to measure, and now there are.
+Next is **Phase 9 (the agent skill)**: `skills/forma/SKILL.md` and a short `AGENTS.md`,
+per §51. What does NOT exist yet: those, the brand panel — `Panel` in `store.ts` still
+carries a `"brand"` variant with no component behind it — and the golden-test baseline of
+§63; §93.3 says not to invent a pixel-diff threshold before there are real renders to
+measure, and now there are.
 
 ## What the product is
 
@@ -184,7 +184,14 @@ Read: `forma_status`, `list_projects`, `get_project`, `get_brand`, `list_assets`
 Keep the tool set small and composable — per-property tools (`add_text`, `move_layer`,
 `set_color`) are intentionally absent because `apply_operations` covers them in a batch.
 `render_preview` returns both a structured JSON result and a base64 PNG image content
-block, so multimodal hosts can actually look at the piece.
+block, so multimodal hosts can actually look at the piece; the base64 is deliberately
+stripped from the structured half, since repeating it would double the tokens.
+
+There is no `create_project` and no brand-editing tool: an agent works inside a workspace
+the user owns. Read tools carry `readOnlyHint`. The actor recorded on every mutation is
+derived from the host's own `clientInfo.name` at initialize, so §61's history reads
+`agent:claude-code` rather than a generic label. Tool descriptions are the agent's only
+documentation — a one-liner is not enough, and a stdio test asserts they are substantial.
 
 When an image is missing, the agent creates an `AssetRequest` (Pending → Resolved by the
 user uploading) instead of blocking or inventing an asset.

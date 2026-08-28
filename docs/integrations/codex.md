@@ -35,7 +35,11 @@ Keep personal absolute paths out of this repository.
 
 ## 3. Verify
 
-Call `forma_status`, then `render_test_card`. The second returns a real PNG as an
-MCP image block. If your Codex build cannot display images, do not claim the
-design looks right — report that the mechanical validation passed and leave the
-visual check to the user (plan section 51.8).
+Call `forma_status` first. Then, with a project and a Brand Kit created in the
+editor, ask for a piece: the flow is `get_brand`, `create_design`,
+`apply_operations`, `validate_design`, `render_preview`.
+
+`render_preview` returns a real PNG as an MCP image block. If your Codex build
+cannot display images, do not claim the design looks right — report that the
+mechanical validation passed and leave the visual check to the user (plan
+section 51.8).

@@ -985,13 +985,20 @@ dependencies = [
 name = "forma-mcp"
 version = "0.1.0"
 dependencies = [
+ "actix-web",
  "anyhow",
  "base64 0.22.1",
+ "forma-server",
+ "persistence",
+ "renderer",
  "reqwest",
+ "resvg",
  "rmcp",
  "schemars",
  "serde",
  "serde_json",
+ "sqlx",
+ "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",

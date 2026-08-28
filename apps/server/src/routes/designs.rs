@@ -11,13 +11,42 @@ use crate::error::ApiError;
 use crate::routes::{actor_from, parse_id};
 use crate::state::AppState;
 
+/// A canvas named by preset, with the dimensions optional.
+///
+/// `DesignFormat` requires all three, which is right for a stored document but
+/// wrong for a request: a client that says "square" should not have to know
+/// what square measures, and if it guessed it could disagree with the domain.
+#[derive(Debug, Deserialize, TS)]
+#[ts(export)]
+pub struct FormatRequest {
+    pub preset: FormatPreset,
+    /// Only needed for the custom preset; otherwise it overrides the default.
+    #[serde(default)]
+    pub width: Option<f32>,
+    #[serde(default)]
+    pub height: Option<f32>,
+}
+
+impl FormatRequest {
+    fn resolve(&self) -> DesignFormat {
+        let mut format = DesignFormat::from_preset(self.preset);
+        if let Some(width) = self.width {
+            format.width = width;
+        }
+        if let Some(height) = self.height {
+            format.height = height;
+        }
+        format
+    }
+}
+
 #[derive(Debug, Deserialize, TS)]
 #[ts(export)]
 pub struct CreateDesignRequest {
     pub name: String,
     /// The canvas for a design that starts empty.
     #[serde(default)]
-    pub format: Option<DesignFormat>,
+    pub format: Option<FormatRequest>,
     /// A whole document, when importing rather than starting blank. It is
     /// migrated on the way in, so an older schema_version is upgraded instead
     /// of being silently accepted as-is.
@@ -92,7 +121,8 @@ async fn create(
         (Some(document), None) => {
             DesignDocument::migrate(document).map_err(|e| ApiError::Application(e.into()))?
         }
-        (None, Some(format)) => {
+        (None, Some(requested)) => {
+            let format = requested.resolve();
             format
                 .validate()
                 .map_err(|e| ApiError::Application(e.into()))?;

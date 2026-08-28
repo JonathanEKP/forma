@@ -20,8 +20,24 @@ mod helpers;
 pub use helpers::{actor_from, parse_id};
 pub use meta::Status;
 
+/// Malformed request bodies must answer in the shape of plan section 32 too.
+///
+/// Actix's own extractor error is plain text, which would reach an agent as an
+/// unparseable blob and give it nothing to act on. This turns it into the same
+/// envelope every handler produces.
+fn json_config() -> web::JsonConfig {
+    web::JsonConfig::default().error_handler(|error, _| {
+        crate::error::ApiError::bad_request(
+            "INVALID_BODY",
+            format!("the request body could not be read: {error}"),
+            "Check the tool's schema: a field is missing, misspelled, or the wrong type.",
+        )
+        .into()
+    })
+}
+
 pub fn configure(cfg: &mut web::ServiceConfig) {
-    cfg.service(
+    cfg.app_data(json_config()).service(
         web::scope("/api/v1")
             .configure(meta::configure)
             .configure(projects::configure)

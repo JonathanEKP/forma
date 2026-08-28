@@ -85,7 +85,7 @@ impl Drop for Harness {
 }
 
 #[tokio::test]
-async fn exposes_the_phase_0_tools_over_stdio() {
+async fn exposes_the_v1_tool_surface_over_stdio() {
     let mut mcp = Harness::start().await;
     let response = mcp.call(2, "tools/list", serde_json::json!({})).await;
 
@@ -96,8 +96,29 @@ async fn exposes_the_phase_0_tools_over_stdio() {
         .map(|t| t["name"].as_str().unwrap())
         .collect();
 
-    assert!(names.contains(&"forma_status"), "got {names:?}");
-    assert!(names.contains(&"render_test_card"), "got {names:?}");
+    // Plan section 48 fixes the surface at thirteen: few and composable, with
+    // no per-property tools, because apply_operations covers those in a batch.
+    assert_eq!(names.len(), 13, "got {names:?}");
+    for expected in [
+        "forma_status",
+        "list_projects",
+        "get_project",
+        "get_brand",
+        "list_assets",
+        "get_design",
+        "get_asset_request",
+        "create_design",
+        "apply_operations",
+        "request_asset",
+        "validate_design",
+        "render_preview",
+        "export_design",
+    ] {
+        assert!(
+            names.contains(&expected),
+            "{expected} missing from {names:?}"
+        );
+    }
 
     // Every tool must describe itself: the agent has no other documentation.
     for tool in response["result"]["tools"].as_array().unwrap() {

@@ -17,7 +17,7 @@ The full specification is [forma-plan.md](forma-plan.md).
 
 ## Status
 
-Phases 0 to 7 of the plan are complete: the domain core and its operations, the
+Phases 0 to 8 of the plan are complete: the domain core and its operations, the
 render pipeline, the validator, SQLite persistence with optimistic versioning,
 asset ingest with SVG sanitizing, the whole REST API of the plan's section 31 —
 projects, brand kits, designs, the operations batch, undo, history, validation,
@@ -27,10 +27,13 @@ AssetRequest flow: when an agent needs an image that does not exist, it records
 a request, and the assets panel is where you see it, upload the image and watch
 the request resolve.
 
-Still to come: the eleven remaining MCP tools of Phase 8, which wire to REST
-routes that already exist; the agent skill of Phase 9; and a brand panel. The
-MCP server works over stdio but still exposes only its two Phase 0 tools. The
-golden-render baseline of the plan's section 63 is not set yet either.
+It also speaks MCP over stdio, with the thirteen tools of the plan's section 48:
+an agent reads the Brand Kit, creates a design, edits it in atomic batches,
+validates it against real measurements, and gets the rendered PNG back as an
+image it can actually look at.
+
+Still to come: the agent skill of Phase 9 and a brand panel. The golden-render
+baseline of the plan's section 63 is not set yet either.
 
 ## Requirements
 

@@ -42,12 +42,19 @@ into the repository.
 ## 4. Verify
 
 Ask Claude Code to call `forma_status`. It should report the server version, the
-document schema version and the available font families. Then ask it to call
-`render_test_card`; it returns a PNG as an MCP image block, so a multimodal host
-can actually look at it.
+document schema version and the available font families.
 
-If `forma_status` answers `SERVER_UNREACHABLE`, `forma-server` is not running —
-start it rather than retrying the tool.
+If it answers `SERVER_UNREACHABLE`, `forma-server` is not running — start it
+rather than retrying the tool.
+
+For a real end-to-end check, create a project in the editor at
+<http://127.0.0.1:4765> and give it a Brand Kit, then ask Claude Code for a
+piece. It should call `get_brand`, `create_design`, `apply_operations`,
+`validate_design` and `render_preview` — the last returns the PNG as an MCP
+image block, so a multimodal host can look at what it made.
+
+There is deliberately no tool for creating a project or editing a Brand Kit: an
+agent works inside a workspace you own.
 
 ## Notes
 
