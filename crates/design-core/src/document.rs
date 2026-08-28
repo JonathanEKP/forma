@@ -3,15 +3,19 @@
 //! It deliberately carries no `project_id`, no `design_id`, no database version,
 //! no local paths and no remote URLs — only portable references.
 
+use std::collections::HashSet;
+
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::error::DomainError;
 use crate::page::Page;
 
 pub const SCHEMA_VERSION: u32 = 1;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
+#[ts(export)]
 pub enum FormatPreset {
     InstagramPortrait,
     Square,
@@ -22,7 +26,8 @@ pub enum FormatPreset {
 
 /// Plan section 14: the format belongs to the whole design, not to each page,
 /// so every slide of a carousel shares one canvas.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct DesignFormat {
     pub preset: FormatPreset,
     pub width: f32,
@@ -56,13 +61,15 @@ impl DesignFormat {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct DesignDocument {
     pub schema_version: u32,
     pub format: DesignFormat,
     #[serde(default)]
     pub pages: Vec<Page>,
     #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
+    #[ts(type = "Record<string, unknown>")]
     pub metadata: serde_json::Map<String, serde_json::Value>,
 }
 
@@ -74,6 +81,43 @@ impl DesignDocument {
             pages: Vec::new(),
             metadata: serde_json::Map::new(),
         }
+    }
+
+    /// Structural validation, run after every batch of operations before the
+    /// result is persisted (plan section 28).
+    ///
+    /// These are invariants of the document itself, not design quality: the
+    /// aesthetic checks of section 42 belong to the validator crate.
+    pub fn validate_structure(&self) -> Result<(), DomainError> {
+        if self.schema_version != SCHEMA_VERSION {
+            return Err(DomainError::UnsupportedSchemaVersion(self.schema_version));
+        }
+        self.format.validate()?;
+
+        if self.pages.is_empty() {
+            return Err(DomainError::InvalidDocument(
+                "a design must keep at least one page".to_string(),
+            ));
+        }
+
+        let mut page_ids = HashSet::new();
+        let mut layer_ids = HashSet::new();
+        for page in &self.pages {
+            if !page_ids.insert(page.id) {
+                return Err(DomainError::InvalidDocument(format!(
+                    "page {} appears more than once",
+                    page.id
+                )));
+            }
+            for layer in &page.layers {
+                // Layer ids are unique across the whole document, not per page,
+                // because operations address layers by id alone.
+                if !layer_ids.insert(layer.id()) {
+                    return Err(DomainError::DuplicateLayerId(layer.id()));
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Plan section 76. V1 only parses schema 1, but the entry point exists so

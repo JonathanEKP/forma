@@ -1,6 +1,7 @@
 //! Layers (plan sections 16 to 20). No GroupLayer in V1.
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::color::DesignColor;
 use crate::geometry::Transform;
@@ -8,8 +9,9 @@ use crate::ids::{AssetId, LayerId};
 
 /// Optional semantic metadata (plan section 17). It does not affect the renderer
 /// by itself, but lets templates and tooling address layers by meaning.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
+#[ts(export)]
 pub enum LayerRole {
     Headline,
     Kicker,
@@ -21,7 +23,8 @@ pub enum LayerRole {
     Decoration,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct LayerCommon {
     pub id: LayerId,
     pub name: String,
@@ -44,8 +47,9 @@ fn default_opacity() -> f32 {
     1.0
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
+#[ts(export)]
 pub enum TextAlign {
     Left,
     Center,
@@ -53,7 +57,8 @@ pub enum TextAlign {
 }
 
 /// Plan section 18. V1 does no implicit word-wrap: line breaks are explicit.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct TextLayer {
     #[serde(flatten)]
     pub common: LayerCommon,
@@ -90,15 +95,17 @@ impl TextLayer {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
+#[ts(export)]
 pub enum ImageFit {
     Contain,
     Cover,
     Fill,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct FocalPoint {
     pub x: f32,
     pub y: f32,
@@ -112,7 +119,8 @@ impl Default for FocalPoint {
 
 /// Plan section 19 and the portability rule in section 21: only an `asset_id`,
 /// never a URL or a local path.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct ImageLayer {
     #[serde(flatten)]
     pub common: LayerCommon,
@@ -122,15 +130,17 @@ pub struct ImageLayer {
     pub focal_point: FocalPoint,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
+#[ts(export)]
 pub enum ShapeKind {
     Rectangle,
     Ellipse,
     Line,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct ShapeLayer {
     #[serde(flatten)]
     pub common: LayerCommon,
@@ -146,8 +156,9 @@ pub struct ShapeLayer {
     pub corner_radius: f32,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
+#[ts(export)]
 pub enum Layer {
     Text(TextLayer),
     Image(ImageLayer),
@@ -163,7 +174,24 @@ impl Layer {
         }
     }
 
+    pub fn common_mut(&mut self) -> &mut LayerCommon {
+        match self {
+            Self::Text(l) => &mut l.common,
+            Self::Image(l) => &mut l.common,
+            Self::Shape(l) => &mut l.common,
+        }
+    }
+
     pub fn id(&self) -> LayerId {
         self.common().id
+    }
+
+    /// The `type` discriminant, used in error messages.
+    pub fn type_name(&self) -> &'static str {
+        match self {
+            Self::Text(_) => "text",
+            Self::Image(_) => "image",
+            Self::Shape(_) => "shape",
+        }
     }
 }

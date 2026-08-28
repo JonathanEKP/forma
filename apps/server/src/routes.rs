@@ -2,6 +2,7 @@
 
 use actix_web::{get, post, web, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::error::ApiError;
 use crate::state::AppState;
@@ -17,13 +18,22 @@ async fn health() -> impl Responder {
     HttpResponse::Ok().json(Health { status: "ok" })
 }
 
-#[derive(Serialize)]
+/// Exported to TypeScript (plan section 30) so the editor never hand-maintains
+/// a copy of this shape.
+#[derive(Serialize, TS)]
+#[ts(export)]
 pub struct Status {
+    #[ts(type = "string")]
     pub name: &'static str,
+    #[ts(type = "string")]
     pub version: &'static str,
     pub schema_version: u32,
+    #[ts(type = "string")]
     pub database: &'static str,
     pub fonts: Vec<String>,
+    /// i64 comes from SQLite's COUNT, but it travels as a plain JSON number,
+    /// so it must not be typed as bigint on the TypeScript side.
+    #[ts(type = "number")]
     pub projects: i64,
 }
 

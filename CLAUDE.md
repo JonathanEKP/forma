@@ -8,14 +8,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Before implementing anything, read the relevant section (numbered headings —
 `grep -n '^#\{1,3\} '` lists them).
 
-**Phase 0 is complete.** The workspace, domain core, render pipeline, REST server and MCP
-stdio server all exist and are tested. The blocking spike of §36 resolved to **Option A**:
-`<g id="layer-{uuid}">` wrappers survive usvg normalization, so the editor can address
-rendered geometry by layer id directly — no re-wrapping needed.
+**Phases 0 and 1 are complete.** The workspace, domain core, operations, render pipeline,
+REST server and MCP stdio server all exist and are tested. The blocking spike of §36
+resolved to **Option A**: `<g id="layer-{uuid}">` wrappers survive usvg normalization, so
+the editor can address rendered geometry by layer id directly — no re-wrapping needed.
 
-Next is **Phase 1 (Domain Core)**: the `DesignOperation` enum, version semantics, and
-`ts-rs` bindings. What does NOT exist yet: design persistence (only a `projects` table),
-the operations pipeline, the validator, image layers in the renderer, and the editor.
+Next is **Phase 2 (Renderer)**: image layers, and the golden-test baseline. What does NOT
+exist yet: design persistence (only a `projects` table), the REST/MCP surface for designs,
+the validator crate, image rendering, and the editor.
 
 ## What the product is
 
@@ -60,8 +60,10 @@ state: selection, zoom, pan, in-progress drag/resize), Tailwind. No WASM, no Yew
 ## Invariants to preserve when implementing
 
 - **Rust is the source of truth for types.** TS bindings are generated with `ts-rs` into
-  `bindings/generated/`; CI fails if they are stale. Never hand-write a duplicate interface
-  in the frontend.
+  `bindings/generated/` (committed), and `scripts/check-bindings.sh` fails CI when they
+  drift. The export dir comes from `TS_RS_EXPORT_DIR` in `.cargo/config.toml`; ts-rs writes
+  them during `cargo test`. The frontend imports them as `@forma/bindings/<Type>` and never
+  hand-writes a duplicate — server DTOs included.
 - **Mutations are typed operations, not arbitrary JSON patches.** The public surface is
   `apply_operations` with a fixed `DesignOperation` enum; there is deliberately no
   `UpdateLayer { arbitrary_json }`. A patch aimed at the wrong layer type returns

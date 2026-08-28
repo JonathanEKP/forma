@@ -7,10 +7,13 @@ use std::fmt;
 use std::str::FromStr;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use ts_rs::TS;
 
 use crate::error::DomainError;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Serialized as a hex string, so documents stay readable by hand.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, TS)]
+#[ts(export, type = "string")]
 pub struct Color {
     pub r: u8,
     pub g: u8,
@@ -81,8 +84,25 @@ impl fmt::Display for Color {
     }
 }
 
+impl Serialize for Color {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for Color {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let raw = String::deserialize(deserializer)?;
+        raw.parse().map_err(serde::de::Error::custom)
+    }
+}
+
 /// Plan section 43: the agent should prefer tokens, the human editor may use literals.
-#[derive(Debug, Clone, PartialEq)]
+///
+/// Serialized as a string: either a literal like `#FF5436` or a token like
+/// `$brand.primary`.
+#[derive(Debug, Clone, PartialEq, TS)]
+#[ts(export, type = "string")]
 pub enum DesignColor {
     Literal(Color),
     BrandToken(String),

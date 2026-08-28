@@ -1,8 +1,10 @@
 //! Plan section 17: V1 limits transforms to translate, size and rotation.
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct Transform {
     pub x: f32,
     pub y: f32,

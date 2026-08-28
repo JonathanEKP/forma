@@ -3,22 +3,44 @@
 //! It exists so an MCP host can prove the whole pipeline end to end before any
 //! real design exists. Phase 1 replaces it with actual documents.
 
-use std::collections::HashMap;
-
 use design_core::{
-    Color, DesignColor, DesignDocument, DesignFormat, FormatPreset, Layer, LayerCommon, LayerId,
-    LayerRole, Page, ShapeKind, ShapeLayer, TextAlign, TextLayer, Transform,
+    BrandColors, BrandId, BrandKit, BrandRules, BrandTypography, Color, DesignColor,
+    DesignDocument, DesignFormat, FormatPreset, Layer, LayerCommon, LayerId, LayerRole, Page,
+    ProjectId, ShapeKind, ShapeLayer, TextAlign, TextLayer, Transform, Version,
 };
 use renderer::svg::BrandPalette;
 
+/// Scaffolding until Phase 4 persists Brand Kits. It is a real `BrandKit`, so
+/// token resolution here is the same code path the product will use.
+pub fn default_brand_kit() -> BrandKit {
+    BrandKit {
+        id: BrandId::new(),
+        project_id: ProjectId::new(),
+        name: "Default".to_string(),
+        colors: BrandColors {
+            primary: Color::rgb(0xFF, 0x54, 0x36),
+            secondary: Color::rgb(0xFD, 0xBA, 0x2D),
+            accent: Color::rgb(0x7C, 0x3A, 0xED),
+            background: Color::rgb(0x10, 0x10, 0x10),
+            surface: Color::rgb(0x19, 0x19, 0x19),
+            text: Color::rgb(0xFF, 0xFF, 0xFF),
+            text_inverse: Color::rgb(0x10, 0x10, 0x10),
+            muted: Color::rgb(0xA3, 0xA3, 0xA3),
+        },
+        typography: BrandTypography {
+            display: "DejaVu Sans".to_string(),
+            body: "DejaVu Sans".to_string(),
+            mono: "DejaVu Sans".to_string(),
+        },
+        logo_asset_id: None,
+        voice: "Direct, technical and brief. Do not use hype.".to_string(),
+        rules: BrandRules::default(),
+        version: Version::INITIAL,
+    }
+}
+
 pub fn palette() -> BrandPalette {
-    HashMap::from([
-        ("brand.background".to_string(), Color::rgb(0x10, 0x10, 0x10)),
-        ("brand.surface".to_string(), Color::rgb(0x19, 0x19, 0x19)),
-        ("brand.primary".to_string(), Color::rgb(0xFF, 0x54, 0x36)),
-        ("brand.muted".to_string(), Color::rgb(0xA3, 0xA3, 0xA3)),
-        ("brand.text".to_string(), Color::rgb(0xFF, 0xFF, 0xFF)),
-    ])
+    default_brand_kit().color_palette()
 }
 
 fn common(name: &str, role: LayerRole, transform: Transform) -> LayerCommon {

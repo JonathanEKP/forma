@@ -1,16 +1,11 @@
 /**
- * Thin client for forma-server. Types here are hand-written only for Phase 0;
- * from Phase 1 on they come from the Rust bindings (plan section 30).
+ * Thin client for forma-server.
+ *
+ * Response shapes are generated from Rust (plan section 30) and never
+ * redeclared here: CI fails if the checked-in bindings drift.
  */
 
-export interface Status {
-  name: string;
-  version: string;
-  schema_version: number;
-  database: string;
-  fonts: string[];
-  projects: number;
-}
+export type { Status } from "@forma/bindings/Status";
 
 export interface ApiErrorBody {
   code: string;
@@ -38,5 +33,7 @@ async function request<T>(path: string): Promise<T> {
   }
   return (await response.json()) as T;
 }
+
+import type { Status } from "@forma/bindings/Status";
 
 export const getStatus = () => request<Status>("/status");

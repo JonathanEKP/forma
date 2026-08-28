@@ -1,12 +1,14 @@
 //! Typed ID wrappers (plan section 11.1): IDs must not be interchangeable strings.
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use uuid::Uuid;
 
 macro_rules! typed_id {
     ($name:ident) => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
         #[serde(transparent)]
+        #[ts(export, type = "string")]
         pub struct $name(pub Uuid);
 
         impl $name {

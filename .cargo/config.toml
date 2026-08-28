@@ -1,0 +1,4 @@
+[env]
+# Plan section 30: Rust is the source of truth for types; the generated
+# TypeScript lands here and the frontend never hand-maintains a duplicate.
+TS_RS_EXPORT_DIR = { value = "bindings/generated", relative = true }

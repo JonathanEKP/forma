@@ -16,6 +16,7 @@ if [[ "$target" == "all" || "$target" == "--rust" ]]; then
     run cargo fmt --all --check
     run cargo clippy --all-targets --all-features -- -D warnings
     run cargo test --workspace
+    run ./scripts/check-bindings.sh
 fi
 
 if [[ "$target" == "all" || "$target" == "--web" ]]; then

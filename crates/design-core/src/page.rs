@@ -1,12 +1,14 @@
 //! Plan section 15. Layer order is the z-order: the last element is on top.
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::color::DesignColor;
 use crate::ids::PageId;
 use crate::layer::Layer;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct Page {
     pub id: PageId,
     pub name: String,
