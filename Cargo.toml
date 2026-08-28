@@ -31,6 +31,9 @@ uuid = { version = "1", features = ["v4", "serde"] }
 # no-serde-warnings silences ts-rs complaining about serde attrs it ignores
 # (e.g. `transparent`), which we already override with an explicit ts type.
 ts-rs = { version = "12.0.1", features = ["uuid-impl", "serde-json-impl", "no-serde-warnings"] }
+# The same font parser usvg shapes with, so our glyph-coverage answers and its
+# own cannot disagree. Pinned to the version usvg resolves: one copy in the tree.
+skrifa = "0.44"
 usvg = "0.48.1"
 resvg = "0.48.1"
 

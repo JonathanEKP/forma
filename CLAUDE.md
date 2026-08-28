@@ -207,7 +207,16 @@ from Signal and unrelated to it; do not unify them.
 - Every mutation records actor metadata (`Human` / `Agent` / `System`, plus optional
   `actor_id` such as `agent:claude`).
 - Bind `127.0.0.1` by default, never `0.0.0.0`; remote mode must be opted into explicitly.
-- Fonts are loaded from `FORMA_FONT_DIR`, not from arbitrary system-installed fonts.
+- **Fonts are loaded from `FORMA_FONT_DIR`, in sorted order, and the fallback follows
+  the requested weight.** Not from arbitrary system-installed fonts — and not in
+  `read_dir` order either: `fontdb` enumerates a directory in whatever order the
+  filesystem gives, that order is the face order, and usvg's default selector takes the
+  *first* face holding a glyph (its style guard uses `&&`, so a Bold face answers a
+  Regular request). The same commit therefore rendered Greek in two different weights on
+  two machines. `FontRegistry::from_dir` sorts, and `fonts::fallback_selector` scores by
+  weight distance, preferring a match but still using a mismatched face over tofu. The
+  goldens are Latin-only and never exercise the fallback, so `tests/geist.rs` is the only
+  thing guarding it.
 - Never log tokens, auth headers, or asset binary content.
 
 ## MCP surface (13 tools, §48)

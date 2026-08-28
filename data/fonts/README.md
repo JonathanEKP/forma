@@ -95,6 +95,35 @@ silently turns every non-Latin design into boxes.
 A user who needs Greek in their own brand still adds a font here. The fallback
 is a floor, not a substitute for choosing type.
 
+### Which face answers, and why it is not the filesystem's choice
+
+Falling back is per glyph, and *which* face gets asked was, until CI caught it, an
+accident. Two things conspired:
+
+- `fontdb::Database::load_fonts_dir` walks the directory in `read_dir` order, which
+  the filesystem decides. That is the face order.
+- usvg's default fallback selector returns the **first** face holding the glyph,
+  and rejects a candidate only when style, weight *and* stretch all differ — so
+  DejaVu Sans **Bold** happily answered for weight-400 text.
+
+Together they meant the same commit rendered Greek in Bold here and in Regular on
+CI. Renders being identical on every machine is the entire reason these files are
+committed rather than taken from the host, so both halves are fixed:
+`FontRegistry::from_dir` sorts the files before loading, and `fonts::fallback_selector`
+scores candidates by distance from the requested weight instead of taking the
+first. A 400 layer now falls back to DejaVu Regular and a 700 layer to DejaVu Bold,
+on any filesystem.
+
+Matching the weight is a preference, not a requirement: if the only face holding a
+glyph is the wrong weight, it is still used. Tofu is worse than bold.
+
+The coverage check reuses `skrifa`, the parser usvg itself shapes with — a second
+implementation could disagree about a glyph and send the text to a face that then
+draws boxes anyway.
+
+The golden renders do not protect any of this: they are Latin-only, so the fallback
+never fires in them. `crates/renderer/tests/geist.rs` is what does.
+
 ## The catalog is guarded
 
 A Brand Kit can name a family this directory does not have. `MISSING_BRAND_FONT`

@@ -2165,6 +2165,7 @@ dependencies = [
  "resvg",
  "serde",
  "serde_json",
+ "skrifa",
  "tempfile",
  "thiserror",
  "tracing",

@@ -64,6 +64,10 @@ impl RenderInspection {
 pub fn parse(svg: &str, fonts: &FontRegistry) -> Result<usvg::Tree, RenderError> {
     let mut options = usvg::Options {
         fontdb: fonts.db(),
+        font_resolver: usvg::FontResolver {
+            select_fallback: crate::fonts::fallback_selector(),
+            ..Default::default()
+        },
         ..Default::default()
     };
     // Nothing may be pulled off disk or the network while parsing a design.
