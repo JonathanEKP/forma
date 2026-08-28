@@ -8,19 +8,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Before implementing anything, read the relevant section (numbered headings —
 `grep -n '^#\{1,3\} '` lists them).
 
-**Phases 0 to 8 are complete.** The workspace, domain core and its operations, the full
+**Phases 0 to 9 are complete.** The workspace, domain core and its operations, the full
 render pipeline (text, shapes, images), the validator, SQLite persistence with optimistic
 versioning and a snapshot per version, the `application` use cases of §8.2, the `assets`
 ingest of §8.5, the whole REST surface of §31, the React editor, the AssetRequest flow, and
-all thirteen MCP tools all exist and are tested. The blocking spike of §36 resolved to **Option A**: `<g id="layer-{uuid}">`
+all thirteen MCP tools, and the agent skill all exist and are tested. The blocking spike of §36 resolved to **Option A**: `<g id="layer-{uuid}">`
 wrappers survive usvg normalization, and the editor addresses rendered geometry by layer
 id directly.
 
-Next is **Phase 9 (the agent skill)**: `skills/forma/SKILL.md` and a short `AGENTS.md`,
-per §51. What does NOT exist yet: those, the brand panel — `Panel` in `store.ts` still
-carries a `"brand"` variant with no component behind it — and the golden-test baseline of
-§63; §93.3 says not to invent a pixel-diff threshold before there are real renders to
-measure, and now there are.
+Next is **Phase 10 (hardening)**. What does NOT exist yet: the brand panel — `Panel` in
+`store.ts` still carries a `"brand"` variant with no component behind it — the golden-test
+baseline of §63 (§93.3 says not to invent a pixel-diff threshold before there are real
+renders to measure, and now there are), the Playwright E2E of §67, and the remote deploy
+of Phases 11 and 12.
 
 ## What the product is
 
@@ -195,6 +195,25 @@ documentation — a one-liner is not enough, and a stdio test asserts they are s
 
 When an image is missing, the agent creates an `AssetRequest` (Pending → Resolved by the
 user uploading) instead of blocking or inventing an asset.
+
+## The agent skill
+
+[skills/forma/SKILL.md](skills/forma/SKILL.md) is the agent's operational contract, in the
+thirteen sections §51.2 mandates. [AGENTS.md](AGENTS.md) is deliberately short: it says
+when to load the skill and how to start the server.
+[docs/agent-design-reference.md](docs/agent-design-reference.md) holds the *why* behind the
+rules, and [docs/agent-evaluation.md](docs/agent-evaluation.md) the by-hand prompts for
+checking an agent's judgement.
+
+A skill that drifts from the code is worse than none, because an agent follows it
+confidently and is wrong. `apps/mcp/tests/skill_matches_the_code.rs` asserts that every
+tool, operation, brand token, error code and layer field the skill names actually exists,
+and that it keeps its mandated section headings. It cannot judge whether the advice is
+good — that is what the evaluation prompts are for.
+
+Per §51.11, editorial heuristics for a specific medium (carousel hooks, story arcs) stay
+out of this skill; they belong in a future `social-carousel` skill so the core stays usable
+for posters and covers.
 
 ## Commands
 

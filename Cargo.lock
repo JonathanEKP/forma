@@ -988,6 +988,7 @@ dependencies = [
  "actix-web",
  "anyhow",
  "base64 0.22.1",
+ "design-core",
  "forma-server",
  "persistence",
  "renderer",

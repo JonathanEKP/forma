@@ -17,7 +17,7 @@ The full specification is [forma-plan.md](forma-plan.md).
 
 ## Status
 
-Phases 0 to 8 of the plan are complete: the domain core and its operations, the
+Phases 0 to 9 of the plan are complete: the domain core and its operations, the
 render pipeline, the validator, SQLite persistence with optimistic versioning,
 asset ingest with SVG sanitizing, the whole REST API of the plan's section 31 —
 projects, brand kits, designs, the operations batch, undo, history, validation,
@@ -32,8 +32,12 @@ an agent reads the Brand Kit, creates a design, edits it in atomic batches,
 validates it against real measurements, and gets the rendered PNG back as an
 image it can actually look at.
 
-Still to come: the agent skill of Phase 9 and a brand panel. The golden-render
-baseline of the plan's section 63 is not set yet either.
+Agents get [a skill](skills/forma/SKILL.md): the document schema, the atomic
+batch rules, the error recovery table and a worked session, so a host does not
+have to be told how to drive Forma call by call.
+
+Still to come: hardening, a brand panel, the golden-render baseline of the
+plan's section 63, and the remote deploy.
 
 ## Requirements
 
@@ -93,6 +97,7 @@ the server alongside it.
 | `apps/web` | React + TypeScript + Vite editor. |
 | `data/fonts` | Fonts the renderer loads. Committed so renders match everywhere. |
 | `docs/brand` | Forma's own visual direction and logo assets. Not the `BrandKit` type. |
+| `skills/forma` | The agent's operational contract. |
 
 ## License
 
