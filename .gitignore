@@ -1,0 +1,31 @@
+# --- Rust ---
+/target/
+**/*.rs.bk
+
+# --- Node / pnpm ---
+node_modules/
+.pnpm-store/
+apps/web/dist/
+*.tsbuildinfo
+
+# --- Forma runtime data ---
+# data/fonts/ SI se versiona (ver plan seccion 34: el renderer debe cargar
+# las mismas fonts en local, CI, Docker y Oracle).
+/data/forma.db
+/data/forma.db-shm
+/data/forma.db-wal
+/data/assets/
+/data/previews/
+/data/exports/
+
+# --- Config local ---
+.env
+.env.local
+.env.*.local
+
+# --- Editor / OS ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
