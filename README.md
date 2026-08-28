@@ -36,9 +36,9 @@ Agents get [a skill](skills/forma/SKILL.md): the document schema, the atomic
 batch rules, the error recovery table and a worked session, so a host does not
 have to be told how to drive Forma call by call.
 
-Hardening is under way: golden render tests, structured request logging,
-render-cache cleanup and graceful shutdown are in. Still to come: backup, a
-brand panel, and the remote deploy.
+Hardening is done: golden render tests, structured request logging,
+render-cache cleanup, graceful shutdown and backups. Still to come: a brand
+panel, the Playwright end-to-end pass, and the remote deploy.
 
 ## Requirements
 
@@ -63,6 +63,15 @@ same origin, so that URL is the whole product.
 
 To connect an agent, see [docs/integrations/claude-code.md](docs/integrations/claude-code.md)
 or [docs/integrations/codex.md](docs/integrations/codex.md).
+
+To back it up:
+
+```bash
+./target/release/forma-server backup
+```
+
+That works while the server runs. [docs/backup.md](docs/backup.md) covers what
+is in a backup, what deliberately is not, and how to restore one.
 
 ## Development
 

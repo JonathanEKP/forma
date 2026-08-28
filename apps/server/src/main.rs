@@ -1,8 +1,9 @@
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use actix_web::{web, App, HttpServer};
-use forma_server::{routes, telemetry, AppState, Config};
+use forma_server::{backup, routes, telemetry, AppState, Config};
 use persistence::DesignRepository;
 use renderer::{FontRegistry, RenderCache};
 use tracing_subscriber::EnvFilter;
@@ -21,6 +22,36 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(EnvFilter::new(&config.log))
         .with_target(false)
         .init();
+
+    // One subcommand, deliberately: a backup is the one thing you need the
+    // server's own configuration for but do not want a running server to do.
+    let mut args = std::env::args().skip(1);
+    match args.next().as_deref() {
+        None => {}
+        Some("backup") => {
+            let out = args
+                .next()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| backup::default_destination(&config.data_dir));
+
+            let summary = backup::run(&config, &out).await?;
+            tracing::info!(
+                out = %summary.out.display(),
+                database_bytes = summary.database_bytes,
+                asset_files = summary.asset_files,
+                asset_bytes = summary.asset_bytes,
+                "backup written"
+            );
+            println!("{}", summary.out.display());
+            return Ok(());
+        }
+        Some("--help" | "-h" | "help") => {
+            println!("forma-server                 run the server");
+            println!("forma-server backup [DIR]    write a backup, default DATA_DIR/backups/<utc>");
+            return Ok(());
+        }
+        Some(other) => anyhow::bail!("unknown argument {other:?}; try --help"),
+    }
 
     let fonts = Arc::new(FontRegistry::from_dir(&config.font_dir)?);
     tracing::info!(

@@ -16,9 +16,10 @@ all thirteen MCP tools, and the agent skill all exist and are tested. The blocki
 wrappers survive usvg normalization, and the editor addresses rendered geometry by layer
 id directly.
 
-**Phase 10 (hardening) is under way.** Done: the golden-render baseline of §63, the
-structured logging of §60, render-cache cleanup, and graceful shutdown. Still open from
-that list: backup. Beyond it: the brand panel — `Panel` in `store.ts`
+**Phase 10 (hardening) is complete**, and with it every phase of the V1 plan: golden
+renders (§63), structured logging (§60), render-cache cleanup, graceful shutdown and
+backups. Upload security and SVG sanitizing landed back in Phase 5, and the error UX in
+the §32 envelope. Beyond it: the brand panel — `Panel` in `store.ts`
 still carries a `"brand"` variant with no component behind it — the Playwright E2E of §67,
 and the remote deploy of Phases 11 and 12.
 
@@ -158,6 +159,13 @@ from Signal and unrelated to it; do not unify them.
   formats of §44 work. An SVG keeps its size in the document rather than a header, so
   `probe` reports zero for it and the tree must be read; leaving the zero makes every SVG
   fall through `place`'s guard and silently ignore `contain` and `cover`.
+- **A backup is `VACUUM INTO` plus the asset bytes, never a file copy.** A running server
+  keeps writes in the write-ahead log, so copying `forma.db` can miss them and copying the
+  three files separately is not atomic. `forma-server backup` is safe to run hot and
+  refuses a non-empty destination. `previews/` and `exports/` are excluded on purpose and
+  the manifest says so — both regenerate from what is kept. There is deliberately no
+  restore command: it overwrites the user's current work, so it stays a documented manual
+  procedure in [docs/backup.md](docs/backup.md).
 - **Shutdown closes the pool, and that is what makes a backup possible.** `forma-server`
   handles SIGINT and SIGTERM itself so it can log the stop, lets in-flight work finish
   (20s, measured against the 8.6s a Story page at scale 4 takes), and then closes the
