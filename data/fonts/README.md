@@ -17,10 +17,16 @@ for a file here: `usvg` resolves glyphs from a `fontdb` built by
 | `Geist-SemiBold.ttf` | Geist | 600 | SIL OFL 1.1 |
 | `Geist-Bold.ttf` | Geist | 700 | SIL OFL 1.1 |
 | `GeistMono-Regular.ttf` | Geist Mono | 400 | SIL OFL 1.1 |
+| `BodoniModa-Variable.ttf` | Bodoni Moda | 400–900 | SIL OFL 1.1 |
+| `PlayfairDisplay-Variable.ttf` | Playfair Display | 400–900 | SIL OFL 1.1 |
 
-The registry therefore exposes three families: `DejaVu Sans`, `Geist` and
-`Geist Mono`. `forma_status` reports this list, and an agent must not name a
-family outside it.
+The registry therefore exposes five families: `DejaVu Sans`, `Geist`,
+`Geist Mono`, `Bodoni Moda` and `Playfair Display`. `forma_status` reports this
+list, and an agent must not name a family outside it.
+
+The licence text of every family is in `licenses/`. The OFL requires the licence
+to travel with the font, and naming it in a table is not the same as shipping
+it.
 
 ## Geist
 
@@ -36,6 +42,40 @@ silently when it cannot find a family, so a design would still render — just n
 in the font it asked for. The tests catch that by comparing Geist against DejaVu,
 by checking that weight 400 and weight 700 lay out differently, and by checking
 that Geist Mono advances uniformly.
+
+## The display serifs
+
+Geist is a grotesque, and a grotesque cannot make a magazine cover look like a
+magazine cover. Editorial display is a Didone problem: extreme contrast between
+hairline and stem, which is the texture the eye reads as "cover". The catalog had
+no serif at all, so an agent asked for an editorial piece could not produce one
+however well it composed.
+
+| Family | Register | Use |
+| --- | --- | --- |
+| Bodoni Moda | Extreme contrast, hairlines that nearly vanish | Mastheads, one or two words, large |
+| Playfair Display | Didone but less extreme, sturdier at mid sizes | Headlines of several words |
+
+Both ship **only** as variable fonts, which cuts against the reason Geist ships
+as a static file per weight. `crates/renderer/tests/display_serifs.rs` is what
+makes that acceptable: it renders every letter at weight 400 and at 900 and
+compares the drawn ink.
+
+It measures ink rather than width on purpose. usvg can read the variable
+*metrics* correctly — so the advance grows with weight and any width comparison
+passes — while flattening an outline from the default instance. That failure is
+invisible to bounds and obvious on the page: one hairline letter inside a heavy
+word.
+
+A note for whoever reads a Didone specimen next: at weight 900 the `A` still has
+a hairline left diagonal against a very fat right stem, and next to `D` it can
+read as though it missed the weight change. It did not. That is the letterform,
+and the ink measurement says so — Bodoni's `A` gains 141% between 400 and 900,
+more than any other letter.
+
+Instrument Serif was also evaluated and works (static, one weight, a lighter and
+more refined register). It is not shipped only to keep the catalog small: three
+display serifs is a choice an agent has to reason about on every piece.
 
 ## Plan section 93.2 — the default font decision, settled
 
