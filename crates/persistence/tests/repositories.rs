@@ -653,3 +653,55 @@ async fn an_export_pins_the_version_it_came_from() {
         1
     );
 }
+
+// --- shutdown -------------------------------------------------------------
+
+/// Closing the pool has to fold the write-ahead log back into the database
+/// file, so that `forma.db` on its own holds everything.
+///
+/// WAL is durable either way and nothing is lost by skipping this — but the
+/// writes would live in a sidecar file, and a backup that copied `forma.db`
+/// alone would be a backup of almost nothing. Measured before shutdown closed
+/// the pool: a 4 KB database file beside a 177 KB log.
+///
+/// The check is that the file *contains* the data rather than that the sidecar
+/// has been unlinked: SQLite removes it a moment after the last connection
+/// goes, and asserting on that would be a race.
+#[tokio::test]
+async fn closing_the_pool_leaves_everything_in_the_database_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("forma.db");
+    let pool = persistence::connect(&format!("sqlite://{}", db.display()), dir.path())
+        .await
+        .unwrap();
+
+    let projects = SqliteProjectRepository::new(pool.clone());
+    for name in ["One", "Two", "Three"] {
+        projects.create(name).await.unwrap();
+    }
+
+    // While it is open, the writes are out in the log rather than the file.
+    let wal = dir.path().join("forma.db-wal");
+    assert!(
+        wal.exists(),
+        "expected a write-ahead log while the pool is open"
+    );
+
+    pool.close().await;
+
+    // Copy only the database file, which is what a backup would take.
+    let backup_dir = tempfile::tempdir().unwrap();
+    let backup = backup_dir.path().join("forma.db");
+    std::fs::copy(&db, &backup).unwrap();
+
+    let restored =
+        persistence::connect(&format!("sqlite://{}", backup.display()), backup_dir.path())
+            .await
+            .unwrap();
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM projects")
+        .fetch_one(&restored)
+        .await
+        .unwrap();
+
+    assert_eq!(count, 3, "the database file alone did not hold the writes");
+}

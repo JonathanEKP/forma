@@ -164,3 +164,35 @@ async fn stays_alive_after_a_failed_call() {
     let response = mcp.call(3, "tools/list", serde_json::json!({})).await;
     assert!(response["result"]["tools"].is_array());
 }
+
+/// Closing stdin is how a host says it is done, and the process must go with
+/// it. A stdio server that outlived its host would be an orphan nobody knows
+/// to kill.
+#[tokio::test]
+async fn closing_stdin_ends_the_process() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_forma-mcp"))
+        .env("FORMA_SERVER_URL", "http://127.0.0.1:1")
+        .env("FORMA_LOG", "error")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("forma-mcp must start");
+
+    {
+        let stdin = child.stdin.as_mut().unwrap();
+        stdin.write_all(INIT.as_bytes()).await.unwrap();
+        stdin.write_all(b"\n").await.unwrap();
+        stdin.flush().await.unwrap();
+    }
+
+    // Dropping the handle closes the pipe, which is what a host exiting does.
+    drop(child.stdin.take());
+
+    let status = tokio::time::timeout(std::time::Duration::from_secs(20), child.wait())
+        .await
+        .expect("forma-mcp should exit when its host goes away")
+        .expect("wait");
+
+    assert!(status.success(), "exited with {status}");
+}

@@ -49,12 +49,15 @@ async fn main() -> anyhow::Result<()> {
         _ => {}
     }
 
+    // Kept out of the closure, which consumes the state, so the pool can still
+    // be closed after the server has stopped.
+    let pool = state.pool.clone();
     let web_dir = config.web_dir.clone();
     let bind = config.bind.clone();
 
     tracing::info!(bind = %bind, "forma-server listening");
 
-    HttpServer::new(move || {
+    let server = HttpServer::new(move || {
         let app = App::new()
             .wrap(actix_web::middleware::from_fn(telemetry::trace_request))
             .app_data(web::Data::new(state.clone()))
@@ -73,8 +76,65 @@ async fn main() -> anyhow::Result<()> {
         }
     })
     .bind(&bind)?
-    .run()
-    .await?;
+    // How long in-flight work gets to finish before it is dropped.
+    //
+    // Measured: a single Story page at scale 4 — the largest canvas this
+    // server renders — takes about 8.6 seconds. Twenty leaves room for a
+    // slower machine while still being a wait a person will sit through.
+    //
+    // Exporting many pages at that scale can exceed it and be cut off. That is
+    // safe rather than merely tolerable: an export writes its files before the
+    // row that names them, so a cut one leaves files nothing points at, never
+    // a record pointing at files that were never written.
+    .shutdown_timeout(20)
+    // Handled below instead, so the log says what is happening rather than the
+    // process simply vanishing.
+    .disable_signals()
+    .run();
 
+    let stopper = server.handle();
+    actix_web::rt::spawn(async move {
+        wait_for_signal().await;
+        tracing::info!("stopping: finishing in-flight requests");
+        // Graceful: stop accepting, let what is running finish.
+        stopper.stop(true).await;
+    });
+
+    server.await?;
+
+    // Closing the pool checkpoints the write-ahead log back into the database
+    // file. Without it the data is still safe — WAL is durable — but it lives
+    // in a sidecar file, which makes a backup that copies forma.db alone a
+    // backup of nothing.
+    pool.close().await;
+
+    tracing::info!("stopped cleanly");
     Ok(())
+}
+
+/// Resolves on the first signal asking the process to stop.
+async fn wait_for_signal() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+
+        let mut terminate = match signal(SignalKind::terminate()) {
+            Ok(stream) => stream,
+            Err(error) => {
+                tracing::warn!(%error, "cannot listen for SIGTERM; Ctrl-C only");
+                let _ = tokio::signal::ctrl_c().await;
+                return;
+            }
+        };
+
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {}
+            _ = terminate.recv() => {}
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+    }
 }

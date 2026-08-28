@@ -17,8 +17,8 @@ wrappers survive usvg normalization, and the editor addresses rendered geometry 
 id directly.
 
 **Phase 10 (hardening) is under way.** Done: the golden-render baseline of §63, the
-structured logging of §60, and render-cache cleanup. Still open from that list: backup and
-graceful shutdown. Beyond it: the brand panel — `Panel` in `store.ts`
+structured logging of §60, render-cache cleanup, and graceful shutdown. Still open from
+that list: backup. Beyond it: the brand panel — `Panel` in `store.ts`
 still carries a `"brand"` variant with no component behind it — the Playwright E2E of §67,
 and the remote deploy of Phases 11 and 12.
 
@@ -158,6 +158,13 @@ from Signal and unrelated to it; do not unify them.
   formats of §44 work. An SVG keeps its size in the document rather than a header, so
   `probe` reports zero for it and the tree must be read; leaving the zero makes every SVG
   fall through `place`'s guard and silently ignore `contain` and `cover`.
+- **Shutdown closes the pool, and that is what makes a backup possible.** `forma-server`
+  handles SIGINT and SIGTERM itself so it can log the stop, lets in-flight work finish
+  (20s, measured against the 8.6s a Story page at scale 4 takes), and then closes the
+  SQLite pool. Closing folds the write-ahead log back into `forma.db`; without it the
+  writes stay in a sidecar and copying `forma.db` alone backs up nothing — a test proves
+  exactly that by copying the file and counting rows. `forma-mcp` exits when its host
+  closes stdin, so it cannot outlive it.
 - **Derived data is collected; the user's work is not.** The render cache prunes itself:
   writing version N drops everything below `N - KEEP_RECENT_VERSIONS` for that design, so
   the thing that grows the cache is the thing that trims it and no call site can forget.
