@@ -616,11 +616,24 @@ async fn an_export_pins_the_version_it_came_from() {
         scale: 1.0,
         storage_key: "exports/x/01.png".to_string(),
         byte_size: 34507,
-        created_at: "2026-08-27T00:00:00.000Z".to_string(),
+        // Ignored: the repository stamps its own, so a caller cannot backdate
+        // a row or persist a blank one by forgetting the field.
+        created_at: String::new(),
     };
 
     let stored = harness.exports().create(&export).await.unwrap();
-    assert_eq!(stored, export);
+    assert!(
+        stored.created_at.ends_with('Z'),
+        "the repository must stamp the row: {:?}",
+        stored.created_at
+    );
+    assert_eq!(
+        stored,
+        Export {
+            created_at: stored.created_at.clone(),
+            ..export.clone()
+        }
+    );
 
     // The design moves on; the export still records what it actually contains.
     designs

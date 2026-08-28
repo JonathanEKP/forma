@@ -5,7 +5,7 @@ use sqlx::{Row, SqlitePool};
 use crate::error::{PersistenceError, Result};
 use crate::traits::ExportRepository;
 
-use super::parse_uuid;
+use super::{now, parse_uuid};
 
 pub struct SqliteExportRepository {
     pool: SqlitePool,
@@ -55,6 +55,11 @@ const COLUMNS: &str = "id, design_id, design_version, scope, page_id, scale, sto
 #[async_trait]
 impl ExportRepository for SqliteExportRepository {
     async fn create(&self, export: &Export) -> Result<Export> {
+        // Stamped here rather than taken from the caller, like every other
+        // repository. A caller that left the field empty would otherwise
+        // persist a blank timestamp and only find out by reading the row back.
+        let created_at = now();
+
         sqlx::query(
             "INSERT INTO exports (id, design_id, design_version, scope, page_id, scale,
                                   storage_key, byte_size, created_at)
@@ -68,11 +73,14 @@ impl ExportRepository for SqliteExportRepository {
         .bind(export.scale as f64)
         .bind(&export.storage_key)
         .bind(export.byte_size)
-        .bind(&export.created_at)
+        .bind(&created_at)
         .execute(&self.pool)
         .await?;
 
-        Ok(export.clone())
+        Ok(Export {
+            created_at,
+            ..export.clone()
+        })
     }
 
     async fn get(&self, id: ExportId) -> Result<Export> {

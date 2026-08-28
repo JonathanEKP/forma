@@ -24,6 +24,14 @@ pub enum PersistenceError {
 
     #[error("storage failed: {0}")]
     Storage(String),
+
+    /// A record exists but is not in a state that allows what was asked.
+    ///
+    /// Distinct from `Storage`, which is a server fault: resolving an already
+    /// resolved request is the caller's mistake and must not be reported as a
+    /// 500 that invites a pointless retry.
+    #[error("{0}")]
+    InvalidTransition(String),
 }
 
 impl PersistenceError {
@@ -35,6 +43,7 @@ impl PersistenceError {
             Self::NotFound(_) => "NOT_FOUND",
             Self::CorruptDocument(_) => "INVALID_DOCUMENT",
             Self::Storage(_) => "STORAGE_ERROR",
+            Self::InvalidTransition(_) => "INVALID_STATE",
         }
     }
 
@@ -51,6 +60,9 @@ impl PersistenceError {
                 "The stored document could not be parsed. Restore an earlier version."
             }
             Self::Storage(_) => "A storage operation failed. Retrying later may work.",
+            Self::InvalidTransition(_) => {
+                "Read the record back and check its status; retrying this will fail the same way."
+            }
         }
     }
 

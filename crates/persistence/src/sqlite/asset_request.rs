@@ -69,6 +69,11 @@ const COLUMNS: &str = "id, project_id, design_id, purpose, description, suggeste
 #[async_trait]
 impl AssetRequestRepository for SqliteAssetRequestRepository {
     async fn create(&self, request: &AssetRequest) -> Result<AssetRequest> {
+        // Stamped here rather than taken from the caller, like every other
+        // repository, so a caller that leaves the field empty cannot persist a
+        // blank timestamp.
+        let created_at = now();
+
         sqlx::query(
             "INSERT INTO asset_requests (id, project_id, design_id, purpose, description,
                                          suggested_prompt, requested_width, requested_height,
@@ -85,12 +90,15 @@ impl AssetRequestRepository for SqliteAssetRequestRepository {
         .bind(request.requested_height.map(|v| v as i64))
         .bind(status_str(request.status))
         .bind(request.resolved_asset_id.map(|id| id.to_string()))
-        .bind(&request.created_at)
+        .bind(&created_at)
         .bind(request.resolved_at.as_deref())
         .execute(&self.pool)
         .await?;
 
-        Ok(request.clone())
+        Ok(AssetRequest {
+            created_at,
+            ..request.clone()
+        })
     }
 
     async fn get(&self, id: AssetRequestId) -> Result<AssetRequest> {
@@ -133,7 +141,7 @@ impl AssetRequestRepository for SqliteAssetRequestRepository {
 
         if updated.rows_affected() == 0 {
             let existing = self.get(id).await?;
-            return Err(PersistenceError::Storage(format!(
+            return Err(PersistenceError::InvalidTransition(format!(
                 "asset request {id} is already {:?} and cannot be resolved again",
                 existing.status
             )));
@@ -151,7 +159,7 @@ impl AssetRequestRepository for SqliteAssetRequestRepository {
 
         if updated.rows_affected() == 0 {
             let existing = self.get(id).await?;
-            return Err(PersistenceError::Storage(format!(
+            return Err(PersistenceError::InvalidTransition(format!(
                 "asset request {id} is already {:?}",
                 existing.status
             )));

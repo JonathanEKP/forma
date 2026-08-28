@@ -7,8 +7,10 @@
 
 use actix_web::web;
 
+pub mod asset_requests;
 pub mod assets;
 pub mod designs;
+pub mod exports;
 pub mod meta;
 pub mod projects;
 pub mod renders;
@@ -25,6 +27,8 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .configure(projects::configure)
             .configure(designs::configure)
             .configure(renders::configure)
-            .configure(assets::configure),
+            .configure(assets::configure)
+            .configure(asset_requests::configure)
+            .configure(exports::configure),
     );
 }

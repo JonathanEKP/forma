@@ -52,6 +52,18 @@ pub async fn history(designs: &dyn DesignRepository, id: DesignId) -> Result<Vec
     Ok(designs.history(id).await?)
 }
 
+/// The document as it was at one version.
+///
+/// Versions never change once written, which is what lets an export stay
+/// reproducible and the render cache stay safe.
+pub async fn snapshot(
+    designs: &dyn DesignRepository,
+    id: DesignId,
+    version: Version,
+) -> Result<DesignDocument> {
+    Ok(designs.snapshot(id, version).await?)
+}
+
 /// Applies a batch of operations as one version (plan sections 27 and 28).
 ///
 /// The batch is applied to the document as it was read, then persisted with

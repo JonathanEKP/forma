@@ -106,6 +106,11 @@ fn status_for(code: &str) -> StatusCode {
         // The design moved under the caller. Refetch, rebase, resend.
         "VERSION_CONFLICT" => StatusCode::CONFLICT,
 
+        // The record exists but is past the state this asks for: an asset
+        // request already resolved or cancelled. Unlike a version conflict
+        // there is no rebase that makes it succeed, so the hint says so.
+        "INVALID_STATE" => StatusCode::CONFLICT,
+
         "PROJECT_NOT_FOUND" | "DESIGN_NOT_FOUND" | "PAGE_NOT_FOUND" | "LAYER_NOT_FOUND"
         | "ASSET_NOT_FOUND" | "NOT_FOUND" => StatusCode::NOT_FOUND,
 
