@@ -8,13 +8,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Before implementing anything, read the relevant section (numbered headings —
 `grep -n '^#\{1,3\} '` lists them).
 
-**Phases 0 to 3 are complete.** The workspace, domain core, operations, full render
+**Phases 0 to 4 are complete.** The workspace, domain core, operations, full render
 pipeline (text, shapes, images), REST server and MCP stdio server all exist and are tested.
 The blocking spike of §36 resolved to **Option A**: `<g id="layer-{uuid}">` wrappers survive
 usvg normalization, so the editor can address rendered geometry by layer id directly.
 
-Next is **Phase 4 (Persistence)**. What does NOT exist yet: design persistence (only a
-`projects` table), the REST/MCP surface for designs, and the editor. The golden-test
+Next is **Phase 5 (REST server)**. What does NOT exist yet: the REST/MCP surface for
+designs (the repositories exist but only `/status`, `/health` and the test card are wired),
+and the editor. The golden-test
 baseline of §63 is also still missing — §93.3 says not to invent a pixel-diff threshold
 before there are real renders to measure, and now there are.
 
@@ -52,7 +53,7 @@ Rust workspace crates and their boundaries (§8):
 | `renderer` | scene → SVG → PNG, fonts, text bbox | Actix |
 | `validator` | deterministic checks (bounds, text, assets, brand) | renderer, usvg |
 | `assets` | upload, hashing, MIME, dimensions, sanitization | agents/MCP concepts |
-| `persistence` | repository traits + sqlite/local_fs adapters (postgres/supabase later) | |
+| `persistence` | repository traits + sqlite/local_fs adapters (postgres/supabase later) | Actix, MCP |
 | `mcp-api` | MCP tool schemas + handlers calling forma-server | design logic |
 
 Frontend: React + TypeScript + Vite, TanStack Query (server state), Zustand (ephemeral UI
@@ -80,6 +81,12 @@ state: selection, zoom, pan, in-progress drag/resize), Tailwind. No WASM, no Yew
   `INVALID_OP` rather than silently no-op'ing. `MAX_OPS_PER_BATCH = 20`.
 - **Batches are atomic**: validate → apply to an in-memory copy → validate structure →
   persist in one transaction → single version increment.
+- **The guarded UPDATE is the whole concurrency story.**
+  `UPDATE designs SET version = ? ... WHERE id = ? AND version = ?`. Zero affected rows is
+  ambiguous on its own, so `SqliteDesignRepository::save` then asks whether the row exists
+  and returns `VERSION_CONFLICT` (refetch and rebase) or `DESIGN_NOT_FOUND` (give up) —
+  never one standing in for the other. Each save writes the design row and its snapshot in
+  one transaction, so a design can never exist at a version with no snapshot.
 - **Optimistic concurrency**: every mutation carries `base_version`; the UPDATE is guarded
   by `WHERE version = ?`, and zero affected rows means `VERSION_CONFLICT`. Applies equally
   to React and MCP clients.

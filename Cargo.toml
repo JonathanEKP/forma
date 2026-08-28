@@ -5,6 +5,7 @@ members = [
     "apps/server",
     "crates/design-core",
     "crates/renderer",
+    "crates/persistence",
     "crates/validator",
 ]
 
@@ -17,6 +18,7 @@ license = "MIT"
 design-core = { path = "crates/design-core" }
 renderer = { path = "crates/renderer" }
 validator = { path = "crates/validator" }
+persistence = { path = "crates/persistence" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -40,3 +42,6 @@ schemars = "1"
 anyhow = "1"
 tempfile = "3"
 base64 = "0.22"
+async-trait = "0.1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+blake3 = "1"

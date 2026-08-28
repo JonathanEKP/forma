@@ -4,6 +4,8 @@ use actix_web::{get, post, web, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use persistence::ProjectRepository;
+
 use crate::error::ApiError;
 use crate::state::AppState;
 use crate::test_card;
@@ -39,10 +41,12 @@ pub struct Status {
 
 #[get("/status")]
 async fn status(state: web::Data<AppState>) -> Result<HttpResponse, ApiError> {
-    let projects: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM projects")
-        .fetch_one(&state.pool)
+    let projects = state
+        .projects
+        .list()
         .await
-        .map_err(|e| ApiError::internal("STORAGE_ERROR", e.to_string()))?;
+        .map_err(|e| ApiError::internal("STORAGE_ERROR", e.to_string()))?
+        .len() as i64;
 
     Ok(HttpResponse::Ok().json(Status {
         name: "forma-server",

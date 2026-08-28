@@ -4,20 +4,21 @@
 use std::sync::Arc;
 
 use actix_web::{test, web, App};
-use forma_server::{db, routes, state::AppState};
+use forma_server::{routes, state::AppState};
 use renderer::FontRegistry;
 
 async fn state() -> (AppState, tempfile::TempDir) {
     let dir = tempfile::tempdir().expect("temp dir");
     let db_path = dir.path().join("forma.db");
-    let pool = db::connect(&format!("sqlite://{}", db_path.display()), dir.path())
+    let pool = persistence::connect(&format!("sqlite://{}", db_path.display()), dir.path())
         .await
         .expect("migrations must apply to a fresh database");
 
     let font_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../data/fonts");
     let fonts = Arc::new(FontRegistry::from_dir(font_dir).expect("fonts"));
+    let cache = Arc::new(renderer::RenderCache::new(dir.path().join("previews")));
 
-    (AppState { pool, fonts }, dir)
+    (AppState::new(pool, fonts, cache), dir)
 }
 
 #[actix_web::test]

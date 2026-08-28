@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use actix_web::{web, App, HttpServer};
-use forma_server::{db, routes, AppState, Config};
-use renderer::FontRegistry;
+use forma_server::{routes, AppState, Config};
+use renderer::{FontRegistry, RenderCache};
 use tracing_subscriber::EnvFilter;
 
 #[actix_web::main]
@@ -21,10 +21,11 @@ async fn main() -> anyhow::Result<()> {
         "font registry loaded"
     );
 
-    let pool = db::connect(&config.database_url, &config.data_dir).await?;
+    let pool = persistence::connect(&config.database_url, &config.data_dir).await?;
     tracing::info!(database_url = %config.database_url, "migrations applied");
 
-    let state = AppState { pool, fonts };
+    let cache = Arc::new(RenderCache::new(config.data_dir.join("previews")));
+    let state = AppState::new(pool, fonts, cache);
     let web_dir = config.web_dir.clone();
     let bind = config.bind.clone();
 

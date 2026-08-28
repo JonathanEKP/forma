@@ -61,6 +61,51 @@ impl DesignFormat {
     }
 }
 
+/// The persistent identity of a design, kept separate from the portable
+/// document it carries (plan section 14). The record knows about the workspace
+/// and the version; the document knows neither, which is what lets it become a
+/// template or move between projects.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct DesignRecord {
+    pub id: crate::ids::DesignId,
+    pub project_id: crate::ids::ProjectId,
+    pub name: String,
+    pub version: crate::version::Version,
+    pub created_at: String,
+    pub updated_at: String,
+    pub document: DesignDocument,
+}
+
+/// A design without its document, for listings.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct DesignSummary {
+    pub id: crate::ids::DesignId,
+    pub project_id: crate::ids::ProjectId,
+    pub name: String,
+    pub version: crate::version::Version,
+    pub format: DesignFormat,
+    pub page_count: usize,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl DesignRecord {
+    pub fn summary(&self) -> DesignSummary {
+        DesignSummary {
+            id: self.id,
+            project_id: self.project_id,
+            name: self.name.clone(),
+            version: self.version,
+            format: self.document.format,
+            page_count: self.document.pages.len(),
+            created_at: self.created_at.clone(),
+            updated_at: self.updated_at.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct DesignDocument {

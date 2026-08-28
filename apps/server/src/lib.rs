@@ -2,7 +2,6 @@
 //! persistence (plan sections 3.2 and 5). React and `forma-mcp` are both clients.
 
 pub mod config;
-pub mod db;
 pub mod error;
 pub mod routes;
 pub mod state;
