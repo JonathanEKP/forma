@@ -40,4 +40,4 @@ ts-rs.workspace = true
 resvg.workspace = true
 actix-web = { workspace = true, features = ["macros"] }
 tempfile.workspace = true
-actix-http = "3"
+actix-http.workspace = true

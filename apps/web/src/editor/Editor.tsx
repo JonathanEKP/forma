@@ -1,13 +1,14 @@
 /**
  * The editor shell: the layout of plan section 10.
  *
- * Top bar, pages and layers on the left, canvas in the middle, properties or
- * validation on the right. V1 does not try to compete with Figma.
+ * Top bar, pages and layers on the left, canvas in the middle, and one of
+ * properties, validation or assets on the right. V1 does not try to compete
+ * with Figma.
  */
 
 import { useEffect, useMemo } from "react";
 
-import { ApiError, conflictDetails, type DesignOperation } from "../api";
+import { ApiError, conflictDetails, type Asset, type DesignOperation } from "../api";
 import {
   useApplyOperations,
   useBrand,
@@ -19,7 +20,9 @@ import {
 } from "../queries";
 import { useEditor, type DraftFrame } from "../store";
 import { findPage } from "../types";
+import { Assets } from "./Assets";
 import { Canvas } from "./Canvas";
+import { addImageOperation } from "./insert";
 import { PagesAndLayers, Properties } from "./Panels";
 import { Validation } from "./Validation";
 
@@ -58,6 +61,24 @@ export function Editor({ designId, onBack }: { designId: string; onBack: () => v
   const send = (operations: DesignOperation[]) => {
     if (!record || operations.length === 0) return;
     apply.mutate({ baseVersion: record.version, operations });
+  };
+
+  /**
+   * Puts an uploaded asset on the current page.
+   *
+   * It goes through the same add_layer operation an agent would send, so the
+   * editor still has no private authoring path (plan section 28).
+   */
+  const placeAsset = (asset: Asset) => {
+    if (!record || !page) return;
+    send([
+      addImageOperation(
+        page.id,
+        record.document.format,
+        asset.id,
+        asset.original_filename ?? "Image",
+      ),
+    ]);
   };
 
   /** Plan section 38: one pointer-up becomes one move_layer, not one per frame. */
@@ -108,7 +129,7 @@ export function Editor({ designId, onBack }: { designId: string; onBack: () => v
           Undo
         </button>
 
-        {(["properties", "validation"] as const).map((name) => (
+        {(["properties", "validation", "assets"] as const).map((name) => (
           <button
             key={name}
             type="button"
@@ -154,9 +175,19 @@ export function Editor({ designId, onBack }: { designId: string; onBack: () => v
           <Centered>This design has no pages.</Centered>
         )}
 
-        {panel === "validation" ? (
+        {panel === "validation" && (
           <Validation report={validation.data} loading={validation.isLoading} />
-        ) : (
+        )}
+
+        {panel === "assets" && (
+          <Assets
+            projectId={record.project_id}
+            onPlace={placeAsset}
+            disabled={busy || page === null}
+          />
+        )}
+
+        {panel === "properties" && (
           <Properties
             record={record}
             page={page}

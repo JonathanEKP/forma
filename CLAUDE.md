@@ -8,19 +8,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Before implementing anything, read the relevant section (numbered headings —
 `grep -n '^#\{1,3\} '` lists them).
 
-**Phases 0 to 6 are complete.** The workspace, domain core and its operations, the full
+**Phases 0 to 7 are complete.** The workspace, domain core and its operations, the full
 render pipeline (text, shapes, images), the validator, SQLite persistence with optimistic
 versioning and a snapshot per version, the `application` use cases of §8.2, the `assets`
-ingest of §8.5, the whole REST surface of §31, and the React editor all exist and are
-tested. The blocking spike of §36 resolved to **Option A**: `<g id="layer-{uuid}">`
+ingest of §8.5, the whole REST surface of §31, the React editor, and the AssetRequest flow
+all exist and are tested. The blocking spike of §36 resolved to **Option A**: `<g id="layer-{uuid}">`
 wrappers survive usvg normalization, and the editor addresses rendered geometry by layer
 id directly.
 
-Next is **Phase 7 (AssetRequest UX)**. What does NOT exist yet: the asset and brand panels
-(deliberately left out of the editor layout for now), the AssetRequest flow, the remaining
-eleven MCP tools that Phase 8 wires to the REST routes that already exist, and the agent
-skill of §9. The golden-test baseline of §63 is also still missing; §93.3 says not to
-invent a pixel-diff threshold before there are real renders to measure, and now there are.
+Next is **Phase 8 (MCP)**: the eleven remaining tools, wired to REST routes that already
+exist. What does NOT exist yet: the brand panel — `Panel` in `store.ts` still carries a
+`"brand"` variant with no component behind it — the agent skill of §9, and the golden-test
+baseline of §63; §93.3 says not to invent a pixel-diff threshold before there are real
+renders to measure, and now there are.
 
 ## What the product is
 
@@ -112,6 +112,15 @@ from Signal and unrelated to it; do not unify them.
 - **No silent leniency.** Structural errors and out-of-range values reject the batch with
   an error/hint; clamping/normalization only where explicitly documented. Warnings are for
   valid-but-suspicious states.
+- **The editor has no private authoring path.** Every mutation it makes — inserting a
+  layer, dragging, placing an uploaded asset — goes through the same typed
+  `DesignOperation` an agent would send (§28). If the editor needs something the operation
+  set cannot express, the operation set is what has to change.
+- **A client never mints server-owned identity.** `PUT /projects/{id}/brand` takes a
+  `BrandKitDraft` — what the brand *is* — while the `BrandId` and the kit's version are
+  decided server-side, with the id kept stable across edits so the project's `brand_id`
+  does not churn. Every other request body already followed this; the brand route was the
+  exception.
 - **`ImageLayer` holds only `asset_id`** — never a URL or a local path. Importing a remote
   image is a separate operation that first creates an `Asset`.
 - **A design the validator calls valid must render.** That is the contract the agent's

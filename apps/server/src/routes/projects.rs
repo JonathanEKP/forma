@@ -1,9 +1,11 @@
 //! Projects and Brand Kits (plan section 31).
 
 use actix_web::{delete, get, patch, post, put, web, HttpResponse};
-use design_core::{BrandKit, ProjectId};
+use design_core::ProjectId;
 use serde::Deserialize;
 use ts_rs::TS;
+
+use application::projects::BrandKitDraft;
 
 use crate::error::ApiError;
 use crate::routes::parse_id;
@@ -78,29 +80,16 @@ async fn get_brand(
 }
 
 #[put("/projects/{id}/brand")]
+/// The path names the project and the server owns the kit's identity, so the
+/// body carries neither. That also removes the mismatch a body-supplied
+/// `project_id` used to make possible.
 async fn put_brand(
     state: web::Data<AppState>,
     path: web::Path<String>,
-    body: web::Json<BrandKit>,
+    body: web::Json<BrandKitDraft>,
 ) -> Result<HttpResponse, ApiError> {
     let id = project_id(&path)?;
-    let mut brand = body.into_inner();
-
-    // The path names the project; a body claiming a different one would write
-    // the kit somewhere the caller did not ask for.
-    if brand.project_id != id {
-        return Err(ApiError::bad_request(
-            "INVALID_OP",
-            format!(
-                "the Brand Kit names project {} but the path names {id}",
-                brand.project_id
-            ),
-            "Send the kit to its own project, or correct project_id in the body.",
-        ));
-    }
-    brand.project_id = id;
-
-    let stored = application::projects::put_brand(&*state.projects, &brand).await?;
+    let stored = application::projects::put_brand(&*state.projects, id, body.into_inner()).await?;
     Ok(HttpResponse::Ok().json(stored))
 }
 

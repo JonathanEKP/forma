@@ -100,6 +100,35 @@ export function addShapeOperation(pageId: string, format: DesignFormat): DesignO
   };
 }
 
+/**
+ * Places an uploaded asset on the page.
+ *
+ * The layer carries the `asset_id` and nothing else — no URL, no path — which
+ * is the portability rule of plan section 21. `cover` is the useful default:
+ * the frame decides the composition and the image fills it.
+ */
+export function addImageOperation(
+  pageId: string,
+  format: DesignFormat,
+  assetId: string,
+  name: string,
+): DesignOperation {
+  const width = Math.round(format.width * 0.6);
+  const height = Math.round(width * 0.75);
+
+  return {
+    op: "add_layer",
+    page_id: pageId,
+    layer: {
+      type: "image",
+      ...common(crypto.randomUUID(), name, centred(format, width, height)),
+      asset_id: assetId,
+      fit: "cover",
+      focal_point: { x: 0.5, y: 0.5 },
+    },
+  };
+}
+
 export const removeLayerOperation = (layerId: string): DesignOperation => ({
   op: "remove_layer",
   layer_id: layerId,

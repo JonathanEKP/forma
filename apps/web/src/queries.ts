@@ -175,3 +175,45 @@ export function useUploadAsset(projectId: string | null) {
     },
   });
 }
+
+export const useAssetRequests = (projectId: string | null) =>
+  useQuery({
+    queryKey: keys.assetRequests(projectId ?? ""),
+    queryFn: () => api.listAssetRequests(projectId ?? ""),
+    enabled: projectId !== null,
+  });
+
+/**
+ * Uploading the image an agent asked for, then marking the request resolved.
+ *
+ * The two steps are one mutation because a half-done resolve is the confusing
+ * state: the asset would exist while the request still looked outstanding, and
+ * the user would have no way to tell which upload it was waiting for. The
+ * server refuses to resolve a request twice, so a retry after a failed second
+ * step cannot silently swap the asset (plan section 22).
+ */
+export function useResolveAssetRequest(projectId: string | null) {
+  const client = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ requestId, file }: { requestId: string; file: File }) => {
+      const asset = await api.uploadAsset(projectId ?? "", file);
+      return api.resolveAssetRequest(requestId, asset.id);
+    },
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: keys.assetRequests(projectId ?? "") });
+      void client.invalidateQueries({ queryKey: keys.assets(projectId ?? "") });
+    },
+  });
+}
+
+export function useCancelAssetRequest(projectId: string | null) {
+  const client = useQueryClient();
+
+  return useMutation({
+    mutationFn: (requestId: string) => api.cancelAssetRequest(requestId),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: keys.assetRequests(projectId ?? "") });
+    },
+  });
+}
