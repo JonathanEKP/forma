@@ -8,6 +8,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Before implementing anything, read the relevant section (numbered headings —
 `grep -n '^#\{1,3\} '` lists them).
 
+[docs/plan-status.md](docs/plan-status.md) is the audit of what has actually been built
+against it, what is still open, and the agreed order. **Read it before picking up work**,
+and close a phase only when every task in its §77 list is built or deferred there with a
+reason — Phase 6's acceptance passed with two of its panels missing.
+
 **Phases 0 to 9 are complete.** The workspace, domain core and its operations, the full
 render pipeline (text, shapes, images), the validator, SQLite persistence with optimistic
 versioning and a snapshot per version, the `application` use cases of §8.2, the `assets`
