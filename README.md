@@ -36,8 +36,9 @@ Agents get [a skill](skills/forma/SKILL.md): the document schema, the atomic
 batch rules, the error recovery table and a worked session, so a host does not
 have to be told how to drive Forma call by call.
 
-Still to come: hardening, a brand panel, the golden-render baseline of the
-plan's section 63, and the remote deploy.
+Hardening is under way: golden render tests and structured request logging are
+in. Still to come: backup, cleanup, graceful shutdown, a brand panel, and the
+remote deploy.
 
 ## Requirements
 

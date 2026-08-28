@@ -7,6 +7,7 @@
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use uuid::Uuid;
 
 /// A failure the agent can act on.
 ///
@@ -135,10 +136,20 @@ impl ServerClient {
         })
     }
 
-    pub async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
+    /// Reads, telling the server which tool asked.
+    ///
+    /// The tool name and a request id travel as headers so the server's own log
+    /// line names both (plan section 60). Logging it only here would put the
+    /// tool name in a process whose stderr the host usually discards.
+    pub async fn get<T: DeserializeOwned>(&self, tool: &str, path: &str) -> Result<T> {
+        let request_id = Uuid::new_v4().to_string();
+        tracing::debug!(tool_name = tool, request_id = %request_id, path, "GET");
+
         let response = self
             .http
             .get(self.url(path))
+            .header("x-forma-tool", tool)
+            .header("x-request-id", &request_id)
             .send()
             .await
             .map_err(|e| self.unreachable(&e))?;
@@ -150,14 +161,20 @@ impl ServerClient {
     /// human who was not there.
     pub async fn post<T: DeserializeOwned, B: Serialize>(
         &self,
+        tool: &str,
         path: &str,
         actor: &str,
         body: &B,
     ) -> Result<T> {
+        let request_id = Uuid::new_v4().to_string();
+        tracing::debug!(tool_name = tool, request_id = %request_id, path, actor, "POST");
+
         let response = self
             .http
             .post(self.url(path))
             .header("x-forma-actor", actor)
+            .header("x-forma-tool", tool)
+            .header("x-request-id", &request_id)
             .json(body)
             .send()
             .await

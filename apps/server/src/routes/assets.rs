@@ -2,16 +2,12 @@
 
 use actix_multipart::Multipart;
 use actix_web::{delete, get, post, web, HttpResponse};
-use design_core::{AssetId, ProjectId};
+use design_core::AssetId;
 use futures_util::StreamExt as _;
 
 use crate::error::ApiError;
-use crate::routes::parse_id;
+use crate::routes::{parse_id, project_id};
 use crate::state::AppState;
-
-fn project_id(raw: &str) -> Result<ProjectId, ApiError> {
-    Ok(ProjectId(parse_id(raw, "project id")?))
-}
 
 fn asset_id(raw: &str) -> Result<AssetId, ApiError> {
     Ok(AssetId(parse_id(raw, "asset id")?))

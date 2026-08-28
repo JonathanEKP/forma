@@ -140,11 +140,32 @@ pub fn render_png(
     }
 
     if let Some(hit) = cache.get(design_id, version, page_id, scale) {
+        tracing::debug!(
+            cache = "hit",
+            byte_size = hit.len(),
+            "served a cached render"
+        );
         return Ok(hit);
     }
 
     let page = find_page(document, page_id)?;
+
+    // Rendering is the slow part, and a preview that got slower is the kind of
+    // regression nobody notices without a number (plan section 60).
+    let started = std::time::Instant::now();
     let png = renderer::render_page_png(document, page, &palette(brand), fonts, assets, scale)?;
+    let render_ms = started.elapsed().as_millis();
+
+    // Also recorded on the caller's span when it declares the field, so one
+    // request line carries the timing rather than two lines needing a join.
+    tracing::Span::current().record("render_ms", render_ms as u64);
+    tracing::info!(
+        cache = "miss",
+        render_ms = render_ms as u64,
+        scale,
+        byte_size = png.len(),
+        "rendered a page"
+    );
 
     // A cache that cannot be written is a degraded cache, not a failed render:
     // the caller already holds the bytes it asked for, so this must not become

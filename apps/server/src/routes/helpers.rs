@@ -1,10 +1,11 @@
 //! Transport-level parsing shared by the handlers.
 
 use actix_web::HttpRequest;
-use design_core::{Actor, ActorType};
+use design_core::{Actor, ActorType, DesignId, ProjectId};
 use uuid::Uuid;
 
 use crate::error::ApiError;
+use crate::telemetry;
 
 /// Parses a UUID from a path segment into the caller's own error shape.
 ///
@@ -22,6 +23,23 @@ pub fn parse_id(raw: &str, what: &'static str) -> Result<Uuid, ApiError> {
     })
 }
 
+/// Parses a project id and records it on the request span.
+///
+/// Recording here rather than in each handler means a handler cannot forget:
+/// every route that works on a project goes through this to get the id at all.
+pub fn project_id(raw: &str) -> Result<ProjectId, ApiError> {
+    let id = ProjectId(parse_id(raw, "project id")?);
+    telemetry::record_project(id);
+    Ok(id)
+}
+
+/// Parses a design id and records it on the request span.
+pub fn design_id(raw: &str) -> Result<DesignId, ApiError> {
+    let id = DesignId(parse_id(raw, "design id")?);
+    telemetry::record_design(id, None);
+    Ok(id)
+}
+
 /// The `X-Forma-Actor` header, which every mutation records (plan section 61).
 ///
 /// One header rather than a field on each request body: the actor is a property
@@ -30,6 +48,12 @@ pub fn parse_id(raw: &str, what: &'static str) -> Result<Uuid, ApiError> {
 /// and `agent:<id>`; anything absent is a human, because the editor is the
 /// client that will not bother to send it.
 pub fn actor_from(request: &HttpRequest) -> Actor {
+    let actor = actor_header(request);
+    telemetry::record_actor(&actor);
+    actor
+}
+
+fn actor_header(request: &HttpRequest) -> Actor {
     let Some(raw) = request
         .headers()
         .get("x-forma-actor")

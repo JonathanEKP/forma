@@ -1,24 +1,19 @@
 //! Projects and Brand Kits (plan section 31).
 
 use actix_web::{delete, get, patch, post, put, web, HttpResponse};
-use design_core::ProjectId;
 use serde::Deserialize;
 use ts_rs::TS;
 
 use application::projects::BrandKitDraft;
 
 use crate::error::ApiError;
-use crate::routes::parse_id;
+use crate::routes::project_id;
 use crate::state::AppState;
 
 #[derive(Debug, Deserialize, TS)]
 #[ts(export)]
 pub struct ProjectNameRequest {
     pub name: String,
-}
-
-fn project_id(raw: &str) -> Result<ProjectId, ApiError> {
-    Ok(ProjectId(parse_id(raw, "project id")?))
 }
 
 #[get("/projects")]

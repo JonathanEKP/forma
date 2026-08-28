@@ -1,12 +1,12 @@
 //! Export (plan sections 31 and 71).
 
 use actix_web::{get, post, web, HttpResponse};
-use design_core::{DesignId, ExportId, ExportScope, PageId};
+use design_core::{ExportId, ExportScope, PageId};
 use serde::Deserialize;
 use ts_rs::TS;
 
 use crate::error::ApiError;
-use crate::routes::parse_id;
+use crate::routes::{design_id, parse_id};
 use crate::state::AppState;
 
 fn default_scale() -> f32 {
@@ -43,7 +43,7 @@ async fn create(
     path: web::Path<String>,
     body: Option<web::Json<CreateExportRequest>>,
 ) -> Result<HttpResponse, ApiError> {
-    let design = DesignId(parse_id(&path, "design id")?);
+    let design = design_id(&path)?;
     let request = body
         .map(web::Json::into_inner)
         .unwrap_or(CreateExportRequest {
@@ -131,7 +131,7 @@ async fn list(
     state: web::Data<AppState>,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
-    let design = DesignId(parse_id(&path, "design id")?);
+    let design = design_id(&path)?;
     let exports = application::exports::list(&*state.exports, design).await?;
     Ok(HttpResponse::Ok().json(exports))
 }

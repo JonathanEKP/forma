@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use actix_web::{web, App, HttpServer};
-use forma_server::{routes, AppState, Config};
+use forma_server::{routes, telemetry, AppState, Config};
 use renderer::{FontRegistry, RenderCache};
 use tracing_subscriber::EnvFilter;
 
@@ -34,6 +34,7 @@ async fn main() -> anyhow::Result<()> {
 
     HttpServer::new(move || {
         let app = App::new()
+            .wrap(actix_web::middleware::from_fn(telemetry::trace_request))
             .app_data(web::Data::new(state.clone()))
             .configure(routes::configure);
 

@@ -16,11 +16,12 @@ all thirteen MCP tools, and the agent skill all exist and are tested. The blocki
 wrappers survive usvg normalization, and the editor addresses rendered geometry by layer
 id directly.
 
-Next is **Phase 10 (hardening)**. What does NOT exist yet: the brand panel — `Panel` in
-`store.ts` still carries a `"brand"` variant with no component behind it — the golden-test
-baseline of §63 (§93.3 says not to invent a pixel-diff threshold before there are real
-renders to measure, and now there are), the Playwright E2E of §67, and the remote deploy
-of Phases 11 and 12.
+**Phase 10 (hardening) is under way.** Done: the golden-render baseline of §63 and the
+structured logging of §60. Still open from that list: backup, cleanup (nothing is ever
+deleted — soft-deleted assets, old version snapshots and the preview cache all grow
+without bound), and graceful shutdown. Beyond it: the brand panel — `Panel` in `store.ts`
+still carries a `"brand"` variant with no component behind it — the Playwright E2E of §67,
+and the remote deploy of Phases 11 and 12.
 
 ## What the product is
 
@@ -262,6 +263,21 @@ separate step: they are ordinary workspace tests.
 
 `forma-mcp` logs to **stderr**, never stdout — stdout carries the MCP protocol, and a
 stray println breaks the transport.
+
+**Golden renders** live in `fixtures/golden/`, compared with a pixel diff whose threshold
+was measured rather than invented (§93.3): re-rendering is byte-identical, so the noise
+floor is 0%, while the smallest change a person would call a regression — a one-pixel
+nudge — moves 0.15% of the canvas. The threshold sits at 0.01%, and `measured_sensitivity`
+re-measures that gap on every run so it cannot quietly stop meaning anything. To update a
+golden: `UPDATE_GOLDEN=1 cargo test -p renderer --test golden`, then **look at the images**
+before committing — an updated golden nobody reviewed is a test that stopped testing.
+
+**Logging** is one span per request carrying §60's fields. `request_id`, `project_id`,
+`design_id`, `version`, `actor_type`, `actor_id` and `render_ms` are recorded by the shared
+helpers in `routes/helpers.rs` rather than by each handler, so a handler cannot forget.
+`tool_name` arrives as an `x-forma-tool` header from `forma-mcp`, and `x-request-id`
+crosses the process boundary so one trace covers both. Never log tokens, auth headers or
+asset bytes.
 
 Testing layers: unit tests per crate; **golden rendering tests** comparing renders of
 `fixtures/designs/` against `fixtures/golden/` with a documented pixel-diff threshold

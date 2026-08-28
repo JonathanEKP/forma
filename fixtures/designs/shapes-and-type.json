@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "format": { "preset": "square", "width": 1080.0, "height": 1080.0 },
+  "pages": [
+    {
+      "id": "44444444-4444-4444-8444-444444444444",
+      "name": "Coverage",
+      "background": "$brand.surface",
+      "layers": [
+        {
+          "type": "image",
+          "id": "eeee0001-0000-4000-8000-000000000001",
+          "name": "Letterboxed",
+          "role": "photo",
+          "transform": { "x": 60.0, "y": 60.0, "width": 420.0, "height": 420.0 },
+          "asset_id": "eeeeeeee-0000-4000-8000-00000000beef",
+          "fit": "contain",
+          "focal_point": { "x": 0.5, "y": 0.5 }
+        },
+        {
+          "type": "shape",
+          "id": "eeee0002-0000-4000-8000-000000000002",
+          "name": "Ellipse with stroke",
+          "role": "decoration",
+          "transform": { "x": 600.0, "y": 60.0, "width": 420.0, "height": 300.0 },
+          "kind": "ellipse",
+          "fill": "$brand.accent",
+          "stroke": "$brand.primary",
+          "stroke_width": 12.0
+        },
+        {
+          "type": "shape",
+          "id": "eeee0003-0000-4000-8000-000000000003",
+          "name": "Diagonal",
+          "role": "decoration",
+          "transform": { "x": 600.0, "y": 400.0, "width": 400.0, "height": 120.0 },
+          "kind": "line",
+          "stroke": "$brand.secondary",
+          "stroke_width": 8.0
+        },
+        {
+          "type": "shape",
+          "id": "eeee0004-0000-4000-8000-000000000004",
+          "name": "Rotated translucent card",
+          "role": "decoration",
+          "opacity": 0.55,
+          "transform": { "x": 90.0, "y": 560.0, "width": 380.0, "height": 220.0, "rotation_deg": -12.0 },
+          "kind": "rectangle",
+          "fill": "$brand.primary",
+          "corner_radius": 28.0
+        },
+        {
+          "type": "text",
+          "id": "eeee0005-0000-4000-8000-000000000005",
+          "name": "Centred",
+          "role": "headline",
+          "transform": { "x": 540.0, "y": 580.0, "width": 460.0, "height": 120.0 },
+          "text": "CENTRED",
+          "font_family": "DejaVu Sans",
+          "font_size": 64.0,
+          "font_weight": 700,
+          "line_height": 1.1,
+          "align": "center",
+          "color": "$brand.text"
+        },
+        {
+          "type": "text",
+          "id": "eeee0006-0000-4000-8000-000000000006",
+          "name": "Right aligned, tracked",
+          "role": "kicker",
+          "transform": { "x": 540.0, "y": 720.0, "width": 460.0, "height": 80.0 },
+          "text": "TRACKED RIGHT",
+          "font_family": "DejaVu Sans",
+          "font_size": 34.0,
+          "font_weight": 400,
+          "line_height": 1.2,
+          "letter_spacing": 6.0,
+          "align": "right",
+          "color": "$brand.muted"
+        },
+        {
+          "type": "text",
+          "id": "eeee0007-0000-4000-8000-000000000007",
+          "name": "Bleeding body",
+          "role": "body",
+          "opacity": 0.8,
+          "transform": { "x": 90.0, "y": 860.0, "width": 900.0, "height": 160.0 },
+          "text": "Three lines of body copy\nwith an explicit break\nand a third line.",
+          "font_family": "DejaVu Sans",
+          "font_size": 38.0,
+          "font_weight": 400,
+          "line_height": 1.35,
+          "align": "left",
+          "color": "$brand.text"
+        }
+      ]
+    }
+  ]
+}

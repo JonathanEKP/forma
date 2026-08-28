@@ -11,7 +11,7 @@ use serde::Deserialize;
 use ts_rs::TS;
 
 use crate::error::ApiError;
-use crate::routes::parse_id;
+use crate::routes::{design_id, parse_id};
 use crate::state::AppState;
 
 /// A scale that is not given is 1.0: a preview at native canvas size.
@@ -33,10 +33,6 @@ pub struct RenderRequest {
 pub struct ScaleQuery {
     #[serde(default = "default_scale")]
     pub scale: f32,
-}
-
-fn design_id(raw: &str) -> Result<DesignId, ApiError> {
-    Ok(DesignId(parse_id(raw, "design id")?))
 }
 
 /// Resolves the page to render, defaulting to the first.

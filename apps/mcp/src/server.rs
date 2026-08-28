@@ -224,7 +224,7 @@ impl FormaMcp {
     async fn forma_status(&self) -> Result<CallToolResult, ErrorData> {
         Ok(answer(
             format!("forma-server reachable at {}", self.client.base_url()),
-            self.client.get("/status").await,
+            self.client.get("forma_status", "/status").await,
         ))
     }
 
@@ -235,7 +235,7 @@ impl FormaMcp {
         annotations(read_only_hint = true)
     )]
     async fn list_projects(&self) -> Result<CallToolResult, ErrorData> {
-        match self.client.get::<Value>("/projects").await {
+        match self.client.get::<Value>("list_projects", "/projects").await {
             Ok(projects) => {
                 let count = projects.as_array().map(Vec::len).unwrap_or(0);
                 Ok(ok(
@@ -261,7 +261,7 @@ impl FormaMcp {
         Ok(answer(
             "project",
             self.client
-                .get(&format!("/projects/{}", params.project_id))
+                .get("get_project", &format!("/projects/{}", params.project_id))
                 .await,
         ))
     }
@@ -280,9 +280,12 @@ impl FormaMcp {
     ) -> Result<CallToolResult, ErrorData> {
         let brand = self
             .client
-            .get::<Value>(&format!("/projects/{}/brand", params.project_id))
+            .get::<Value>(
+                "get_brand",
+                &format!("/projects/{}/brand", params.project_id),
+            )
             .await;
-        let status = self.client.get::<Value>("/status").await;
+        let status = self.client.get::<Value>("get_brand", "/status").await;
 
         match (brand, status) {
             (Ok(brand), Ok(status)) => {
@@ -315,7 +318,10 @@ impl FormaMcp {
     ) -> Result<CallToolResult, ErrorData> {
         match self
             .client
-            .get::<Value>(&format!("/projects/{}/assets", params.project_id))
+            .get::<Value>(
+                "list_assets",
+                &format!("/projects/{}/assets", params.project_id),
+            )
             .await
         {
             Ok(assets) => {
@@ -339,7 +345,7 @@ impl FormaMcp {
     ) -> Result<CallToolResult, ErrorData> {
         match self
             .client
-            .get::<Value>(&format!("/designs/{}", params.design_id))
+            .get::<Value>("get_design", &format!("/designs/{}", params.design_id))
             .await
         {
             Ok(record) => Ok(ok(outline(&record), record)),
@@ -359,7 +365,10 @@ impl FormaMcp {
     ) -> Result<CallToolResult, ErrorData> {
         match self
             .client
-            .get::<Value>(&format!("/asset-requests/{}", params.asset_request_id))
+            .get::<Value>(
+                "get_asset_request",
+                &format!("/asset-requests/{}", params.asset_request_id),
+            )
             .await
         {
             Ok(request) => {
@@ -396,6 +405,7 @@ impl FormaMcp {
         match self
             .client
             .post::<Value, _>(
+                "create_design",
                 &format!("/projects/{}/designs", params.project_id),
                 &actor_of(&peer),
                 &body,
@@ -432,6 +442,7 @@ impl FormaMcp {
         match self
             .client
             .post::<Value, _>(
+                "apply_operations",
                 &format!("/designs/{}/operations", params.design_id),
                 &actor_of(&peer),
                 &body,
@@ -468,6 +479,7 @@ impl FormaMcp {
         match self
             .client
             .post::<Value, _>(
+                "request_asset",
                 &format!("/projects/{}/asset-requests", params.project_id),
                 &actor_of(&peer),
                 &body,
@@ -499,6 +511,7 @@ impl FormaMcp {
         match self
             .client
             .post::<Value, _>(
+                "validate_design",
                 &format!("/designs/{}/validate", params.design_id),
                 "agent:mcp",
                 &json!({}),
@@ -542,6 +555,7 @@ impl FormaMcp {
         match self
             .client
             .post::<Value, _>(
+                "render_preview",
                 &format!("/designs/{}/render", params.design_id),
                 "agent:mcp",
                 &body,
@@ -602,6 +616,7 @@ impl FormaMcp {
         match self
             .client
             .post::<Value, _>(
+                "export_design",
                 &format!("/designs/{}/exports", params.design_id),
                 &actor_of(&peer),
                 &body,

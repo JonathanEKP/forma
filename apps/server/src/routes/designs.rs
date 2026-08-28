@@ -1,15 +1,14 @@
 //! Designs, the mutation path, undo and history (plan section 31).
 
 use actix_web::{get, post, web, HttpRequest, HttpResponse};
-use design_core::{
-    DesignDocument, DesignFormat, DesignId, DesignOperation, FormatPreset, Page, ProjectId, Version,
-};
+use design_core::{DesignDocument, DesignFormat, DesignOperation, FormatPreset, Page, Version};
 use serde::Deserialize;
 use ts_rs::TS;
 
 use crate::error::ApiError;
-use crate::routes::{actor_from, parse_id};
+use crate::routes::{actor_from, design_id, project_id};
 use crate::state::AppState;
+use crate::telemetry;
 
 /// A canvas named by preset, with the dimensions optional.
 ///
@@ -80,14 +79,6 @@ fn blank(format: DesignFormat) -> DesignDocument {
     document
 }
 
-fn design_id(raw: &str) -> Result<DesignId, ApiError> {
-    Ok(DesignId(parse_id(raw, "design id")?))
-}
-
-fn project_id(raw: &str) -> Result<ProjectId, ApiError> {
-    Ok(ProjectId(parse_id(raw, "project id")?))
-}
-
 #[get("/projects/{id}/designs")]
 async fn list(
     state: web::Data<AppState>,
@@ -140,6 +131,8 @@ async fn create(
     )
     .await?;
 
+    // The version the design ended at, so one log line says what this call did.
+    telemetry::record_design(record.id, Some(record.version));
     Ok(HttpResponse::Created().json(record))
 }
 
@@ -173,6 +166,8 @@ async fn operations(
     )
     .await?;
 
+    telemetry::record_design(record.id, Some(record.version));
+
     Ok(HttpResponse::Ok().json(record))
 }
 
@@ -191,6 +186,8 @@ async fn undo(
         &actor_from(&request),
     )
     .await?;
+
+    telemetry::record_design(record.id, Some(record.version));
 
     Ok(HttpResponse::Ok().json(record))
 }
