@@ -121,3 +121,73 @@ pub fn document(label: &str) -> (DesignDocument, Page) {
 
     (document, page)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use renderer::FontRegistry;
+    use validator::{validate, ValidationContext};
+
+    use super::{default_brand_kit, document};
+
+    fn fonts() -> FontRegistry {
+        FontRegistry::from_dir(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data/fonts"))
+            .expect("data/fonts must be loadable")
+    }
+
+    /// The shipped Brand Kit must name families the renderer can actually draw.
+    ///
+    /// `MISSING_BRAND_FONT` is only a warning, and the checks that would surface
+    /// it are skipped entirely when no font catalog is supplied, so a kit naming
+    /// a family that does not exist can sit here unnoticed while every design
+    /// using the token quietly renders in a fallback face. This crosses the kit
+    /// with the real registry so that cannot happen.
+    #[test]
+    fn the_shipped_brand_kit_names_only_families_the_renderer_has() {
+        let fonts = fonts();
+        let brand = default_brand_kit();
+        let (doc, _) = document("catalog check");
+
+        let report = validate(
+            &ValidationContext::new(&doc)
+                .with_brand(&brand)
+                .with_fonts(fonts.families().to_vec()),
+        );
+
+        let missing: Vec<_> = report
+            .issues
+            .iter()
+            .filter(|i| i.code == "MISSING_BRAND_FONT")
+            .collect();
+
+        assert!(
+            missing.is_empty(),
+            "the default Brand Kit names fonts that are not in {:?}: {missing:?}",
+            fonts.families()
+        );
+    }
+
+    /// The test card is the Phase 0 acceptance path, so its own text must not
+    /// depend on a family the catalog lacks either.
+    #[test]
+    fn the_test_card_text_resolves_against_the_catalog() {
+        let fonts = fonts();
+        let brand = default_brand_kit();
+        let (doc, _) = document("catalog check");
+
+        let report = validate(
+            &ValidationContext::new(&doc)
+                .with_brand(&brand)
+                .with_fonts(fonts.families().to_vec()),
+        );
+
+        let unresolved: Vec<_> = report
+            .issues
+            .iter()
+            .filter(|i| i.code == "FONT_NOT_FOUND" || i.code == "UNKNOWN_BRAND_TOKEN")
+            .collect();
+
+        assert!(unresolved.is_empty(), "{unresolved:?}");
+    }
+}

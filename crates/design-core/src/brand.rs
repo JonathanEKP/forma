@@ -149,7 +149,8 @@ mod tests {
             typography: BrandTypography {
                 display: "DejaVu Sans".to_string(),
                 body: "DejaVu Sans".to_string(),
-                mono: "DejaVu Sans Mono".to_string(),
+                // A family the FontRegistry actually has, so this fixture stays realistic.
+                mono: "Geist Mono".to_string(),
             },
             logo_asset_id: None,
             voice: "Direct, technical and brief. Do not use hype.".to_string(),
