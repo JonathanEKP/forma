@@ -21,46 +21,30 @@ pub struct RasterAsset {
 impl RasterAsset {
     /// Detects the format from magic bytes rather than trusting a filename
     /// (plan section 44), and reads the intrinsic size from the header.
+    ///
+    /// Identification comes from the `assets` crate, which is also what ingest
+    /// uses. A second implementation here is how SVG and WebP came to be
+    /// accepted on upload and then unrecognised at draw time: usvg can render
+    /// all four formats, but this side only knew two of them.
     pub fn from_bytes(bytes: Vec<u8>) -> Option<Self> {
-        let (mime, width, height) = probe(&bytes)?;
+        let probed = assets::probe(&bytes)?;
+
+        // An SVG keeps its size in the document, not in a fixed-offset header,
+        // so `probe` reports zero and the tree has to be read for it. Leaving
+        // the zero would make `contain` and `cover` divide by it.
+        let (width, height) = if probed.format == assets::Format::Svg {
+            assets::svg::size(&bytes)?
+        } else {
+            (probed.width, probed.height)
+        };
+
         Some(Self {
-            bytes,
-            mime_type: mime.to_string(),
+            mime_type: probed.format.mime().to_string(),
             width,
             height,
+            bytes,
         })
     }
-}
-
-fn probe(bytes: &[u8]) -> Option<(&'static str, u32, u32)> {
-    // PNG: 8-byte signature, then an IHDR chunk carrying the dimensions.
-    if bytes.len() > 24 && bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]) {
-        let width = u32::from_be_bytes(bytes[16..20].try_into().ok()?);
-        let height = u32::from_be_bytes(bytes[20..24].try_into().ok()?);
-        return Some(("image/png", width, height));
-    }
-
-    // JPEG: walk the segment chain to the SOF marker that holds the size.
-    if bytes.len() > 4 && bytes.starts_with(&[0xFF, 0xD8]) {
-        let mut i = 2;
-        while i + 9 < bytes.len() {
-            if bytes[i] != 0xFF {
-                i += 1;
-                continue;
-            }
-            let marker = bytes[i + 1];
-            let length = u16::from_be_bytes([bytes[i + 2], bytes[i + 3]]) as usize;
-            // SOF0..SOF15, excluding the DHT/JPG/DAC markers interleaved in that range.
-            if (0xC0..=0xCF).contains(&marker) && !matches!(marker, 0xC4 | 0xC8 | 0xCC) {
-                let height = u16::from_be_bytes([bytes[i + 5], bytes[i + 6]]) as u32;
-                let width = u16::from_be_bytes([bytes[i + 7], bytes[i + 8]]) as u32;
-                return Some(("image/jpeg", width, height));
-            }
-            i += 2 + length;
-        }
-    }
-
-    None
 }
 
 /// Where the renderer gets image bytes from. The server implements this over
@@ -261,7 +245,20 @@ mod tests {
 
     #[test]
     fn refuses_bytes_that_are_not_an_image() {
-        assert!(RasterAsset::from_bytes(b"<svg>not raster</svg>".to_vec()).is_none());
         assert!(RasterAsset::from_bytes(vec![0; 64]).is_none());
+        assert!(RasterAsset::from_bytes(b"%PDF-1.7\n%\xE2\xE3\xCF\xD3".to_vec()).is_none());
+        assert!(RasterAsset::from_bytes(Vec::new()).is_none());
+    }
+
+    /// usvg draws all four formats plan section 44 lists, so identification is
+    /// what decides whether one is usable — not the raster/vector distinction.
+    #[test]
+    fn an_svg_is_an_image_and_reports_the_size_from_its_tree() {
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="320" height="240"><rect width="320" height="240" fill="#FF5A36"/></svg>"##;
+
+        let asset = RasterAsset::from_bytes(svg.to_vec()).expect("an SVG is an image");
+        assert_eq!(asset.mime_type, "image/svg+xml");
+        // Zero here would make `contain` and `cover` fall back to `fill`.
+        assert_eq!((asset.width, asset.height), (320, 240));
     }
 }

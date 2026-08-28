@@ -1,0 +1,17 @@
+[package]
+name = "assets"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+design-core.workspace = true
+
+blake3.workspace = true
+thiserror.workspace = true
+# Plan section 45: an uploaded SVG is normalized through usvg before it is
+# stored, never served as it arrived.
+usvg.workspace = true
+
+[dev-dependencies]
+resvg.workspace = true

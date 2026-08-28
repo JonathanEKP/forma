@@ -73,6 +73,11 @@ const COLUMNS: &str = "id, project_id, hash, kind, mime_type, width, height, byt
 #[async_trait]
 impl AssetRepository for SqliteAssetRepository {
     async fn create(&self, asset: &Asset) -> Result<Asset> {
+        // Stamped here rather than taken from the caller, matching the design
+        // repository. A caller that forgot the field would otherwise write an
+        // empty timestamp, and one that did not forget could backdate a row.
+        let created_at = now();
+
         sqlx::query(
             "INSERT INTO assets (id, project_id, hash, kind, mime_type, width, height, byte_size,
                                  storage_key, original_filename, origin, attribution, created_at)
@@ -90,11 +95,14 @@ impl AssetRepository for SqliteAssetRepository {
         .bind(asset.original_filename.as_deref())
         .bind(origin_str(asset.origin))
         .bind(asset.attribution.as_deref())
-        .bind(&asset.created_at)
+        .bind(&created_at)
         .execute(&self.pool)
         .await?;
 
-        Ok(asset.clone())
+        Ok(Asset {
+            created_at,
+            ..asset.clone()
+        })
     }
 
     async fn get(&self, id: AssetId) -> Result<Asset> {

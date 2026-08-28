@@ -4,6 +4,7 @@
 //! returns domain types, so the REST server and the MCP process share one
 //! implementation of every operation rather than two that drift apart.
 
+pub mod assets;
 pub mod designs;
 pub mod error;
 pub mod projects;

@@ -6,6 +6,9 @@ license.workspace = true
 
 [dependencies]
 design-core.workspace = true
+# The one authority on what a pile of bytes is. Ingest uses the same one, so a
+# format cannot be accepted on upload and then go unrecognised at draw time.
+assets.workspace = true
 base64.workspace = true
 serde.workspace = true
 serde_json.workspace = true

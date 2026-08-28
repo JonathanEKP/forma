@@ -15,12 +15,15 @@ path = "src/main.rs"
 [dependencies]
 design-core.workspace = true
 application.workspace = true
+assets.workspace = true
 persistence.workspace = true
 renderer.workspace = true
 validator.workspace = true
 
 actix-web.workspace = true
 actix-files.workspace = true
+actix-multipart.workspace = true
+futures-util.workspace = true
 sqlx.workspace = true
 tokio.workspace = true
 serde.workspace = true
@@ -37,3 +40,4 @@ ts-rs.workspace = true
 resvg.workspace = true
 actix-web = { workspace = true, features = ["macros"] }
 tempfile.workspace = true
+actix-http = "3"

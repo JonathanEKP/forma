@@ -20,6 +20,8 @@ pub struct AppState {
     pub fonts: Arc<FontRegistry>,
     pub cache: Arc<RenderCache>,
     pub store: Arc<LocalObjectStore>,
+    /// Plan section 44: the upload ceiling, enforced while reading the body.
+    pub max_upload_bytes: usize,
     pub projects: Arc<SqliteProjectRepository>,
     pub designs: Arc<SqliteDesignRepository>,
     pub assets: Arc<SqliteAssetRepository>,
@@ -44,6 +46,14 @@ impl AppState {
             fonts,
             cache,
             store,
+            max_upload_bytes: assets::DEFAULT_MAX_UPLOAD_BYTES,
         }
+    }
+
+    /// Overrides the upload ceiling, so a deployment can tighten it without
+    /// recompiling (plan section 59).
+    pub fn with_max_upload_bytes(mut self, max: usize) -> Self {
+        self.max_upload_bytes = max;
+        self
     }
 }
