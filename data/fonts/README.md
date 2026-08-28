@@ -49,15 +49,19 @@ that stands:
 - **`usvg` compatibility** — verified by `crates/renderer/tests/geist.rs`.
 - **Visual result** — still a human call, and the only one left.
 
-**Adding Geist did not change any default.** `BrandKit::default_kit` in
-`design-core` still specifies DejaVu, and DejaVu stays in this directory because
-the domain default and a great many tests depend on it. Switching the default is
-the remaining half of the 93.2 decision, not a side effect of this directory.
+**Adding Geist did not change any default.** `default_brand_kit` in `apps/server`
+still specifies DejaVu, and DejaVu stays in this directory because that kit and a
+great many tests depend on it. Switching the default is the remaining half of the
+93.2 decision, not a side effect of this directory.
 
-## Known gap
+## The catalog is guarded
 
-`BrandKit::default_kit` sets `typography.mono` to `DejaVu Sans Mono`, which is
-**not** in this directory and never has been — the registry has no such family.
-Text using the default brand's mono token resolves to a fallback rather than to
-what it names. Now that Geist Mono is here the fix is available, but it changes a
-domain default and belongs with the 93.2 decision above.
+A Brand Kit can name a family this directory does not have. `MISSING_BRAND_FONT`
+reports it, but only as a warning, and both it and `FONT_NOT_FOUND` are skipped
+outright when the caller supplies no font catalog — so a bad family could sit in
+the shipped kit while every design using the token rendered in a fallback face.
+
+`apps/server/src/test_card.rs` now crosses `default_brand_kit` with a real
+`FontRegistry` built from this directory, using the actual validator rather than
+a reimplementation of its rules. Name a family in a Brand Kit without adding the
+file here and that test fails.
