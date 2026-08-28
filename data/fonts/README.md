@@ -37,22 +37,63 @@ in the font it asked for. The tests catch that by comparing Geist against DejaVu
 by checking that weight 400 and weight 700 lay out differently, and by checking
 that Geist Mono advances uniformly.
 
-## Plan section 93.2 — the default font decision
+## Plan section 93.2 — the default font decision, settled
 
-The plan keeps the shipped default open until four things are reviewed. Where
-that stands:
+**The default is Geist for text and Geist Mono for code. DejaVu Sans stays as
+the fallback for glyphs Geist lacks, and is never a default.**
 
-- **License** — cleared. Geist is SIL OFL 1.1, which permits redistribution and
-  bundling, so committing these files is sound.
-- **Required weights** — 400, 500, 600 and 700 for Geist, 400 for Geist Mono.
-  Add a file here if a design needs another; the renderer cannot synthesize one.
-- **`usvg` compatibility** — verified by `crates/renderer/tests/geist.rs`.
-- **Visual result** — still a human call, and the only one left.
+The plan holds the decision open until four things are reviewed. All four, with
+what was actually measured rather than assumed:
 
-**Adding Geist did not change any default.** `default_brand_kit` in `apps/server`
-still specifies DejaVu, and DejaVu stays in this directory because that kit and a
-great many tests depend on it. Switching the default is the remaining half of the
-93.2 decision, not a side effect of this directory.
+- **Licence.** Geist is SIL OFL 1.1, which permits redistribution and bundling,
+  so committing these files is sound. DejaVu is under the Bitstream Vera
+  licence, likewise redistributable.
+
+- **Required weights.** Geist ships 400, 500, 600 and 700, plus Geist Mono at
+  400. DejaVu ships 400 and 700 only. Four steps make a usable typographic
+  scale; two make a headline and a body, and the jump between them is abrupt.
+  This is the criterion that decides it for a design tool. The renderer cannot
+  synthesise a weight it does not have — add a file here if a design needs one.
+
+- **`usvg` compatibility.** Verified by `crates/renderer/tests/geist.rs`, which
+  measures glyph bounds rather than trusting a file listing: usvg falls back
+  silently, so a design would still render, just not in the font it named.
+
+- **Visual result.** `cargo run -p renderer --example font_specimen` writes a
+  sheet of both families at every shipped weight, plus the punctuation a design
+  actually uses. Geist's four weights are clearly distinguishable; it is a
+  modern neutral grotesque and sets tighter than DejaVu at the same size.
+
+### Coverage, and why DejaVu stays
+
+Geist maps **728** code points, DejaVu **5,918** — an eight-fold difference,
+counted from the `cmap` tables. That sounds decisive against Geist until you
+look at where the gap is:
+
+| block | Geist | DejaVu |
+| --- | --- | --- |
+| Basic Latin | complete | complete |
+| Latin-1 accents | complete | complete |
+| Latin Extended-A | 117/128 | complete |
+| Cyrillic | complete | complete |
+| Greek | 6/57 | 56/57 |
+| General punctuation | 14/32 | complete |
+
+Every character a design actually reaches for is in Geist, checked one by one:
+curly quotes, en and em dashes, the ellipsis, the bullet, €£¥, the degree sign,
+×, ™, →, ‰, and Spanish `¿ñá`. The gap is Greek and the rarer end of Latin
+Extended.
+
+So Geist is the default. DejaVu earns its 1.5 MB as the fallback, and that is a
+measured claim rather than a hopeful one: usvg falls back **per glyph** to
+another family in the registry. Rendered with Geist alone, `Δοκιμή ελληνικά`
+comes out as tofu boxes; with DejaVu present it reads.
+`a_glyph_the_named_family_lacks_falls_back_to_one_that_has_it` in
+`crates/renderer/tests/geist.rs` pins that, so nobody reclaims the megabyte and
+silently turns every non-Latin design into boxes.
+
+A user who needs Greek in their own brand still adds a font here. The fallback
+is a floor, not a substitute for choosing type.
 
 ## The catalog is guarded
 

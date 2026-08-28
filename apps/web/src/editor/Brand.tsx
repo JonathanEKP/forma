@@ -31,11 +31,16 @@ const COLORS = [
 /**
  * A starting point for a project that has none.
  *
- * Deliberately neutral rather than Forma's own palette: this is the *user's*
- * brand, and shipping our orange as their default would put it in their work.
+ * The colours are deliberately neutral rather than Forma's own palette: this is
+ * the *user's* brand, and shipping our orange as their default would put it in
+ * their work. The type is not neutral — plan section 93.2 settled on Geist, and
+ * picking whatever sorted first alphabetically handed new projects DejaVu.
  */
 function blank(fonts: string[]): BrandKitDraft {
-  const font = fonts[0] ?? "";
+  const pick = (preferred: string) =>
+    fonts.find((font) => font === preferred) ?? fonts[0] ?? "";
+  const font = pick("Geist");
+  const mono = pick("Geist Mono");
   return {
     name: "Default",
     colors: {
@@ -48,7 +53,7 @@ function blank(fonts: string[]): BrandKitDraft {
       text_inverse: "#0B0B0C",
       muted: "#A1A1AA",
     },
-    typography: { display: font, body: font, mono: font },
+    typography: { display: font, body: font, mono },
     logo_asset_id: null,
     voice: "",
     rules: { safe_margin: 80, minimum_font_size: 24 },

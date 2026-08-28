@@ -146,3 +146,78 @@ fn measure_text(family: &str, text: &str) -> Rect {
         .expect("the sample must render");
     rendered.inspection.layer(id).expect("text bounds").layout
 }
+
+/// Why DejaVu is still in `data/fonts` even though Geist is the default.
+///
+/// Geist maps 728 code points and DejaVu 5,918. When a run contains a glyph the
+/// named family lacks, usvg falls back per glyph to another family in the
+/// registry — but only if one is there. Rendered with Geist alone, Greek comes
+/// out as tofu boxes; with DejaVu present it reads.
+///
+/// This is the test that stops someone reclaiming 1.5 MB by deleting DejaVu and
+/// silently turning every non-Latin design into boxes.
+#[test]
+fn a_glyph_the_named_family_lacks_falls_back_to_one_that_has_it() {
+    let full = registry();
+    assert!(
+        full.contains("DejaVu Sans"),
+        "the fallback family is missing"
+    );
+
+    let greek = painted_width(&full, "Δοκιμή ελληνικά", "Geist");
+
+    // A Geist-only registry, to show what the fallback is actually doing.
+    let dir = tempfile::tempdir().unwrap();
+    let shipped = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data/fonts");
+    for entry in std::fs::read_dir(shipped).unwrap().flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with("Geist") {
+            std::fs::copy(entry.path(), dir.path().join(name.as_ref())).unwrap();
+        }
+    }
+    let geist_only = FontRegistry::from_dir(dir.path()).unwrap();
+    assert!(!geist_only.contains("DejaVu Sans"));
+
+    let tofu = painted_width(&geist_only, "Δοκιμή ελληνικά", "Geist");
+
+    // Tofu boxes are a fixed advance; real glyphs are not. The two layouts
+    // differ, which is the observable difference between reading and not.
+    assert!(
+        (greek - tofu).abs() > 20.0,
+        "expected the fallback to change the layout: {greek} vs {tofu}"
+    );
+}
+
+/// The painted width of one line, which is how a fallback shows up.
+fn painted_width(fonts: &FontRegistry, text: &str, family: &str) -> f32 {
+    let palette: BrandPalette =
+        HashMap::from([("brand.text".to_string(), Color::rgb(0xFF, 0xFF, 0xFF))]);
+
+    let mut document = DesignDocument::new(DesignFormat::from_preset(FormatPreset::Square));
+    let mut page = Page::new("probe");
+    page.layers.push(Layer::Text(TextLayer {
+        common: LayerCommon {
+            id: LayerId::new(),
+            name: "probe".to_string(),
+            role: Some(LayerRole::Body),
+            visible: true,
+            locked: false,
+            opacity: 1.0,
+            transform: Transform::new(40.0, 60.0, 1000.0, 150.0),
+        },
+        text: text.to_string(),
+        font_family: family.to_string(),
+        font_size: 72.0,
+        font_weight: 400,
+        line_height: 1.2,
+        letter_spacing: 0.0,
+        align: TextAlign::Left,
+        color: DesignColor::token("brand.text"),
+    }));
+    document.pages.push(page);
+
+    let rendered =
+        render_page(&document, &document.pages[0], &palette, fonts, &NoAssets).expect("render");
+    rendered.inspection.layers[0].painted.width
+}

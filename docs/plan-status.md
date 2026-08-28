@@ -33,23 +33,22 @@ passes" is not enough — Phase 6's acceptance passed with two panels missing.
 
 ## Open, with the section that asks for it
 
-### 1. Default font — §94 (93.2)
+### Nothing from the plan is open
 
-Still an open decision, which the plan says must be closed by reviewing licence,
-required weights, `usvg` compatibility and visual result. `data/fonts` currently
-ships both DejaVu and Geist because each arrived for a different reason; the
-review that decides which is the default, and why, has not been written down.
+§94's three decisions are all closed now: 93.1 resolved to Option A in Phase 0,
+93.3's pixel-diff threshold was measured in Phase 10 rather than invented, and
+93.2 — the default font — is settled in
+[data/fonts/README.md](../data/fonts/README.md): Geist for text, Geist Mono for
+code, DejaVu kept as the per-glyph fallback.
 
-The other two decisions from that section are closed: 93.1 resolved to Option A
-in Phase 0, and 93.3's pixel-diff threshold was measured in Phase 10 rather than
-invented.
+What remains is Phase 11 and, behind it, the optional Phase 12.
 
 ## Agreed order
 
 1. ~~**Brand panel**~~ — done. Phase 6 is closed and §79 step 4 is reachable.
 2. ~~**Export from the editor**~~ — done. §10's layout is complete.
 3. ~~**Playwright end-to-end**~~ — done. §79's walkthrough runs in CI.
-4. **Default font decision** — §94 (93.2), written down.
+4. ~~**Default font decision**~~ — done. §94 (93.2) is settled and written down.
 5. **Phase 11, remote deploy** — after the above, and only once Oracle capacity
    is confirmed (§90). The plan says explicitly that the architecture does not
    depend on it.
@@ -79,3 +78,4 @@ reasoning for each is an invariant in [CLAUDE.md](../CLAUDE.md).
 | The Brand panel appears in the project view too | §79 configures a Brand Kit before any design exists, so the editor alone would be too late. |
 | The editor warns before exporting a design with errors, but allows it | §42 says errors block export, and the server does not enforce it. The agent is told to fix them first; a person is told what they are shipping and decides. |
 | The end-to-end covers the browser half of §79, not the agent half | Steps 6 to 14 are already driven against the real binaries in `apps/mcp/tests/agent_flow.rs`. Repeating them in a browser would be slower and prove less. |
+| Geist is the default; DejaVu is kept as a fallback | Geist ships four weights to DejaVu's two, which is what a typographic scale needs, and covers every character a design reaches for. DejaVu's eight-fold coverage is the floor that stops a non-Latin design rendering as tofu. |

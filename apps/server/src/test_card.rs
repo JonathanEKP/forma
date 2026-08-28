@@ -27,10 +27,13 @@ pub fn default_brand_kit() -> BrandKit {
             text_inverse: Color::rgb(0x10, 0x10, 0x10),
             muted: Color::rgb(0xA3, 0xA3, 0xA3),
         },
+        // Plan section 93.2, decided: Geist for text and Geist Mono for code.
+        // DejaVu stays in data/fonts as the fallback for glyphs Geist lacks,
+        // never as a default — see data/fonts/README.md.
         typography: BrandTypography {
-            display: "DejaVu Sans".to_string(),
-            body: "DejaVu Sans".to_string(),
-            mono: "DejaVu Sans".to_string(),
+            display: "Geist".to_string(),
+            body: "Geist".to_string(),
+            mono: "Geist Mono".to_string(),
         },
         logo_asset_id: None,
         voice: "Direct, technical and brief. Do not use hype.".to_string(),
