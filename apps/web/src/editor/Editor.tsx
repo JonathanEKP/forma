@@ -2,8 +2,8 @@
  * The editor shell: the layout of plan section 10.
  *
  * Top bar, pages and layers on the left, canvas in the middle, and one of
- * properties, validation or assets on the right. V1 does not try to compete
- * with Figma.
+ * properties, validation, assets or brand on the right. V1 does not try to
+ * compete with Figma.
  */
 
 import { useEffect, useMemo } from "react";
@@ -21,9 +21,10 @@ import {
 import { useEditor, type DraftFrame } from "../store";
 import { findPage } from "../types";
 import { Assets } from "./Assets";
+import { Brand } from "./Brand";
 import { Canvas } from "./Canvas";
 import { addImageOperation } from "./insert";
-import { PagesAndLayers, Properties } from "./Panels";
+import { PagesAndLayers, Panel, Properties } from "./Panels";
 import { Validation } from "./Validation";
 
 export function Editor({ designId, onBack }: { designId: string; onBack: () => void }) {
@@ -129,7 +130,7 @@ export function Editor({ designId, onBack }: { designId: string; onBack: () => v
           Undo
         </button>
 
-        {(["properties", "validation", "assets"] as const).map((name) => (
+        {(["properties", "validation", "assets", "brand"] as const).map((name) => (
           <button
             key={name}
             type="button"
@@ -185,6 +186,12 @@ export function Editor({ designId, onBack }: { designId: string; onBack: () => v
             onPlace={placeAsset}
             disabled={busy || page === null}
           />
+        )}
+
+        {panel === "brand" && (
+          <Panel title="Brand Kit">
+            <Brand projectId={record.project_id} />
+          </Panel>
         )}
 
         {panel === "properties" && (

@@ -180,6 +180,11 @@ from Signal and unrelated to it; do not unify them.
   `PRAGMA wal_checkpoint(TRUNCATE)` is ordinary SQL that finishes before it returns, so
   use `checkpoint_and_close` rather than `pool.close()` anywhere the file is about to be
   read. `forma-mcp` exits when its host closes stdin, so it cannot outlive it.
+- **The render cache key includes the brand version.** A `$brand.*` token resolves at
+  render time, so editing a Brand Kit changes what a design looks like without touching its
+  version. Leaving the brand out of the key served the picture from before the edit — a bug
+  that only became reachable once the editor could edit a brand at all. Anything else the
+  render depends on has to go in the key too.
 - **Derived data is collected; the user's work is not.** The render cache prunes itself:
   writing version N drops everything below `N - KEEP_RECENT_VERSIONS` for that design, so
   the thing that grows the cache is the thing that trims it and no call site can forget.

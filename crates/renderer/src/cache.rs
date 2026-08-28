@@ -1,8 +1,14 @@
 //! Render cache (plan section 72).
 //!
-//! The key is `design_id / version / page_id / scale`. A version never changes
-//! once written, which is precisely what makes caching safe here: an entry can
-//! never go stale, only unused.
+//! The key is `design_id / version / page_id / scale / brand_version`. A
+//! version never changes once written, which is what makes caching safe here:
+//! an entry can never go stale, only unused.
+//!
+//! The brand version is part of it because a `$brand.*` token resolves at
+//! render time, so editing a Brand Kit changes what a design looks like without
+//! touching its version. Leaving it out of the key made the cache serve the old
+//! picture after a brand edit — which only became reachable once the editor
+//! could edit a brand at all.
 //!
 //! Unused is the problem. Every edit in the editor is a new version, and a
 //! preview of a four-page carousel is about 100 KB, so an afternoon of dragging
@@ -63,17 +69,19 @@ impl RenderCache {
         Self { root: root.into() }
     }
 
+    /// `brand_version` is 0 for a project with no Brand Kit.
     pub fn path_for(
         &self,
         design: DesignId,
         version: Version,
         page: PageId,
         scale: f32,
+        brand_version: u64,
     ) -> PathBuf {
         self.root
             .join(design.to_string())
             .join(version.to_string())
-            .join(format!("{page}@{}.png", scale_key(scale)))
+            .join(format!("{page}@{}b{brand_version}.png", scale_key(scale)))
     }
 
     pub fn get(
@@ -82,19 +90,22 @@ impl RenderCache {
         version: Version,
         page: PageId,
         scale: f32,
+        brand_version: u64,
     ) -> Option<Vec<u8>> {
-        std::fs::read(self.path_for(design, version, page, scale)).ok()
+        std::fs::read(self.path_for(design, version, page, scale, brand_version)).ok()
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn put(
         &self,
         design: DesignId,
         version: Version,
         page: PageId,
         scale: f32,
+        brand_version: u64,
         png: &[u8],
     ) -> Result<PathBuf, RenderError> {
-        let path = self.path_for(design, version, page, scale);
+        let path = self.path_for(design, version, page, scale, brand_version);
         let parent = path.parent().unwrap_or(Path::new("."));
         std::fs::create_dir_all(parent)
             .map_err(|e| RenderError::CacheUnwritable(format!("{}: {e}", parent.display())))?;
@@ -228,9 +239,14 @@ mod tests {
         let cache = RenderCache::new(dir.path());
         let (design, version, page) = key();
 
-        assert!(cache.get(design, version, page, 1.0).is_none());
-        cache.put(design, version, page, 1.0, b"fake png").unwrap();
-        assert_eq!(cache.get(design, version, page, 1.0).unwrap(), b"fake png");
+        assert!(cache.get(design, version, page, 1.0, 1).is_none());
+        cache
+            .put(design, version, page, 1.0, 1, b"fake png")
+            .unwrap();
+        assert_eq!(
+            cache.get(design, version, page, 1.0, 1).unwrap(),
+            b"fake png"
+        );
     }
 
     #[test]
@@ -239,10 +255,45 @@ mod tests {
         let cache = RenderCache::new(dir.path());
         let (design, version, page) = key();
 
-        cache.put(design, version, page, 1.0, b"v1").unwrap();
+        cache.put(design, version, page, 1.0, 1, b"v1").unwrap();
         // Nothing ever overwrites an existing version, so the old entry stands.
-        assert!(cache.get(design, version.next(), page, 1.0).is_none());
-        assert_eq!(cache.get(design, version, page, 1.0).unwrap(), b"v1");
+        assert!(cache.get(design, version.next(), page, 1.0, 1).is_none());
+        assert_eq!(cache.get(design, version, page, 1.0, 1).unwrap(), b"v1");
+    }
+
+    /// Regression: a brand edit changes what a design looks like without
+    /// changing its version, so the brand has to be in the key. It was not, and
+    /// the preview kept serving the picture from before the edit.
+    #[test]
+    fn the_brand_version_is_part_of_the_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = RenderCache::new(dir.path());
+        let (design, version, page) = key();
+
+        cache.put(design, version, page, 1.0, 1, b"dark").unwrap();
+
+        // Same design, same version, different brand: not a hit.
+        assert!(cache.get(design, version, page, 1.0, 2).is_none());
+        assert_eq!(cache.get(design, version, page, 1.0, 1).unwrap(), b"dark");
+
+        cache.put(design, version, page, 1.0, 2, b"green").unwrap();
+        assert_eq!(cache.get(design, version, page, 1.0, 2).unwrap(), b"green");
+    }
+
+    /// A project with no Brand Kit still caches, under version 0.
+    #[test]
+    fn a_project_without_a_brand_still_caches() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = RenderCache::new(dir.path());
+        let (design, version, page) = key();
+
+        cache
+            .put(design, version, page, 1.0, 0, b"literals only")
+            .unwrap();
+        assert_eq!(
+            cache.get(design, version, page, 1.0, 0).unwrap(),
+            b"literals only"
+        );
     }
 
     #[test]
@@ -251,11 +302,16 @@ mod tests {
         let cache = RenderCache::new(dir.path());
         let (design, version, page) = key();
 
-        cache.put(design, version, page, 1.0, b"preview").unwrap();
-        cache.put(design, version, page, 2.0, b"export").unwrap();
+        cache
+            .put(design, version, page, 1.0, 1, b"preview")
+            .unwrap();
+        cache.put(design, version, page, 2.0, 1, b"export").unwrap();
 
-        assert_eq!(cache.get(design, version, page, 1.0).unwrap(), b"preview");
-        assert_eq!(cache.get(design, version, page, 2.0).unwrap(), b"export");
+        assert_eq!(
+            cache.get(design, version, page, 1.0, 1).unwrap(),
+            b"preview"
+        );
+        assert_eq!(cache.get(design, version, page, 2.0, 1).unwrap(), b"export");
     }
 
     /// The growth this exists to stop: an afternoon of editing is hundreds of
@@ -268,20 +324,20 @@ mod tests {
 
         for version in 1..=20u64 {
             cache
-                .put(design, Version(version), page, 1.0, b"render")
+                .put(design, Version(version), page, 1.0, 1, b"render")
                 .unwrap();
         }
 
         // The current version plus KEEP_RECENT_VERSIONS behind it.
         for version in 18..=20u64 {
             assert!(
-                cache.get(design, Version(version), page, 1.0).is_some(),
+                cache.get(design, Version(version), page, 1.0, 1).is_some(),
                 "version {version} should still be cached"
             );
         }
         for version in 1..=17u64 {
             assert!(
-                cache.get(design, Version(version), page, 1.0).is_none(),
+                cache.get(design, Version(version), page, 1.0, 1).is_none(),
                 "version {version} should have been pruned"
             );
         }
@@ -300,7 +356,7 @@ mod tests {
 
         for version in 1..=5u64 {
             cache
-                .put(design, Version(version), page, 1.0, b"0123456789")
+                .put(design, Version(version), page, 1.0, 1, b"0123456789")
                 .unwrap();
         }
 
@@ -324,14 +380,16 @@ mod tests {
         let live = DesignId::new();
         let deleted = DesignId::new();
         let page = PageId::new();
-        cache.put(live, Version(1), page, 1.0, b"keep").unwrap();
-        cache.put(deleted, Version(1), page, 1.0, b"drop").unwrap();
+        cache.put(live, Version(1), page, 1.0, 1, b"keep").unwrap();
+        cache
+            .put(deleted, Version(1), page, 1.0, 1, b"drop")
+            .unwrap();
 
         let pruned = cache.sweep(&HashSet::from([live])).unwrap();
 
         assert_eq!(pruned.files, 1);
-        assert!(cache.get(live, Version(1), page, 1.0).is_some());
-        assert!(cache.get(deleted, Version(1), page, 1.0).is_none());
+        assert!(cache.get(live, Version(1), page, 1.0, 1).is_some());
+        assert!(cache.get(deleted, Version(1), page, 1.0, 1).is_none());
     }
 
     /// Cleanup must never reach outside what it wrote.
@@ -364,11 +422,13 @@ mod tests {
         let cache = RenderCache::new(dir.path());
         let (design, version, page) = key();
 
-        cache.put(design, version, page, 1.0, b"a").unwrap();
-        cache.put(design, version.next(), page, 1.0, b"b").unwrap();
+        cache.put(design, version, page, 1.0, 1, b"a").unwrap();
+        cache
+            .put(design, version.next(), page, 1.0, 1, b"b")
+            .unwrap();
         cache.forget_design(design).unwrap();
 
-        assert!(cache.get(design, version, page, 1.0).is_none());
-        assert!(cache.get(design, version.next(), page, 1.0).is_none());
+        assert!(cache.get(design, version, page, 1.0, 1).is_none());
+        assert!(cache.get(design, version.next(), page, 1.0, 1).is_none());
     }
 }

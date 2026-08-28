@@ -23,7 +23,7 @@ passes" is not enough — Phase 6's acceptance passed with two panels missing.
 | 3 — Validator | 8 | Complete. |
 | 4 — Persistence | 8 | Complete. |
 | 5 — REST server | 7 | Complete. |
-| 6 — React editor | 14 | **13 of 14.** `Brand panel` was never built. |
+| 6 — React editor | 14 | Complete. `Brand panel` closed the last task. |
 | 7 — AssetRequest UX | 7 | Complete. Also delivered Phase 6's `assets panel`. |
 | 8 — MCP | 7 | Complete — the thirteen tools of §48. |
 | 9 — Agent skill | 15 | Complete. |
@@ -33,23 +33,7 @@ passes" is not enough — Phase 6's acceptance passed with two panels missing.
 
 ## Open, with the section that asks for it
 
-### 1. Brand panel — §77 Phase 6, and §79 step 4
-
-The one unfinished task of a phase declared complete. It is not cosmetic: a
-project is created with no Brand Kit, `PUT /projects/{id}/brand` has no client
-in the editor, and there is no default. So a new user cannot configure a brand
-at all, and §79's Definition of Done — step 4, "configure the Brand Kit" —
-cannot be reached.
-
-The consequence reaches the agent. `SKILL.md` tells it to use `$brand.*` tokens
-for values it chooses; with no kit those do not resolve and the design will not
-render. Every verification session so far has set the Brand Kit with `curl`,
-which should have been the signal.
-
-The server side is ready: `BrandKitDraft` exists precisely so a client sends
-what the brand *is* and the server owns the identity.
-
-### 2. Export from the editor — §10
+### 1. Export from the editor — §10
 
 §10's layout puts "Preview Export" at the top right. `POST /designs/{id}/exports`
 and the download routes exist and are tested, but the editor calls neither, so a
@@ -57,13 +41,13 @@ piece built by hand cannot be turned into a PNG. Phase 6's acceptance — "a
 complete piece can be built manually without MCP" — is only half true without
 it.
 
-### 3. Playwright end-to-end — §67
+### 2. Playwright end-to-end — §67
 
 The plan lists it as a testing layer. No phase was ever given it, and it does
-not exist. It is what would have caught items 1 and 2: it walks §79's script,
+not exist. It is what would have caught the Brand panel gap: it walks §79's script,
 which starts with creating a project and configuring a Brand Kit.
 
-### 4. Default font — §94 (93.2)
+### 3. Default font — §94 (93.2)
 
 Still an open decision, which the plan says must be closed by reviewing licence,
 required weights, `usvg` compatibility and visual result. `data/fonts` currently
@@ -76,7 +60,7 @@ invented.
 
 ## Agreed order
 
-1. **Brand panel** — finishes Phase 6 and unblocks §79 step 4.
+1. ~~**Brand panel**~~ — done. Phase 6 is closed and §79 step 4 is reachable.
 2. **Export from the editor** — finishes §10's layout.
 3. **Playwright end-to-end** — §67, walking §79's twenty steps, so this class of
    drift is caught by CI instead of by an audit.
@@ -106,3 +90,5 @@ reasoning for each is an invariant in [CLAUDE.md](../CLAUDE.md).
 | `UNKNOWN_BRAND_TOKEN` reported with no Brand Kit | Otherwise a design validates clean and then fails to render. |
 | Render cache prunes itself on write | §72 says a version never changes; nothing reads a superseded entry. |
 | `checkpoint_and_close` rather than `pool.close()` | Closing checkpoints only *usually*; a backup cannot rest on usually. |
+| Brand version in the render cache key | A `$brand.*` token resolves at render time, so a brand edit changes the picture without changing the design's version. |
+| The Brand panel appears in the project view too | §79 configures a Brand Kit before any design exists, so the editor alone would be too late. |

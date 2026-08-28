@@ -176,6 +176,27 @@ export function useUploadAsset(projectId: string | null) {
   });
 }
 
+/**
+ * Saves a project's Brand Kit.
+ *
+ * Every preview and every validation report is invalidated, not just the brand:
+ * a `$brand.*` token resolves at render time, so changing the kit changes what
+ * a design looks like *without* changing its version — and both queries are
+ * keyed by version and would otherwise happily serve the old picture.
+ */
+export function usePutBrand(projectId: string | null) {
+  const client = useQueryClient();
+
+  return useMutation({
+    mutationFn: (draft: api.BrandKitDraft) => api.putBrand(projectId ?? "", draft),
+    onSuccess: (brand) => {
+      client.setQueryData(keys.brand(brand.project_id), brand);
+      void client.invalidateQueries({ queryKey: ["preview"] });
+      void client.invalidateQueries({ queryKey: ["validation"] });
+    },
+  });
+}
+
 export const useAssetRequests = (projectId: string | null) =>
   useQuery({
     queryKey: keys.assetRequests(projectId ?? ""),

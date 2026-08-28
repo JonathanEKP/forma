@@ -139,7 +139,11 @@ pub fn render_png(
         ));
     }
 
-    if let Some(hit) = cache.get(design_id, version, page_id, scale) {
+    // Part of the key: a $brand.* token resolves at render time, so a brand
+    // edit changes the picture without changing the design's version.
+    let brand_version = brand.map(|kit| kit.version.0).unwrap_or(0);
+
+    if let Some(hit) = cache.get(design_id, version, page_id, scale, brand_version) {
         tracing::debug!(
             cache = "hit",
             byte_size = hit.len(),
@@ -170,7 +174,7 @@ pub fn render_png(
     // A cache that cannot be written is a degraded cache, not a failed render:
     // the caller already holds the bytes it asked for, so this must not become
     // an error response.
-    let _ = cache.put(design_id, version, page_id, scale, &png);
+    let _ = cache.put(design_id, version, page_id, scale, brand_version, &png);
 
     Ok(png)
 }

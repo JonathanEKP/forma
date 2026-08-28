@@ -4,7 +4,8 @@
 
 import { useState } from "react";
 
-import { useCreateDesign, useCreateProject, useDesigns, useProjects, useStatus } from "./queries";
+import { Brand } from "./editor/Brand";
+import { useBrand, useCreateDesign, useCreateProject, useDesigns, useProjects, useStatus } from "./queries";
 
 export function Projects({ onOpen }: { onOpen: (designId: string) => void }) {
   const status = useStatus();
@@ -14,6 +15,8 @@ export function Projects({ onOpen }: { onOpen: (designId: string) => void }) {
 
   const createProject = useCreateProject();
   const createDesign = useCreateDesign(projectId);
+  const brand = useBrand(projectId);
+  const [showBrand, setShowBrand] = useState(false);
 
   if (status.isError) {
     return (
@@ -70,6 +73,59 @@ export function Projects({ onOpen }: { onOpen: (designId: string) => void }) {
           ))}
         </div>
       </Section>
+
+      {/* Plan section 79 configures the Brand Kit before any design exists, so
+          it has to be reachable here and not only inside the editor. */}
+      {projectId && (
+        <Section
+          title="Brand Kit"
+          action={
+            <button
+              type="button"
+              onClick={() => setShowBrand((open) => !open)}
+              className="rounded-lg border border-edge bg-surface-2 px-2.5 py-1.5 text-xs
+                         text-muted hover:text-paper"
+            >
+              {showBrand ? "Close" : brand.data ? "Edit" : "Set up"}
+            </button>
+          }
+        >
+          {!showBrand &&
+            (brand.data ? (
+              <div className="flex items-center gap-2.5 rounded-xl border border-edge bg-surface px-3.5 py-3">
+                <div className="flex gap-1">
+                  {[
+                    brand.data.colors.primary,
+                    brand.data.colors.secondary,
+                    brand.data.colors.accent,
+                    brand.data.colors.text,
+                  ].map((colour) => (
+                    <span
+                      key={colour}
+                      className="h-4 w-4 rounded border border-edge"
+                      style={{ background: colour }}
+                    />
+                  ))}
+                </div>
+                <span className="text-sm">{brand.data.name}</span>
+                <span className="text-[11px] text-faint">
+                  {brand.data.typography.display}
+                </span>
+              </div>
+            ) : (
+              <Empty>
+                No Brand Kit yet. Until this project has one, $brand.* tokens cannot
+                resolve and a design that uses them will not render.
+              </Empty>
+            ))}
+
+          {showBrand && (
+            <div className="max-w-sm rounded-xl border border-edge bg-surface p-3">
+              <Brand projectId={projectId} />
+            </div>
+          )}
+        </Section>
+      )}
 
       {projectId && (
         <Section

@@ -8,6 +8,7 @@
 import type { Asset } from "@forma/bindings/Asset";
 import type { AssetRequest } from "@forma/bindings/AssetRequest";
 import type { BrandKit } from "@forma/bindings/BrandKit";
+import type { BrandKitDraft } from "@forma/bindings/BrandKitDraft";
 import type { DesignOperation } from "@forma/bindings/DesignOperation";
 import type { DesignRecord } from "@forma/bindings/DesignRecord";
 import type { DesignSummary } from "@forma/bindings/DesignSummary";
@@ -16,6 +17,8 @@ import type { Status } from "@forma/bindings/Status";
 import type { ValidationReport } from "@forma/bindings/ValidationReport";
 import type { Version } from "@forma/bindings/Version";
 import type { VersionSummary } from "@forma/bindings/VersionSummary";
+
+export type { BrandKitDraft } from "@forma/bindings/BrandKitDraft";
 
 export type {
   Asset,
@@ -142,6 +145,15 @@ export const createProject = (name: string) =>
   request<Project>("/projects", { method: "POST", body: { name } });
 
 export const getProject = (id: string) => request<Project>(`/projects/${id}`);
+
+/**
+ * The editable half of a Brand Kit.
+ *
+ * The `BrandId` and the kit's version are the server's to decide, which is why
+ * this is a draft rather than a `BrandKit` (plan section 13).
+ */
+export const putBrand = (projectId: string, draft: BrandKitDraft) =>
+  request<BrandKit>(`/projects/${projectId}/brand`, { method: "PUT", body: draft });
 
 export const getBrand = (projectId: string) =>
   request<BrandKit | null>(`/projects/${projectId}/brand`);
