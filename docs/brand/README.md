@@ -50,10 +50,14 @@ Geist for product UI: quiet, readable, tight tracking on display sizes. Geist Mo
 natural companion for code and technical values. The personality comes from geometry and
 construction motifs, not from expressive type.
 
-Geist is **not committed to this repo**. `data/fonts/` holds the fonts the *renderer*
-loads (plan §34), which is a separate concern from the editor's web typography — the
-frontend needs Geist wired up separately, or it falls through the stack in `index.html`
-to Inter and the system UI font.
+Geist ships with the repo, in both of the places that need it and from neither a CDN:
+`data/fonts/` holds the static per-weight `.ttf` the *renderer* loads (plan §34), and
+`apps/web/src/fonts/` holds the variable `woff2` the editor chrome declares in
+`apps/web/src/index.css`. Forma is local-first, so the UI has to look the same offline.
+
+The two are genuinely separate concerns. Canvas text is flattened to paths by the
+renderer before it reaches the browser (plan §37), so the artwork never depends on the
+chrome's faces — and a font added to one side is not thereby available to the other.
 
 The wordmark SVGs are outlined, with an alternate `a` and roughly −2% tracking. Use them
 for brand placements; use live Geist text for UI.

@@ -1,0 +1,48 @@
+/*
+ * Geist, self-hosted rather than imported from Google Fonts.
+ *
+ * Forma is a local-first tool that binds 127.0.0.1: a CDN import would make the
+ * editor degrade to a fallback face whenever the machine is offline, add a
+ * third-party request from a local app (plan section 70), and leave a build
+ * input unpinned (plan section 69). The file ships with the app instead.
+ *
+ * This is the editor chrome only. Text inside a design is drawn by the Rust
+ * renderer from data/fonts and reaches the canvas already flattened to paths
+ * (plan section 37), so it never depends on these faces.
+ *
+ * Latin subset, variable 100-900, SIL OFL 1.1. See docs/brand/README.md.
+ */
+
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("./fonts/Geist-Variable-latin.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("./fonts/GeistMono-Variable-latin.woff2") format("woff2");
+}
+
+:root {
+  --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+code,
+kbd,
+pre,
+samp {
+  font-family: var(--font-mono);
+}
