@@ -1,0 +1,33 @@
+[package]
+name = "forma-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "forma_server"
+path = "src/lib.rs"
+
+[[bin]]
+name = "forma-server"
+path = "src/main.rs"
+
+[dependencies]
+design-core.workspace = true
+renderer.workspace = true
+
+actix-web.workspace = true
+actix-files.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true
+
+[dev-dependencies]
+resvg.workspace = true
+actix-web = { workspace = true, features = ["macros"] }
+tempfile.workspace = true

@@ -1,0 +1,7 @@
+packages:
+  - "apps/web"
+
+# esbuild ships a platform binary that its postinstall script links into place;
+# pnpm blocks install scripts until they are approved explicitly.
+allowBuilds:
+  esbuild: true

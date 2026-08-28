@@ -4,16 +4,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current state
 
-This repository contains **no code yet**. The only file is
-[forma-plan.md](forma-plan.md) — a ~4,200-line execution plan for **Forma**, a local
-programmatic design runtime driven by AI agents over MCP. Treat that document as the spec
-of record:
-before implementing anything, read the relevant section (it has a numbered heading
-structure, `grep -n '^#\{1,3\} '` to list them).
+[forma-plan.md](forma-plan.md) is a ~4,200-line execution plan and the spec of record.
+Before implementing anything, read the relevant section (numbered headings —
+`grep -n '^#\{1,3\} '` lists them).
 
-Per plan §104, the next work is **Phase 0** — the monorepo skeleton plus the nine blocking
-spikes (monorepo, Actix, minimal `DesignDocument`, `usvg` text, text bbox, SVG flatten,
-`resvg` PNG, `rmcp` stdio, MCP image result). Do not start building UI before those work.
+**Phase 0 is complete.** The workspace, domain core, render pipeline, REST server and MCP
+stdio server all exist and are tested. The blocking spike of §36 resolved to **Option A**:
+`<g id="layer-{uuid}">` wrappers survive usvg normalization, so the editor can address
+rendered geometry by layer id directly — no re-wrapping needed.
+
+Next is **Phase 1 (Domain Core)**: the `DesignOperation` enum, version semantics, and
+`ts-rs` bindings. What does NOT exist yet: design persistence (only a `projects` table),
+the operations pipeline, the validator, image layers in the renderer, and the editor.
 
 ## What the product is
 
@@ -102,10 +104,7 @@ block, so multimodal hosts can actually look at the piece.
 When an image is missing, the agent creates an `AssetRequest` (Pending → Resolved by the
 user uploading) instead of blocking or inventing an asset.
 
-## Planned commands
-
-None of these run yet — create them as part of Phase 0, and update this section once the
-workspace exists.
+## Commands
 
 ```bash
 cargo test --workspace
@@ -115,13 +114,40 @@ cargo test --workspace
 cargo clippy --all-targets --all-features -- -D warnings
 ```
 
+Run one test: `cargo test -p renderer reports_real_text_bounds` (substring match on the
+test name). The frontend equivalent is `pnpm --filter forma-web test -- App.test`.
+
+Run the server, which also serves `apps/web/dist` when it exists:
+
+```bash
+./target/debug/forma-server
+```
+
+Vite dev server on 5173, proxying `/api` to the Rust server (run both):
+
 ```bash
 pnpm dev
+```
+
+Render the fixture to `data/previews/` to eyeball the renderer:
+
+```bash
+cargo run -p renderer --example render_fixture
+```
+
+Drive the MCP server by hand without an agent host — initialize, then list or call tools
+by piping JSON-RPC lines into it:
+
+```bash
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"cli","version":"0"}}}' '{"jsonrpc":"2.0","method":"notifications/initialized"}' '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' | ./target/debug/forma-mcp
 ```
 
 CI runs: `cargo fmt --check`, the clippy line above, `cargo test --workspace`,
 `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, a generated-bindings freshness
 check, then the renderer golden tests.
+
+`forma-mcp` logs to **stderr**, never stdout — stdout carries the MCP protocol, and a
+stray println breaks the transport.
 
 Testing layers: unit tests per crate; **golden rendering tests** comparing renders of
 `fixtures/designs/` against `fixtures/golden/` with a documented pixel-diff threshold

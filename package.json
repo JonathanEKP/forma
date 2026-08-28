@@ -1,0 +1,13 @@
+{
+  "name": "forma",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "pnpm --filter forma-web dev",
+    "build": "pnpm --filter forma-web build",
+    "lint": "pnpm --filter forma-web lint",
+    "typecheck": "pnpm --filter forma-web typecheck",
+    "test": "pnpm --filter forma-web test"
+  },
+  "packageManager": "pnpm@11.22.0"
+}
