@@ -133,11 +133,12 @@ async fn main() -> anyhow::Result<()> {
 
     server.await?;
 
-    // Closing the pool checkpoints the write-ahead log back into the database
-    // file. Without it the data is still safe — WAL is durable — but it lives
-    // in a sidecar file, which makes a backup that copies forma.db alone a
-    // backup of nothing.
-    pool.close().await;
+    // Folds the write-ahead log back into the database file and closes. Doing
+    // it explicitly rather than relying on the close to trigger it: the close
+    // finishes on sqlx's workers, so the checkpoint could land after we have
+    // said we stopped, and a backup taken right then would copy a file with
+    // none of the writes in it.
+    persistence::checkpoint_and_close(&pool).await?;
 
     tracing::info!("stopped cleanly");
     Ok(())

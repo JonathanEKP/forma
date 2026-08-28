@@ -99,7 +99,7 @@ pub async fn run(config: &Config, out: &Path) -> anyhow::Result<Summary> {
     )
     .context("writing the manifest")?;
 
-    pool.close().await;
+    persistence::checkpoint_and_close(&pool).await?;
 
     Ok(Summary {
         out: out.to_path_buf(),

@@ -656,6 +656,47 @@ async fn an_export_pins_the_version_it_came_from() {
 
 // --- shutdown -------------------------------------------------------------
 
+/// The mechanism, checked while the pool is still open so the result cannot
+/// depend on timing.
+///
+/// `wal_checkpoint(TRUNCATE)` is ordinary SQL and finishes before it returns,
+/// so the log is empty the moment it does. Relying on `close()` to trigger a
+/// checkpoint instead leaves the writes in the log until sqlx's workers get to
+/// it, which is a race — and one that showed up as a test failing about one run
+/// in ten, on CI first.
+#[tokio::test]
+async fn checkpointing_empties_the_log_synchronously() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("forma.db");
+    let pool = persistence::connect(&format!("sqlite://{}", db.display()), dir.path())
+        .await
+        .unwrap();
+
+    let projects = SqliteProjectRepository::new(pool.clone());
+    for name in ["One", "Two", "Three"] {
+        projects.create(name).await.unwrap();
+    }
+
+    let wal = dir.path().join("forma.db-wal");
+    let before = std::fs::metadata(&wal).map(|m| m.len()).unwrap_or(0);
+    assert!(before > 0, "expected the writes to be in the log");
+
+    sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // Still open, and the log is already empty: the checkpoint did not have to
+    // wait for anything to be closed.
+    let after = std::fs::metadata(&wal).map(|m| m.len()).unwrap_or(0);
+    assert_eq!(
+        after, 0,
+        "the log still held {after} bytes after a checkpoint"
+    );
+
+    pool.close().await;
+}
+
 /// Closing the pool has to fold the write-ahead log back into the database
 /// file, so that `forma.db` on its own holds everything.
 ///
@@ -687,7 +728,7 @@ async fn closing_the_pool_leaves_everything_in_the_database_file() {
         "expected a write-ahead log while the pool is open"
     );
 
-    pool.close().await;
+    persistence::checkpoint_and_close(&pool).await.unwrap();
 
     // Copy only the database file, which is what a backup would take.
     let backup_dir = tempfile::tempdir().unwrap();

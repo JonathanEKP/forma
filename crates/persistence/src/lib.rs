@@ -12,8 +12,8 @@ pub mod traits;
 pub use error::{PersistenceError, Result};
 pub use local_fs::{asset_storage_key, export_storage_key, LocalObjectStore};
 pub use sqlite::{
-    connect, SqliteAssetRepository, SqliteAssetRequestRepository, SqliteDesignRepository,
-    SqliteExportRepository, SqliteProjectRepository,
+    checkpoint_and_close, connect, SqliteAssetRepository, SqliteAssetRequestRepository,
+    SqliteDesignRepository, SqliteExportRepository, SqliteProjectRepository,
 };
 pub use traits::{
     AssetRepository, AssetRequestRepository, DesignRepository, ExportRepository, ObjectStore,

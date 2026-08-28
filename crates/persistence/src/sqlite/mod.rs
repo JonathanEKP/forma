@@ -54,6 +54,31 @@ pub async fn migrate(pool: &SqlitePool) -> Result<()> {
         .map_err(|e| PersistenceError::Storage(e.to_string()))
 }
 
+/// Folds the write-ahead log back into the database file, then closes the pool.
+///
+/// Closing on its own *usually* checkpoints — SQLite does it when the last
+/// connection goes — but usually is not something you can copy a file on.
+/// `close()` returns once sqlx has handed the connections to its workers, and
+/// the final `sqlite3_close` can land after that, so a copy taken immediately
+/// afterwards sometimes gets a database file with none of the writes in it.
+/// That was a test failing roughly one run in fifteen, and it would equally
+/// have been a backup silently missing everything.
+///
+/// `wal_checkpoint(TRUNCATE)` is ordinary SQL: it finishes before it returns,
+/// and leaves the log empty. A checkpoint that cannot run is logged rather than
+/// fatal — the data is still durable in the log, and the next open replays it.
+pub async fn checkpoint_and_close(pool: &SqlitePool) -> Result<()> {
+    if let Err(error) = sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
+        .execute(pool)
+        .await
+    {
+        tracing::warn!(%error, "could not checkpoint the write-ahead log before closing");
+    }
+
+    pool.close().await;
+    Ok(())
+}
+
 /// RFC 3339 in UTC. Timestamps are strings so the domain stays free of a clock.
 pub(crate) fn now() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)

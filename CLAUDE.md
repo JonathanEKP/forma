@@ -166,13 +166,15 @@ from Signal and unrelated to it; do not unify them.
   the manifest says so — both regenerate from what is kept. There is deliberately no
   restore command: it overwrites the user's current work, so it stays a documented manual
   procedure in [docs/backup.md](docs/backup.md).
-- **Shutdown closes the pool, and that is what makes a backup possible.** `forma-server`
-  handles SIGINT and SIGTERM itself so it can log the stop, lets in-flight work finish
-  (20s, measured against the 8.6s a Story page at scale 4 takes), and then closes the
-  SQLite pool. Closing folds the write-ahead log back into `forma.db`; without it the
-  writes stay in a sidecar and copying `forma.db` alone backs up nothing — a test proves
-  exactly that by copying the file and counting rows. `forma-mcp` exits when its host
-  closes stdin, so it cannot outlive it.
+- **Shutdown checkpoints explicitly, then closes.** `forma-server` handles SIGINT and
+  SIGTERM itself so it can log the stop, lets in-flight work finish (20s, measured against
+  the 8.6s a Story page at scale 4 takes), then calls `persistence::checkpoint_and_close`.
+  Closing alone *usually* folds the write-ahead log back into `forma.db`, but `close()`
+  returns before sqlx's workers finish, so a copy taken right after sometimes got a file
+  with none of the writes — a flake that failed about one run in ten and reached CI.
+  `PRAGMA wal_checkpoint(TRUNCATE)` is ordinary SQL that finishes before it returns, so
+  use `checkpoint_and_close` rather than `pool.close()` anywhere the file is about to be
+  read. `forma-mcp` exits when its host closes stdin, so it cannot outlive it.
 - **Derived data is collected; the user's work is not.** The render cache prunes itself:
   writing version N drops everything below `N - KEEP_RECENT_VERSIONS` for that design, so
   the thing that grows the cache is the thing that trims it and no call site can forget.

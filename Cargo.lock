@@ -1898,6 +1898,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tracing",
  "ts-rs",
  "uuid",
 ]
