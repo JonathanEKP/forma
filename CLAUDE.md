@@ -71,7 +71,9 @@ state: selection, zoom, pan, in-progress drag/resize), Tailwind. No WASM, no Yew
   `bindings/generated/` (committed), and `scripts/check-bindings.sh` fails CI when they
   drift. The export dir comes from `TS_RS_EXPORT_DIR` in `.cargo/config.toml`; ts-rs writes
   them during `cargo test`. The frontend imports them as `@forma/bindings/<Type>` and never
-  hand-writes a duplicate — server DTOs included.
+  hand-writes a duplicate — server DTOs included. That mapping lives in `paths` with **no
+  `baseUrl`**: TypeScript resolves `paths` relative to the tsconfig without it, and
+  `baseUrl` is deprecated in TS 7. Do not add it back.
 - **Mutations are typed operations, not arbitrary JSON patches.** The public surface is
   `apply_operations` with a fixed `DesignOperation` enum; there is deliberately no
   `UpdateLayer { arbitrary_json }`. A patch aimed at the wrong layer type returns

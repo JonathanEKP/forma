@@ -13,7 +13,6 @@
     "skipLibCheck": true,
     "isolatedModules": true,
     "types": ["vitest/globals", "node"],
-    "baseUrl": ".",
     "paths": {
       "@forma/bindings/*": ["../../bindings/generated/*"]
     }
