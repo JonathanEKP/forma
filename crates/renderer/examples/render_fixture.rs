@@ -9,7 +9,7 @@ use design_core::{
     Color, DesignColor, DesignDocument, DesignFormat, FormatPreset, Layer, LayerCommon, LayerId,
     LayerRole, Page, ShapeKind, ShapeLayer, TextAlign, TextLayer, Transform,
 };
-use renderer::{fonts::FontRegistry, svg::BrandPalette};
+use renderer::{fonts::FontRegistry, svg::BrandPalette, NoAssets};
 
 fn common(name: &str, role: LayerRole, transform: Transform) -> LayerCommon {
     LayerCommon {
@@ -130,10 +130,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out = root.join("data/previews");
     std::fs::create_dir_all(&out)?;
 
-    let rendered = renderer::render_page(&document, &page, &palette, &fonts)?;
+    let rendered = renderer::render_page(&document, &page, &palette, &fonts, &NoAssets)?;
     std::fs::write(out.join("phase0.svg"), &rendered.normalized_svg)?;
 
-    let png = renderer::render_page_png(&document, &page, &palette, &fonts, 1.0)?;
+    let png = renderer::render_page_png(&document, &page, &palette, &fonts, &NoAssets, 1.0)?;
     std::fs::write(out.join("phase0.png"), &png)?;
 
     println!(
@@ -147,7 +147,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for b in &rendered.inspection.layers {
         println!(
             "  {:<46} x={:7.1} y={:7.1} w={:7.1} h={:7.1}",
-            b.layer_id, b.x, b.y, b.width, b.height
+            b.layer_id, b.layout.x, b.layout.y, b.layout.width, b.layout.height
         );
     }
     println!("svg  {} bytes", rendered.normalized_svg.len());

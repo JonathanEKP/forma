@@ -8,14 +8,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Before implementing anything, read the relevant section (numbered headings —
 `grep -n '^#\{1,3\} '` lists them).
 
-**Phases 0 and 1 are complete.** The workspace, domain core, operations, render pipeline,
-REST server and MCP stdio server all exist and are tested. The blocking spike of §36
-resolved to **Option A**: `<g id="layer-{uuid}">` wrappers survive usvg normalization, so
-the editor can address rendered geometry by layer id directly — no re-wrapping needed.
+**Phases 0 to 2 are complete.** The workspace, domain core, operations, full render
+pipeline (text, shapes, images), REST server and MCP stdio server all exist and are tested.
+The blocking spike of §36 resolved to **Option A**: `<g id="layer-{uuid}">` wrappers survive
+usvg normalization, so the editor can address rendered geometry by layer id directly.
 
-Next is **Phase 2 (Renderer)**: image layers, and the golden-test baseline. What does NOT
-exist yet: design persistence (only a `projects` table), the REST/MCP surface for designs,
-the validator crate, image rendering, and the editor.
+Next is **Phase 3 (Validator)**. What does NOT exist yet: design persistence (only a
+`projects` table), the REST/MCP surface for designs, the validator crate, and the editor.
+The golden-test baseline of §63 is also still missing — §93.3 says not to invent a
+pixel-diff threshold before there are real renders to measure, and now there are.
 
 ## What the product is
 
@@ -86,6 +87,15 @@ state: selection, zoom, pan, in-progress drag/resize), Tailwind. No WASM, no Yew
   valid-but-suspicious states.
 - **`ImageLayer` holds only `asset_id`** — never a URL or a local path. Importing a remote
   image is a separate operation that first creates an `Asset`.
+- **Two bounding boxes, never one.** `RenderInspection` reports `layout` (usvg's object
+  box — for text it spans the line boxes, so it is what TEXT_OVERFLOW_* must compare
+  against a frame) and `painted` (what survives clipping, which is what OUTSIDE_CANVAS
+  must use, since a `cover` image is *meant* to overflow its frame). They differ routinely.
+  usvg's own `layer_bounding_box` accounts for filters but **not** clip paths, so `painted`
+  is computed by intersecting the clip explicitly — do not swap it back for usvg's value.
+- **Image layers get their bytes from an `AssetSource`**, and the renderer embeds them as
+  data URIs. It never resolves a path or a URL, so it needs no network or filesystem access
+  while drawing. A missing asset is `ASSET_NOT_FOUND`, never a blank space.
 - **Text has no implicit word-wrap in V1.** Line breaks are explicit `\n` in the string;
   the validator detects overflow using real bounding boxes from `usvg`.
 - **Errors have a stable shape** everywhere: `{"error": {"code", "message", "details"}}`.

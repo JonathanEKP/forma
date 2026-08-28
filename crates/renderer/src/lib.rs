@@ -3,17 +3,21 @@
 //! This crate is independent of Actix, MCP and persistence. It is the render
 //! authority: the editor preview and the exported PNG both come from here.
 
+pub mod cache;
 pub mod error;
 pub mod flatten;
 pub mod fonts;
+pub mod images;
 pub mod raster;
 pub mod svg;
 
 use design_core::{DesignDocument, Page};
 
+pub use cache::RenderCache;
 pub use error::RenderError;
-pub use flatten::{LayerBounds, RenderInspection};
+pub use flatten::{LayerBounds, Rect, RenderInspection};
 pub use fonts::FontRegistry;
+pub use images::{AssetSource, InMemoryAssets, NoAssets, RasterAsset};
 pub use svg::BrandPalette;
 
 pub struct RenderedPage {
@@ -31,8 +35,9 @@ pub fn render_page(
     page: &Page,
     palette: &BrandPalette,
     fonts: &FontRegistry,
+    assets: &dyn AssetSource,
 ) -> Result<RenderedPage, RenderError> {
-    let authored_svg = svg::page_to_svg(document, page, palette)?;
+    let authored_svg = svg::page_to_svg(document, page, palette, assets)?;
     let tree = flatten::parse(&authored_svg, fonts)?;
 
     let expected: Vec<String> = page
@@ -55,9 +60,10 @@ pub fn render_page_png(
     page: &Page,
     palette: &BrandPalette,
     fonts: &FontRegistry,
+    assets: &dyn AssetSource,
     scale: f32,
 ) -> Result<Vec<u8>, RenderError> {
-    let authored_svg = svg::page_to_svg(document, page, palette)?;
+    let authored_svg = svg::page_to_svg(document, page, palette, assets)?;
     let tree = flatten::parse(&authored_svg, fonts)?;
     raster::render_png(&tree, scale)
 }

@@ -4,11 +4,14 @@
 use std::collections::HashMap;
 use std::fmt::Write as _;
 
+use base64::Engine as _;
 use design_core::{
-    Color, DesignColor, DesignDocument, Layer, LayerCommon, Page, ShapeKind, TextAlign, TextLayer,
+    Color, DesignColor, DesignDocument, ImageLayer, Layer, LayerCommon, Page, ShapeKind, TextAlign,
+    TextLayer,
 };
 
 use crate::error::RenderError;
+use crate::images::{place, AssetSource};
 
 /// Resolved `$brand.*` values. The document stays portable (plan section 14);
 /// tokens are resolved at render time, not stored expanded.
@@ -68,6 +71,7 @@ pub fn page_to_svg(
     document: &DesignDocument,
     page: &Page,
     palette: &BrandPalette,
+    assets: &dyn AssetSource,
 ) -> Result<String, RenderError> {
     let format = &document.format;
     if format.width <= 0.0 || format.height <= 0.0 {
@@ -77,10 +81,16 @@ pub fn page_to_svg(
         )));
     }
 
+    // Clip paths are collected into a <defs> block so a layer group can
+    // reference its own clip. Putting the clip on the group rather than on the
+    // child is what makes usvg report clipped bounds for the layer.
+    let mut defs = String::new();
+    let mut body = String::new();
+
     let mut svg = String::new();
     write!(
         svg,
-        r#"<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}">"#,
+        r#"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="{w}" height="{h}" viewBox="0 0 {w} {h}">"#,
         w = format.width,
         h = format.height
     )
@@ -89,7 +99,7 @@ pub fn page_to_svg(
     if let Some(background) = &page.background {
         let color = resolve(background, palette)?;
         write!(
-            svg,
+            body,
             r#"<rect x="0" y="0" width="{}" height="{}" fill="{}"/>"#,
             format.width,
             format.height,
@@ -104,13 +114,16 @@ pub fn page_to_svg(
             continue;
         }
         match layer {
-            Layer::Shape(shape) => write_shape(&mut svg, shape, palette)?,
-            Layer::Text(text) => write_text(&mut svg, text, palette)?,
-            // Images arrive in Phase 2 once the assets crate can supply bytes.
-            Layer::Image(_) => continue,
+            Layer::Shape(shape) => write_shape(&mut body, shape, palette)?,
+            Layer::Text(text) => write_text(&mut body, text, palette)?,
+            Layer::Image(image) => write_image(&mut body, &mut defs, image, assets)?,
         }
     }
 
+    if !defs.is_empty() {
+        write!(svg, "<defs>{defs}</defs>").unwrap();
+    }
+    svg.push_str(&body);
     svg.push_str("</svg>");
     Ok(svg)
 }
@@ -243,5 +256,68 @@ fn write_text(
     }
 
     svg.push_str("</text></g>");
+    Ok(())
+}
+
+fn write_image(
+    svg: &mut String,
+    defs: &mut String,
+    image: &ImageLayer,
+    assets: &dyn AssetSource,
+) -> Result<(), RenderError> {
+    let asset = assets
+        .load(image.asset_id)
+        .ok_or(RenderError::AssetNotFound(image.asset_id))?;
+
+    let placement = place(
+        &image.common.transform,
+        (asset.width, asset.height),
+        image.fit,
+        image.focal_point,
+    );
+
+    let group_id = layer_group_id(&image.common);
+
+    // Cover overflows its frame by design, so the frame becomes a clip path.
+    // It goes on the group, not on the <image>: that way the clipped extent is
+    // what usvg reports as the layer's painted bounds.
+    let clip = if placement.clip {
+        let t = &image.common.transform;
+        write!(
+            defs,
+            r#"<clipPath id="clip-{group_id}"><rect x="{}" y="{}" width="{}" height="{}"/></clipPath>"#,
+            t.x, t.y, t.width, t.height
+        )
+        .unwrap();
+        format!(r##" clip-path="url(#clip-{group_id})""##)
+    } else {
+        String::new()
+    };
+
+    write!(
+        svg,
+        r#"<g id="{group_id}"{}{clip}>"#,
+        transform_attr(&image.common)
+    )
+    .unwrap();
+
+    let opacity = if (image.common.opacity - 1.0).abs() < f32::EPSILON {
+        String::new()
+    } else {
+        format!(r#" opacity="{:.4}""#, image.common.opacity)
+    };
+
+    // The bytes are embedded, never linked: the renderer must not reach out to
+    // the network or the filesystem while drawing (plan section 45).
+    let encoded = base64::engine::general_purpose::STANDARD.encode(&asset.bytes);
+
+    write!(
+        svg,
+        r#"<image x="{}" y="{}" width="{}" height="{}" preserveAspectRatio="none"{opacity} xlink:href="data:{};base64,{encoded}"/>"#,
+        placement.x, placement.y, placement.width, placement.height, asset.mime_type
+    )
+    .unwrap();
+
+    svg.push_str("</g>");
     Ok(())
 }

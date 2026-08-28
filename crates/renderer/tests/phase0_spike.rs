@@ -11,7 +11,7 @@ use design_core::{
     Color, DesignColor, DesignDocument, DesignFormat, FormatPreset, Layer, LayerCommon, LayerId,
     LayerRole, Page, ShapeKind, ShapeLayer, TextAlign, TextLayer, Transform,
 };
-use renderer::{flatten, fonts::FontRegistry, svg};
+use renderer::{flatten, fonts::FontRegistry, svg, NoAssets};
 
 fn font_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data/fonts")
@@ -117,7 +117,7 @@ fn authors_and_parses_an_svg_with_text() {
     let (document, page) = fixture();
     let fonts = registry();
 
-    let authored = svg::page_to_svg(&document, &page, &palette()).unwrap();
+    let authored = svg::page_to_svg(&document, &page, &palette(), &NoAssets).unwrap();
     assert!(authored.contains("<text"));
     assert!(authored.contains("BUILD"));
 
@@ -131,7 +131,7 @@ fn authors_and_parses_an_svg_with_text() {
 fn reports_real_text_bounds_and_keeps_layer_ids() {
     let (document, page) = fixture();
     let fonts = registry();
-    let rendered = renderer::render_page(&document, &page, &palette(), &fonts).unwrap();
+    let rendered = renderer::render_page(&document, &page, &palette(), &fonts, &NoAssets).unwrap();
 
     assert!(
         rendered.inspection.ids_survived_normalization,
@@ -150,15 +150,19 @@ fn reports_real_text_bounds_and_keeps_layer_ids() {
 
     // Two explicit lines at 140px must occupy real vertical space, not a stub.
     assert!(
-        bounds.height > 140.0,
+        bounds.layout.height > 140.0,
         "headline bounds too short: {bounds:?}"
     );
     assert!(
-        bounds.width > 100.0,
+        bounds.layout.width > 100.0,
         "headline bounds too narrow: {bounds:?}"
     );
     // These are shaped-glyph bounds, so they must be tighter than the layer frame.
-    assert!(bounds.width < headline.common.transform.width);
+    assert!(bounds.layout.width < headline.common.transform.width);
+    // The two rectangles are not interchangeable even with no clipping: the
+    // layout box spans the line boxes, the painted box hugs the glyph outlines.
+    assert!(bounds.layout.height > bounds.painted.height, "{bounds:?}");
+    assert!(bounds.painted.y > bounds.layout.y, "{bounds:?}");
 }
 
 /// Point 5: text is serialized as paths, which is what frees the editor from
@@ -167,7 +171,7 @@ fn reports_real_text_bounds_and_keeps_layer_ids() {
 fn flattens_text_to_paths() {
     let (document, page) = fixture();
     let fonts = registry();
-    let rendered = renderer::render_page(&document, &page, &palette(), &fonts).unwrap();
+    let rendered = renderer::render_page(&document, &page, &palette(), &fonts, &NoAssets).unwrap();
 
     assert!(
         !rendered.normalized_svg.contains("<text"),
@@ -183,7 +187,8 @@ fn flattens_text_to_paths() {
 fn rasterizes_to_png_matching_the_svg() {
     let (document, page) = fixture();
     let fonts = registry();
-    let png = renderer::render_page_png(&document, &page, &palette(), &fonts, 1.0).unwrap();
+    let png =
+        renderer::render_page_png(&document, &page, &palette(), &fonts, &NoAssets, 1.0).unwrap();
 
     assert_eq!(&png[1..4], b"PNG", "not a PNG signature");
 
@@ -204,7 +209,7 @@ fn rasterizes_to_png_matching_the_svg() {
 
     // Point 8 proper: the bounds usvg reported must be where the glyphs actually
     // landed in the raster. Scanning a hardcoded band would only test the test.
-    let rendered = renderer::render_page(&document, &page, &palette(), &fonts).unwrap();
+    let rendered = renderer::render_page(&document, &page, &palette(), &fonts, &NoAssets).unwrap();
     let headline = match &page.layers[1] {
         Layer::Text(t) => t,
         _ => unreachable!(),
@@ -216,16 +221,16 @@ fn rasterizes_to_png_matching_the_svg() {
         p.red() > 200 && p.green() > 200 && p.blue() > 200
     };
 
-    let inside = (bounds.y as u32..bounds.bottom() as u32)
-        .any(|y| (bounds.x as u32..bounds.right() as u32).any(|x| is_glyph(x, y)));
+    let inside = (bounds.layout.y as u32..bounds.layout.bottom() as u32)
+        .any(|y| (bounds.layout.x as u32..bounds.layout.right() as u32).any(|x| is_glyph(x, y)));
     assert!(
         inside,
         "no glyph pixels inside the reported bounds {bounds:?}"
     );
 
     // And nothing painted well above them, so the bounds are not merely permissive.
-    let above =
-        (10..(bounds.y as u32).saturating_sub(10)).any(|y| (0..1080).any(|x| is_glyph(x, y)));
+    let above = (10..(bounds.layout.y as u32).saturating_sub(10))
+        .any(|y| (0..1080).any(|x| is_glyph(x, y)));
     assert!(
         !above,
         "glyphs painted above the reported bounds {bounds:?}"
@@ -238,8 +243,10 @@ fn rasterizes_to_png_matching_the_svg() {
 fn rendering_is_deterministic() {
     let (document, page) = fixture();
     let fonts = registry();
-    let a = renderer::render_page_png(&document, &page, &palette(), &fonts, 1.0).unwrap();
-    let b = renderer::render_page_png(&document, &page, &palette(), &fonts, 1.0).unwrap();
+    let a =
+        renderer::render_page_png(&document, &page, &palette(), &fonts, &NoAssets, 1.0).unwrap();
+    let b =
+        renderer::render_page_png(&document, &page, &palette(), &fonts, &NoAssets, 1.0).unwrap();
     assert_eq!(a, b);
 }
 
@@ -249,7 +256,7 @@ fn refuses_an_unknown_brand_token() {
     let (document, mut page) = fixture();
     page.background = Some(DesignColor::token("brand.does_not_exist"));
 
-    let err = svg::page_to_svg(&document, &page, &palette()).unwrap_err();
+    let err = svg::page_to_svg(&document, &page, &palette(), &NoAssets).unwrap_err();
     assert!(
         err.to_string().contains("UNKNOWN_BRAND_TOKEN"),
         "got: {err}"

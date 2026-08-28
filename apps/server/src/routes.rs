@@ -73,8 +73,15 @@ async fn render_test_card(
 
     let (document, page) = test_card::document(&label);
 
-    let png = renderer::render_page_png(&document, &page, &test_card::palette(), &state.fonts, 1.0)
-        .map_err(|e| ApiError::internal("RENDER_FAILED", e.to_string()))?;
+    let png = renderer::render_page_png(
+        &document,
+        &page,
+        &test_card::palette(),
+        &state.fonts,
+        &renderer::NoAssets,
+        1.0,
+    )
+    .map_err(|e| ApiError::internal("RENDER_FAILED", e.to_string()))?;
 
     Ok(HttpResponse::Ok()
         .content_type("image/png")

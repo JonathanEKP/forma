@@ -1,7 +1,14 @@
 use thiserror::Error;
 
+use design_core::AssetId;
+
 #[derive(Debug, Error)]
 pub enum RenderError {
+    #[error(
+        "ASSET_NOT_FOUND: asset {0} is referenced by a layer but was not supplied to the renderer"
+    )]
+    AssetNotFound(AssetId),
+
     #[error("FONT_DIR_UNREADABLE: {0}")]
     FontDirUnreadable(String),
 
@@ -19,4 +26,7 @@ pub enum RenderError {
 
     #[error("PNG_ENCODE_FAILED: {0}")]
     PngEncode(String),
+
+    #[error("STORAGE_ERROR: cannot write the render cache at {0}")]
+    CacheUnwritable(String),
 }
