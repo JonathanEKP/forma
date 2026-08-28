@@ -9,5 +9,5 @@
     "typecheck": "pnpm --filter forma-web typecheck",
     "test": "pnpm --filter forma-web test"
   },
-  "packageManager": "pnpm@11.22.0"
+  "packageManager": "pnpm@11.24.0"
 }
