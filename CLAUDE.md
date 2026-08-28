@@ -8,16 +8,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Before implementing anything, read the relevant section (numbered headings —
 `grep -n '^#\{1,3\} '` lists them).
 
-**Phases 0 to 4 are complete.** The workspace, domain core, operations, full render
-pipeline (text, shapes, images), REST server and MCP stdio server all exist and are tested.
-The blocking spike of §36 resolved to **Option A**: `<g id="layer-{uuid}">` wrappers survive
-usvg normalization, so the editor can address rendered geometry by layer id directly.
+**Phases 0 to 4 are complete.** The workspace, domain core and its operations, the full
+render pipeline (text, shapes, images), the validator, and SQLite persistence —
+optimistic versioning, a snapshot per version, assets, asset requests and exports — all
+exist and are tested. The MCP stdio server works but still exposes only the two Phase 0
+tools. The blocking spike of §36 resolved to **Option A**: `<g id="layer-{uuid}">`
+wrappers survive usvg normalization, so the editor can address rendered geometry by layer
+id directly.
 
-Next is **Phase 5 (REST server)**. What does NOT exist yet: the REST/MCP surface for
-designs (the repositories exist but only `/status`, `/health` and the test card are wired),
-and the editor. The golden-test
-baseline of §63 is also still missing — §93.3 says not to invent a pixel-diff threshold
-before there are real renders to measure, and now there are.
+Next is **Phase 5 (REST server)**. What does NOT exist yet: the REST surface for designs
+(the repositories exist but only `/status`, `/health` and the test card are wired), the
+`application` and `assets` crates of §8.2 and §8.5, the remaining eleven MCP tools, and
+the editor. The golden-test baseline of §63 is also still missing — §93.3 says not to
+invent a pixel-diff threshold before there are real renders to measure, and now there are.
 
 ## What the product is
 
@@ -58,6 +61,20 @@ Rust workspace crates and their boundaries (§8):
 
 Frontend: React + TypeScript + Vite, TanStack Query (server state), Zustand (ephemeral UI
 state: selection, zoom, pan, in-progress drag/resize), Tailwind. No WASM, no Yew.
+
+## Visual direction
+
+[docs/brand/README.md](docs/brand/README.md) is Forma's own brand direction — Ink
+`#171717`, Paper `#F4F1EA`, Signal `#FF5A36`, dark-first and warm-neutral, with the logo
+assets in `docs/brand/assets/`. [docs/brand/index.html](docs/brand/index.html) is the
+visual version. It is **direction, not a spec**: adapt layouts and derived tones, preserve
+the semantics.
+
+Forma's identity is **not** the `BrandKit` domain type. `BrandKit` is the *user's* brand,
+per project, resolved by the renderer for the designs they produce. Signal orange belongs
+to the editor chrome only — never in `renderer`, never in `design-core`, never as a
+default `BrandKit` value. The sample palette in plan §13 uses `#FF5436`, two characters
+from Signal and unrelated to it; do not unify them.
 
 ## Invariants to preserve when implementing
 
@@ -183,8 +200,9 @@ printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocol
 `./scripts/check.sh` runs the whole CI pipeline locally (`--rust` or `--web` to run half).
 [.github/workflows/ci.yml](.github/workflows/ci.yml) runs the same commands on push to
 main and on PRs, in two cached jobs. The generated-bindings freshness check of §30 is
-still a TODO in that workflow — wire it up with `ts-rs` in Phase 1. Golden renderer tests
-need no separate step: they are ordinary workspace tests.
+wired up: `ts-rs` writes the bindings during `cargo test`, so `scripts/check-bindings.sh`
+fails the run when the committed ones have drifted. Golden renderer tests need no
+separate step: they are ordinary workspace tests.
 
 `forma-mcp` logs to **stderr**, never stdout — stdout carries the MCP protocol, and a
 stray println breaks the transport.

@@ -17,9 +17,14 @@ The full specification is [forma-plan.md](forma-plan.md).
 
 ## Status
 
-Phase 0 of the plan is complete: the monorepo, the domain core, the render
-pipeline and a working MCP server over stdio. There is no editor and no design
-persistence yet — those are Phases 4 to 6.
+Phases 0 to 4 of the plan are complete: the monorepo, the domain core and its
+operations, the render pipeline, the validator, and SQLite persistence with
+optimistic versioning and a snapshot per version. The MCP server works over
+stdio but still exposes only the two Phase 0 tools.
+
+The REST surface for designs and the editor do not exist yet — the repositories
+are there, but only `/status`, `/health` and the test card are wired. Those are
+Phases 5 and 6.
 
 ## Requirements
 
@@ -70,10 +75,13 @@ the server alongside it.
 | --- | --- |
 | `crates/design-core` | Domain types. No infrastructure dependencies. |
 | `crates/renderer` | `DesignDocument -> SVG -> PNG`, fonts, bounds inspection. |
+| `crates/validator` | Deterministic checks. Measures nothing itself. |
+| `crates/persistence` | Repository traits plus SQLite and local-filesystem adapters. |
 | `apps/server` | Actix Web REST API, SQLite, static file serving. |
 | `apps/mcp` | MCP server over stdio; a REST client of `apps/server`. |
 | `apps/web` | React + TypeScript + Vite editor. |
 | `data/fonts` | Fonts the renderer loads. Committed so renders match everywhere. |
+| `docs/brand` | Forma's own visual direction and logo assets. Not the `BrandKit` type. |
 
 ## License
 

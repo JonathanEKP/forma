@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Forma — Brand Direction Guide</title>
+  <meta name="description" content="Forma visual direction guide. Principles, not pixel-perfect implementation requirements." />
+  <style>
+    :root {
+      --ink: #171717;
+      --paper: #F4F1EA;
+      --signal: #FF5A36;
+      --graphite: #62605C;
+      --radius-sm: 10px;
+      --radius-md: 16px;
+      --radius-lg: 24px;
+      --max: 1180px;
+      --font: "Geist", "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    html[data-theme="dark"] {
+      --bg: #171717;
+      --surface: #1e1e1d;
+      --surface-2: #252524;
+      --surface-3: #2d2c2a;
+      --text: #F4F1EA;
+      --muted: #aaa79f;
+      --faint: #77746e;
+      --border: rgba(244, 241, 234, .10);
+      --border-strong: rgba(244, 241, 234, .18);
+      --canvas: #20201f;
+      --shadow: rgba(0,0,0,.25);
+    }
+
+    html[data-theme="light"] {
+      --bg: #F4F1EA;
+      --surface: #ebe7de;
+      --surface-2: #e2ddd3;
+      --surface-3: #d8d2c7;
+      --text: #171717;
+      --muted: #62605C;
+      --faint: #858078;
+      --border: rgba(23, 23, 23, .10);
+      --border-strong: rgba(23, 23, 23, .18);
+      --canvas: #eeeae2;
+      --shadow: rgba(30,25,20,.08);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      -webkit-font-smoothing: antialiased;
+      transition: background .2s ease, color .2s ease;
+    }
+    button, input { font: inherit; }
+    a { color: inherit; }
+
+    .shell { width: min(calc(100% - 40px), var(--max)); margin: 0 auto; }
+    .topbar {
+      position: sticky; top: 0; z-index: 20;
+      backdrop-filter: blur(18px);
+      background: color-mix(in srgb, var(--bg) 84%, transparent);
+      border-bottom: 1px solid var(--border);
+    }
+    .topbar-inner { height: 70px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+    .brand-home img { width: 155px; height: auto; display: block; }
+    html[data-theme="dark"] .brand-home .light-logo { display: block; }
+    html[data-theme="dark"] .brand-home .dark-logo { display: none; }
+    html[data-theme="light"] .brand-home .light-logo { display: none; }
+    html[data-theme="light"] .brand-home .dark-logo { display: block; }
+    .nav { display: flex; gap: 22px; align-items: center; font-size: 13px; color: var(--muted); }
+    .nav a { text-decoration: none; }
+    .nav a:hover { color: var(--text); }
+    .theme-toggle {
+      border: 1px solid var(--border-strong); background: var(--surface); color: var(--text);
+      border-radius: 999px; padding: 8px 12px; cursor: pointer; display: inline-flex; gap: 8px; align-items: center;
+    }
+    .theme-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--signal); }
+
+    .hero { padding: 96px 0 74px; border-bottom: 1px solid var(--border); }
+    .eyebrow { color: var(--signal); font-size: 12px; font-weight: 650; letter-spacing: .12em; text-transform: uppercase; }
+    h1 { margin: 20px 0 22px; max-width: 930px; font-size: clamp(54px, 8vw, 104px); line-height: .95; letter-spacing: -.055em; font-weight: 520; }
+    .hero p { max-width: 760px; color: var(--muted); font-size: clamp(17px, 2vw, 21px); line-height: 1.55; margin: 0; }
+    .notice {
+      margin-top: 42px; display: grid; grid-template-columns: 40px 1fr; gap: 16px; max-width: 800px;
+      padding: 18px 20px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface);
+    }
+    .notice-mark { color: var(--signal); font-size: 23px; line-height: 1; }
+    .notice strong { display: block; margin-bottom: 6px; font-size: 14px; }
+    .notice span { color: var(--muted); font-size: 14px; line-height: 1.5; }
+
+    section { padding: 78px 0; border-bottom: 1px solid var(--border); }
+    .section-head { display: grid; grid-template-columns: 1fr 1.5fr; gap: 40px; margin-bottom: 42px; }
+    .section-no { color: var(--faint); font-size: 12px; letter-spacing: .12em; }
+    h2 { margin: 8px 0 0; font-size: clamp(32px, 4vw, 52px); line-height: 1; letter-spacing: -.035em; font-weight: 540; }
+    .section-copy { color: var(--muted); font-size: 16px; line-height: 1.65; max-width: 650px; align-self: end; }
+
+    .principles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .principle { min-height: 235px; padding: 26px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); position: relative; overflow: hidden; }
+    .principle .num { color: var(--signal); font-size: 12px; font-weight: 650; }
+    .principle h3 { margin: 54px 0 10px; font-size: 23px; font-weight: 560; letter-spacing: -.02em; }
+    .principle p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.55; }
+    .active-node { position: absolute; width: 18px; height: 18px; background: var(--signal); border-radius: 50%; top: 25px; right: 25px; }
+
+    .logo-grid { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 14px; }
+    .logo-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); min-height: 310px; padding: 24px; display: flex; flex-direction: column; justify-content: space-between; }
+    .logo-stage { min-height: 210px; display: grid; place-items: center; }
+    .logo-stage img { max-width: 75%; max-height: 170px; }
+    .logo-stage.symbol img { max-width: 130px; }
+    .card-meta { display: flex; justify-content: space-between; gap: 10px; align-items: end; }
+    .card-meta strong { font-size: 14px; font-weight: 560; }
+    .card-meta span { color: var(--faint); font-size: 12px; }
+    .logo-card.dark-preview { background: #171717; border-color: rgba(244,241,234,.12); color: #F4F1EA; }
+    .logo-card.paper-preview { background: #F4F1EA; color: #171717; border-color: rgba(23,23,23,.10); }
+
+    .palette { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+    .swatch { border-radius: var(--radius-lg); overflow: hidden; border: 1px solid var(--border); background: var(--surface); }
+    .swatch-color { height: 170px; }
+    .swatch-info { padding: 18px; }
+    .swatch-info strong { display: block; font-size: 14px; margin-bottom: 6px; }
+    .swatch-info code { color: var(--muted); font-size: 13px; }
+    .swatch-info p { color: var(--muted); font-size: 12px; line-height: 1.45; margin: 10px 0 0; }
+
+    .semantic-rule { margin-top: 18px; display: grid; grid-template-columns: 160px 1fr; gap: 24px; padding: 22px 24px; border: 1px solid color-mix(in srgb, var(--signal) 45%, var(--border)); background: color-mix(in srgb, var(--signal) 6%, var(--surface)); border-radius: var(--radius-md); }
+    .semantic-rule strong { color: var(--signal); font-size: 14px; }
+    .semantic-rule span { color: var(--muted); font-size: 14px; line-height: 1.55; }
+
+    .type-grid { display: grid; grid-template-columns: .9fr 1.1fr; gap: 14px; }
+    .type-card { padding: 28px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); }
+    .wordmark-display { padding: 38px 0; }
+    .wordmark-display img { width: min(100%, 390px); }
+    html[data-theme="dark"] .wordmark-dark { display: none; }
+    html[data-theme="dark"] .wordmark-light { display: block; }
+    html[data-theme="light"] .wordmark-dark { display: block; }
+    html[data-theme="light"] .wordmark-light { display: none; }
+    .type-sample .display { font-size: clamp(42px, 6vw, 72px); line-height: .96; letter-spacing: -.045em; margin-bottom: 24px; }
+    .type-sample .body { max-width: 510px; color: var(--muted); line-height: 1.6; }
+    .type-spec { margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--border); display: grid; gap: 8px; font-size: 13px; color: var(--muted); }
+    .type-spec b { color: var(--text); font-weight: 550; }
+
+    .visual-language { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .visual-card { padding: 26px; border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius-lg); min-height: 300px; }
+    .diagram { height: 165px; display: grid; place-items: center; margin-bottom: 20px; }
+    .diagram svg { width: 170px; height: 140px; overflow: visible; }
+    .visual-card h3 { margin: 0 0 8px; font-size: 18px; font-weight: 560; }
+    .visual-card p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+
+    .ui-demo { border: 1px solid var(--border); border-radius: 22px; overflow: hidden; background: var(--surface); box-shadow: 0 28px 70px var(--shadow); }
+    .ui-top { height: 54px; display: flex; align-items: center; padding: 0 16px; border-bottom: 1px solid var(--border); gap: 12px; }
+    .ui-top img { width: 27px; height: 27px; }
+    .ui-title { font-size: 13px; font-weight: 550; }
+    .ui-spacer { flex: 1; }
+    .ui-btn { border: 1px solid var(--border); color: var(--muted); background: var(--surface-2); border-radius: 9px; padding: 7px 10px; font-size: 12px; }
+    .ui-btn.primary { background: var(--signal); border-color: var(--signal); color: #171717; font-weight: 650; }
+    .ui-body { display: grid; grid-template-columns: 210px 1fr 245px; min-height: 480px; }
+    .ui-panel { padding: 14px; background: var(--surface); }
+    .ui-panel.left { border-right: 1px solid var(--border); }
+    .ui-panel.right { border-left: 1px solid var(--border); }
+    .panel-title { color: var(--faint); text-transform: uppercase; font-size: 10px; letter-spacing: .11em; margin: 7px 7px 12px; }
+    .layer { display: flex; align-items: center; gap: 9px; padding: 9px; border-radius: 8px; color: var(--muted); font-size: 12px; }
+    .layer.selected { background: color-mix(in srgb, var(--signal) 10%, transparent); color: var(--text); outline: 1px solid color-mix(in srgb, var(--signal) 42%, transparent); }
+    .layer-dot { width: 7px; height: 7px; border-radius: 2px; background: var(--faint); }
+    .layer.selected .layer-dot { background: var(--signal); }
+    .workspace { background: var(--canvas); padding: 50px; display: grid; place-items: center; overflow: hidden; }
+    .artboard { width: min(100%, 410px); aspect-ratio: 4 / 5; background: var(--paper); color: var(--ink); box-shadow: 0 22px 65px rgba(0,0,0,.22); position: relative; padding: 34px; overflow: hidden; }
+    .artboard .kicker { font-size: 10px; text-transform: uppercase; letter-spacing: .14em; color: #62605C; }
+    .artboard h4 { font-size: clamp(29px, 3vw, 46px); letter-spacing: -.045em; line-height: .95; margin: 18px 0; font-weight: 580; }
+    .artboard p { font-size: 12px; line-height: 1.5; max-width: 75%; color: #62605C; }
+    .selected-box { position: absolute; width: 44%; height: 34%; right: 30px; bottom: 34px; border: 1px solid var(--signal); }
+    .handle { width: 9px; height: 9px; position: absolute; background: var(--paper); border: 2px solid var(--signal); border-radius: 50%; }
+    .handle.one { left: -5px; top: -5px; }
+    .handle.two { right: -5px; top: -5px; }
+    .handle.three { left: -5px; bottom: -5px; }
+    .handle.four { right: -5px; bottom: -5px; background: var(--signal); }
+    .art-shape { position: absolute; inset: 22px; background: var(--ink); clip-path: polygon(18% 10%, 90% 20%, 72% 94%, 8% 76%); opacity: .92; }
+    .prop { margin-bottom: 15px; }
+    .prop label { display: block; color: var(--faint); font-size: 10px; margin-bottom: 7px; }
+    .fake-input { height: 34px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); display: flex; align-items: center; padding: 0 10px; color: var(--muted); font-size: 12px; }
+    .signal-chip { display: inline-flex; align-items: center; gap: 6px; color: var(--signal); font-size: 11px; }
+    .signal-chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+
+    .guidance { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .guide-card { border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 26px; background: var(--surface); }
+    .guide-card h3 { margin: 0 0 18px; font-size: 17px; font-weight: 570; }
+    .guide-list { display: grid; gap: 13px; }
+    .guide-item { display: grid; grid-template-columns: 24px 1fr; gap: 10px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .guide-item .yes { color: #8ccf9a; }
+    .guide-item .no { color: var(--signal); }
+
+    .agent-box { margin-top: 16px; padding: 28px; border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: var(--surface); }
+    .agent-box h3 { margin: 0 0 12px; font-size: 19px; }
+    .agent-box p { color: var(--muted); line-height: 1.6; margin: 0 0 18px; max-width: 800px; }
+    .agent-box pre { margin: 0; padding: 18px; border-radius: 12px; background: var(--bg); border: 1px solid var(--border); color: var(--text); white-space: pre-wrap; font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+
+    footer { padding: 55px 0 70px; color: var(--muted); font-size: 12px; }
+    .footer-inner { display: flex; justify-content: space-between; gap: 30px; align-items: center; }
+    .footer-inner img { width: 115px; }
+
+    @media (max-width: 900px) {
+      .nav a { display: none; }
+      .section-head, .type-grid { grid-template-columns: 1fr; }
+      .principles, .visual-language { grid-template-columns: 1fr; }
+      .logo-grid { grid-template-columns: 1fr; }
+      .palette { grid-template-columns: 1fr 1fr; }
+      .ui-body { grid-template-columns: 1fr; }
+      .ui-panel.left, .ui-panel.right { display: none; }
+      .workspace { padding: 28px; min-height: 450px; }
+      .guidance { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 560px) {
+      .shell { width: min(calc(100% - 26px), var(--max)); }
+      .hero { padding-top: 70px; }
+      section { padding: 58px 0; }
+      .palette { grid-template-columns: 1fr; }
+      .semantic-rule { grid-template-columns: 1fr; gap: 8px; }
+      .footer-inner { align-items: flex-start; flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="shell topbar-inner">
+      <a class="brand-home" href="#top" aria-label="Forma home">
+        <img class="light-logo" src="assets/forma-lockup-reversed.svg" alt="Forma" />
+        <img class="dark-logo" src="assets/forma-lockup-color.svg" alt="Forma" />
+      </a>
+      <nav class="nav" aria-label="Guide sections">
+        <a href="#logo">Logo</a><a href="#color">Color</a><a href="#type">Type</a><a href="#ui">UI direction</a><a href="#agent">Agent notes</a>
+        <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle light and dark theme"><span class="theme-dot"></span><span id="themeLabel">Light</span></button>
+      </nav>
+    </div>
+  </header>
+
+  <main id="top">
+    <div class="shell hero">
+      <div class="eyebrow">Brand direction guide · v0.1</div>
+      <h1>Structure under controlled transformation.</h1>
+      <p>Forma is a structured visual system for agent-driven design. The identity should feel calm, precise and constructed—not magical, futuristic or generically “AI”.</p>
+      <div class="notice">
+        <div class="notice-mark">●</div>
+        <div><strong>This guide defines direction, not a final UI specification.</strong><span>Examples communicate hierarchy, rhythm, semantics and visual behavior. Coding agents should adapt layouts and component details to the product context instead of reproducing these examples pixel-for-pixel.</span></div>
+      </div>
+    </div>
+
+    <section>
+      <div class="shell">
+        <div class="section-head"><div><div class="section-no">01 / Idea</div><h2>What should Forma feel like?</h2></div><div class="section-copy">The product gives structure to visual ideas. Its identity comes from tension between a stable system and an element that is actively being shaped.</div></div>
+        <div class="principles">
+          <article class="principle"><span class="active-node"></span><div class="num">01</div><h3>Structure</h3><p>Neutral surfaces, deliberate spacing and strong hierarchy. The interface should feel organized before it feels expressive.</p></article>
+          <article class="principle"><span class="active-node"></span><div class="num">02</div><h3>Controlled transformation</h3><p>Curves, handles and tension can suggest that a form is being manipulated. Avoid decorative distortion without purpose.</p></article>
+          <article class="principle"><span class="active-node"></span><div class="num">03</div><h3>Active signal</h3><p>Orange is semantic. It means active, selected, transforming or a high-value action—not “add some color here”.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section id="logo">
+      <div class="shell">
+        <div class="section-head"><div><div class="section-no">02 / Logo</div><h2>Logo system</h2></div><div class="section-copy">The mark reads as a surface under tension. Two structural points remain neutral while the orange point represents the active manipulation.</div></div>
+        <div class="logo-grid">
+          <div class="logo-card dark-preview"><div class="logo-stage"><img src="assets/forma-lockup-reversed.svg" alt="Forma reversed lockup" /></div><div class="card-meta"><strong>Primary on dark</strong><span>Reversed + signal</span></div></div>
+          <div class="logo-card paper-preview"><div class="logo-stage"><img src="assets/forma-lockup-color.svg" alt="Forma color lockup" /></div><div class="card-meta"><strong>On paper</strong><span>Ink + signal</span></div></div>
+          <div class="logo-card paper-preview"><div class="logo-stage symbol"><img src="assets/forma-symbol-mono.svg" alt="Forma monochrome symbol" /></div><div class="card-meta"><strong>Monochrome</strong><span>When color is unavailable</span></div></div>
+        </div>
+        <div class="semantic-rule"><strong>Logo principle</strong><span>The orange node is part of the concept, not an accent to move around. Use the supplied assets rather than recreating or “improving” the symbol in product UI.</span></div>
+      </div>
+    </section>
+
+    <section id="color">
+      <div class="shell">
+        <div class="section-head"><div><div class="section-no">03 / Color</div><h2>Dark-first, warm-neutral.</h2></div><div class="section-copy">Dark is the default environment. Light exists as an intentional alternate mode, not as the canonical presentation. Avoid blue-purple AI palettes and cold neutral systems.</div></div>
+        <div class="palette">
+          <div class="swatch"><div class="swatch-color" style="background:#171717"></div><div class="swatch-info"><strong>Forma Ink</strong><code>#171717</code><p>Primary dark environment and core structure.</p></div></div>
+          <div class="swatch"><div class="swatch-color" style="background:#F4F1EA"></div><div class="swatch-info"><strong>Forma Paper</strong><code>#F4F1EA</code><p>Primary light surface, canvas and reversed foreground.</p></div></div>
+          <div class="swatch"><div class="swatch-color" style="background:#FF5A36"></div><div class="swatch-info"><strong>Forma Signal</strong><code>#FF5A36</code><p>Active, selected, transforming and primary action states.</p></div></div>
+          <div class="swatch"><div class="swatch-color" style="background:#62605C"></div><div class="swatch-info"><strong>Forma Graphite</strong><code>#62605C</code><p>Support tone. Do not rely on it as low-contrast text on Ink.</p></div></div>
+        </div>
+        <div class="semantic-rule"><strong>Orange rule</strong><span>Use Signal sparingly. If everything is orange, nothing is active. It may highlight a selected layer, transform handle, agent action, important CTA, focused control or progress state.</span></div>
+      </div>
+    </section>
+
+    <section id="type">
+      <div class="shell">
+        <div class="section-head"><div><div class="section-no">04 / Typography</div><h2>Quiet typography, expressive geometry.</h2></div><div class="section-copy">The logo carries the unusual form. Typography should stay restrained and highly readable so the interface does not compete with the mark.</div></div>
+        <div class="type-grid">
+          <div class="type-card"><div class="eyebrow">Wordmark</div><div class="wordmark-display"><img class="wordmark-light" src="assets/forma-wordmark-light.svg" alt="Forma light wordmark" /><img class="wordmark-dark" src="assets/forma-wordmark-dark.svg" alt="Forma dark wordmark" /></div><div class="type-spec"><div><b>Wordmark direction</b> Geist Regular</div><div><b>Stylistic set</b> Alternate “a” enabled</div><div><b>Tracking</b> approximately −2%</div><div>Use the outlined SVG for brand assets. Keep live Geist text for product UI.</div></div></div>
+          <div class="type-card type-sample"><div class="eyebrow">Product typography direction</div><div class="display">Design should feel constructed, not decorated.</div><p class="body">Prefer Geist for UI and product communication. Use a compact, clear hierarchy. Avoid overly futuristic display faces, excessive uppercase, or typographic effects that make the product feel like generic AI software.</p><div class="type-spec"><div><b>Display</b> Geist · medium/regular · tight tracking</div><div><b>Body</b> Geist · regular · relaxed line-height</div><div><b>Technical/code</b> Geist Mono is a natural companion when needed</div></div></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="shell">
+        <div class="section-head"><div><div class="section-no">05 / Visual language</div><h2>Show how forms are made.</h2></div><div class="section-copy">Secondary graphics can borrow from vector construction: control points, Bézier tension and selected objects. These are motifs, not mandatory decorations on every screen.</div></div>
+        <div class="visual-language">
+          <article class="visual-card"><div class="diagram"><svg viewBox="0 0 170 140"><path d="M25 105 C48 22, 116 25, 145 95" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round"/><circle cx="25" cy="105" r="7" fill="currentColor"/><circle cx="145" cy="95" r="7" fill="#FF5A36"/><circle cx="84" cy="36" r="6" fill="currentColor"/></svg></div><h3>Control points</h3><p>Nodes define structure. One active node may carry Signal orange when a transformation is happening.</p></article>
+          <article class="visual-card"><div class="diagram"><svg viewBox="0 0 170 140"><path d="M38 113 C43 52, 117 89, 130 24" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round"/><line x1="82" y1="72" x2="145" y2="72" stroke="#FF5A36" stroke-width="2"/><circle cx="145" cy="72" r="6" fill="var(--surface)" stroke="#FF5A36" stroke-width="3"/><rect x="77" y="67" width="10" height="10" fill="#FF5A36"/></svg></div><h3>Bézier tension</h3><p>A useful motion and illustration language. Keep it minimal so it reads as construction rather than a tutorial diagram.</p></article>
+          <article class="visual-card"><div class="diagram"><svg viewBox="0 0 170 140"><rect x="37" y="28" width="94" height="84" rx="4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="37" cy="28" r="6" fill="var(--surface)" stroke="currentColor" stroke-width="2"/><circle cx="131" cy="28" r="6" fill="var(--surface)" stroke="currentColor" stroke-width="2"/><circle cx="37" cy="112" r="6" fill="var(--surface)" stroke="currentColor" stroke-width="2"/><circle cx="131" cy="112" r="7" fill="#FF5A36"/></svg></div><h3>Selected state</h3><p>The editor itself can echo the brand: active handles and selected layers naturally give Signal a functional role.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section id="ui">
+      <div class="shell">
+        <div class="section-head"><div><div class="section-no">06 / UI direction</div><h2>Dark product surface first.</h2></div><div class="section-copy">This example shows the intended density, contrast and semantic use of Signal. It is explicitly not a prescribed component library or final layout.</div></div>
+        <div class="ui-demo">
+          <div class="ui-top"><img id="demoSymbol" src="assets/forma-symbol-reversed.svg" alt="Forma symbol"/><div class="ui-title">Forma Studio</div><span class="signal-chip">Agent active</span><div class="ui-spacer"></div><button class="ui-btn">Preview</button><button class="ui-btn primary">Export</button></div>
+          <div class="ui-body">
+            <aside class="ui-panel left"><div class="panel-title">Layers</div><div class="layer"><span class="layer-dot"></span>Background</div><div class="layer selected"><span class="layer-dot"></span>Hero image</div><div class="layer"><span class="layer-dot"></span>Headline</div><div class="layer"><span class="layer-dot"></span>Caption</div><div class="panel-title" style="margin-top:24px">Pages</div><div class="layer selected"><span class="layer-dot"></span>01 / Cover</div><div class="layer"><span class="layer-dot"></span>02 / Context</div><div class="layer"><span class="layer-dot"></span>03 / Detail</div></aside>
+            <div class="workspace"><div class="artboard"><div class="kicker">Structured visual systems</div><h4>Give visual ideas a form.</h4><p>Text, images, shapes and brand elements become one editable composition.</p><div class="selected-box"><div class="art-shape"></div><i class="handle one"></i><i class="handle two"></i><i class="handle three"></i><i class="handle four"></i></div></div></div>
+            <aside class="ui-panel right"><div class="panel-title">Properties</div><div class="prop"><label>POSITION</label><div class="fake-input">X 612 &nbsp;&nbsp; Y 388</div></div><div class="prop"><label>SIZE</label><div class="fake-input">W 420 &nbsp;&nbsp; H 328</div></div><div class="prop"><label>FILL</label><div class="fake-input"><span style="width:12px;height:12px;border-radius:3px;background:#171717;margin-right:8px"></span>#171717</div></div><div class="prop"><label>STATE</label><div class="fake-input" style="color:var(--signal)">Selected / transforming</div></div></aside>
+          </div>
+        </div>
+        <div class="semantic-rule"><strong>Derived UI tones</strong><span>Near-black raised surfaces, subtle warm borders and secondary text tones shown here are suggested directions, not locked brand colors. Agents may tune them for accessibility and product needs while keeping the dark-first, warm-neutral character.</span></div>
+      </div>
+    </section>
+
+    <section id="agent">
+      <div class="shell">
+        <div class="section-head"><div><div class="section-no">07 / Guidance</div><h2>What agents should preserve.</h2></div><div class="section-copy">Treat the brand as a set of visual principles. Preserve semantics and character; adapt implementation details to the actual workflow.</div></div>
+        <div class="guidance">
+          <article class="guide-card"><h3>Do</h3><div class="guide-list"><div class="guide-item"><span class="yes">✓</span><span>Default to a dark product environment with warm neutral surfaces.</span></div><div class="guide-item"><span class="yes">✓</span><span>Use Signal orange for active, selected, transforming and primary-action states.</span></div><div class="guide-item"><span class="yes">✓</span><span>Keep typography quiet and let geometry carry more of the personality.</span></div><div class="guide-item"><span class="yes">✓</span><span>Use construction motifs selectively: nodes, paths, handles and tension.</span></div><div class="guide-item"><span class="yes">✓</span><span>Adapt spacing, component dimensions and layouts to usability and context.</span></div></div></article>
+          <article class="guide-card"><h3>Don't</h3><div class="guide-list"><div class="guide-item"><span class="no">×</span><span>Do not turn the product into a wall of orange accents.</span></div><div class="guide-item"><span class="no">×</span><span>Do not introduce purple/blue “AI” gradients, sparkles, glows or magic motifs.</span></div><div class="guide-item"><span class="no">×</span><span>Do not recreate or mutate the approved logo geometry in product code.</span></div><div class="guide-item"><span class="no">×</span><span>Do not treat sample components in this document as mandatory pixel specs.</span></div><div class="guide-item"><span class="no">×</span><span>Do not make every surface heavily rounded, glossy or decorative.</span></div></div></article>
+        </div>
+        <div class="agent-box"><h3>Instruction block for a coding/design agent</h3><p>This text can be copied into project guidance. The HTML remains the richer visual reference.</p><pre>Forma is dark-first and warm-neutral. Use #171717, #F4F1EA and #FF5A36 as the core identity colors. Orange has semantic meaning: active, selected, transforming, focused or high-value action. Keep its use sparse.
+
+Use Geist as the primary product type direction. Typography should be clear and restrained. The brand personality comes primarily from structured geometry, tension, control points and vector-construction motifs—not decorative type or generic AI effects.
+
+Treat examples in this guide as visual-direction references, NOT pixel-perfect implementation requirements. Adapt component dimensions, spacing, layout and derived surface colors to product usability and accessibility while preserving the brand's hierarchy and character.
+
+Prefer dark mode as the canonical product experience. Provide a thoughtful light alternative using warm Paper rather than pure white.
+
+Avoid purple/blue AI gradients, sparkles, glow-heavy interfaces, neural-network imagery, generic SaaS abstractions, excessive orange, and arbitrary modifications to the supplied logo assets.</pre></div>
+      </div>
+    </section>
+  </main>
+
+  <footer><div class="shell footer-inner"><div class="brand-home"><img class="light-logo" src="assets/forma-lockup-reversed.svg" alt="Forma"/><img class="dark-logo" src="assets/forma-lockup-color.svg" alt="Forma"/></div><span>Visual direction reference · examples are intentionally non-binding.</span></div></footer>
+
+  <script>
+    const root = document.documentElement;
+    const button = document.getElementById('themeToggle');
+    const label = document.getElementById('themeLabel');
+    const demoSymbol = document.getElementById('demoSymbol');
+    function applyTheme(theme) {
+      root.dataset.theme = theme;
+      label.textContent = theme === 'dark' ? 'Light' : 'Dark';
+      demoSymbol.src = theme === 'dark' ? 'assets/forma-symbol-reversed.svg' : 'assets/forma-symbol-color.svg';
+      try { localStorage.setItem('forma-guide-theme', theme); } catch (_) {}
+    }
+    let initial = 'dark';
+    try { initial = localStorage.getItem('forma-guide-theme') || 'dark'; } catch (_) {}
+    applyTheme(initial);
+    button.addEventListener('click', () => applyTheme(root.dataset.theme === 'dark' ? 'light' : 'dark'));
+  </script>
+</body>
+</html>
