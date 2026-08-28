@@ -17,14 +17,15 @@ The full specification is [forma-plan.md](forma-plan.md).
 
 ## Status
 
-Phases 0 to 4 of the plan are complete: the monorepo, the domain core and its
-operations, the render pipeline, the validator, and SQLite persistence with
-optimistic versioning and a snapshot per version. The MCP server works over
-stdio but still exposes only the two Phase 0 tools.
+Phases 0 to 5 of the plan are complete: the domain core and its operations, the
+render pipeline, the validator, SQLite persistence with optimistic versioning,
+asset ingest with SVG sanitizing, and the whole REST API of the plan's section
+31 — projects, brand kits, designs, the operations batch, undo, history,
+validation, previews, uploads, asset requests and exports.
 
-The REST surface for designs and the editor do not exist yet — the repositories
-are there, but only `/status`, `/health` and the test card are wired. Those are
-Phases 5 and 6.
+The editor does not exist yet: the frontend is still a status page. The MCP
+server works over stdio but exposes only its two Phase 0 tools, which Phase 8
+will extend now that the REST routes they call exist.
 
 ## Requirements
 
@@ -77,6 +78,8 @@ the server alongside it.
 | `crates/renderer` | `DesignDocument -> SVG -> PNG`, fonts, bounds inspection. |
 | `crates/validator` | Deterministic checks. Measures nothing itself. |
 | `crates/persistence` | Repository traits plus SQLite and local-filesystem adapters. |
+| `crates/application` | Use cases. Knows nothing about Actix or MCP. |
+| `crates/assets` | Upload ingest: magic bytes, hashing, SVG sanitizing. |
 | `apps/server` | Actix Web REST API, SQLite, static file serving. |
 | `apps/mcp` | MCP server over stdio; a REST client of `apps/server`. |
 | `apps/web` | React + TypeScript + Vite editor. |

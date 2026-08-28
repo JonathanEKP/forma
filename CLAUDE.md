@@ -8,19 +8,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Before implementing anything, read the relevant section (numbered headings —
 `grep -n '^#\{1,3\} '` lists them).
 
-**Phases 0 to 4 are complete.** The workspace, domain core and its operations, the full
-render pipeline (text, shapes, images), the validator, and SQLite persistence —
-optimistic versioning, a snapshot per version, assets, asset requests and exports — all
-exist and are tested. The MCP stdio server works but still exposes only the two Phase 0
-tools. The blocking spike of §36 resolved to **Option A**: `<g id="layer-{uuid}">`
-wrappers survive usvg normalization, so the editor can address rendered geometry by layer
-id directly.
+**Phases 0 to 5 are complete.** The workspace, domain core and its operations, the full
+render pipeline (text, shapes, images), the validator, SQLite persistence with optimistic
+versioning and a snapshot per version, the `application` use cases of §8.2, the `assets`
+ingest of §8.5, and the whole REST surface of §31 all exist and are tested. The blocking
+spike of §36 resolved to **Option A**: `<g id="layer-{uuid}">` wrappers survive usvg
+normalization, so the editor can address rendered geometry by layer id directly.
 
-Next is **Phase 5 (REST server)**. What does NOT exist yet: the REST surface for designs
-(the repositories exist but only `/status`, `/health` and the test card are wired), the
-`application` and `assets` crates of §8.2 and §8.5, the remaining eleven MCP tools, and
-the editor. The golden-test baseline of §63 is also still missing — §93.3 says not to
-invent a pixel-diff threshold before there are real renders to measure, and now there are.
+Next is **Phase 6 (React editor)**. What does NOT exist yet: the editor itself — the
+frontend is still the Phase 0 status page — and the remaining eleven MCP tools, which
+Phase 8 wires to the REST routes that now exist. The golden-test baseline of §63 is also
+still missing; §93.3 says not to invent a pixel-diff threshold before there are real
+renders to measure, and now there are.
 
 ## What the product is
 
@@ -54,8 +53,9 @@ Rust workspace crates and their boundaries (§8):
 | `design-core` | domain types, operations, versions | Actix, SQLx, MCP, HTTP, filesystem |
 | `application` | use cases (`ApplyDesignOperations`, `RenderPreview`, …) | Actix, MCP |
 | `renderer` | scene → SVG → PNG, fonts, text bbox | Actix |
+| ↳ | *depends on `assets`, deliberately: see the byte-identification invariant below* | |
 | `validator` | deterministic checks (bounds, text, assets, brand) | renderer, usvg |
-| `assets` | upload, hashing, MIME, dimensions, sanitization | agents/MCP concepts |
+| `assets` | upload, hashing, MIME, dimensions, sanitization, **and identifying what a pile of bytes is** | agents/MCP concepts |
 | `persistence` | repository traits + sqlite/local_fs adapters (postgres/supabase later) | Actix, MCP |
 | `mcp-api` | MCP tool schemas + handlers calling forma-server | design logic |
 
@@ -132,6 +132,18 @@ from Signal and unrelated to it; do not unify them.
 - **Image layers get their bytes from an `AssetSource`**, and the renderer embeds them as
   data URIs. It never resolves a path or a URL, so it needs no network or filesystem access
   while drawing. A missing asset is `ASSET_NOT_FOUND`, never a blank space.
+- **One authority for what a pile of bytes is.** `assets::probe` decides format and
+  dimensions for both ingest and drawing; the renderer calls it rather than keeping its
+  own magic-byte reader. It used to keep one, which knew only PNG and JPEG, so an upload
+  could be accepted and then go unrecognised at draw time — resvg links `png`,
+  `zune-jpeg`, `gif` and `image-webp` and renders a nested SVG data URI, so all four
+  formats of §44 work. An SVG keeps its size in the document rather than a header, so
+  `probe` reports zero for it and the tree must be read; leaving the zero makes every SVG
+  fall through `place`'s guard and silently ignore `contain` and `cover`.
+- **Repositories stamp their own `created_at`.** A caller cannot backdate a row, and one
+  that forgets the field cannot persist a blank timestamp. Note that `create` returns a
+  struct built in memory rather than re-reading the row, so a test that trusts the create
+  response proves nothing about what was stored — read it back.
 - **Text has no implicit word-wrap in V1.** Line breaks are explicit `\n` in the string;
   the validator detects overflow using real bounding boxes from `usvg`.
 - **Errors have a stable shape** everywhere: `{"error": {"code", "message", "details"}}`.
