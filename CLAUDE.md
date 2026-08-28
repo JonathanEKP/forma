@@ -16,10 +16,9 @@ all thirteen MCP tools, and the agent skill all exist and are tested. The blocki
 wrappers survive usvg normalization, and the editor addresses rendered geometry by layer
 id directly.
 
-**Phase 10 (hardening) is under way.** Done: the golden-render baseline of §63 and the
-structured logging of §60. Still open from that list: backup, cleanup (nothing is ever
-deleted — soft-deleted assets, old version snapshots and the preview cache all grow
-without bound), and graceful shutdown. Beyond it: the brand panel — `Panel` in `store.ts`
+**Phase 10 (hardening) is under way.** Done: the golden-render baseline of §63, the
+structured logging of §60, and render-cache cleanup. Still open from that list: backup and
+graceful shutdown. Beyond it: the brand panel — `Panel` in `store.ts`
 still carries a `"brand"` variant with no component behind it — the Playwright E2E of §67,
 and the remote deploy of Phases 11 and 12.
 
@@ -159,6 +158,14 @@ from Signal and unrelated to it; do not unify them.
   formats of §44 work. An SVG keeps its size in the document rather than a header, so
   `probe` reports zero for it and the tree must be read; leaving the zero makes every SVG
   fall through `place`'s guard and silently ignore `contain` and `cover`.
+- **Derived data is collected; the user's work is not.** The render cache prunes itself:
+  writing version N drops everything below `N - KEEP_RECENT_VERSIONS` for that design, so
+  the thing that grows the cache is the thing that trims it and no call site can forget.
+  Renders of designs that no longer exist are swept at startup against `all_ids()`, because
+  a project delete cascades in SQL and never touches the filesystem. Neither touches
+  anything a person made: **asset bytes stay** (§74 — historical versions still reference
+  them) and **version snapshots stay**, because they are the undo depth and the §61 audit
+  trail. A preview is ~26 KB and always regenerable; a snapshot is ~2 KB and is not.
 - **Repositories stamp their own `created_at`.** A caller cannot backdate a row, and one
   that forgets the field cannot persist a blank timestamp. Note that `create` returns a
   struct built in memory rather than re-reading the row, so a test that trusts the create

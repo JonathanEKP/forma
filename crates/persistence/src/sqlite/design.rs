@@ -239,6 +239,16 @@ impl DesignRepository for SqliteDesignRepository {
         }
     }
 
+    async fn all_ids(&self) -> Result<Vec<DesignId>> {
+        let rows: Vec<String> = sqlx::query_scalar("SELECT id FROM designs")
+            .fetch_all(&self.pool)
+            .await?;
+
+        rows.into_iter()
+            .map(|raw| Ok(DesignId(parse_uuid(raw)?)))
+            .collect()
+    }
+
     async fn delete(&self, id: DesignId) -> Result<()> {
         let deleted = sqlx::query("DELETE FROM designs WHERE id = ?")
             .bind(id.to_string())

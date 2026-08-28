@@ -1,9 +1,17 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use actix_web::{web, App, HttpServer};
 use forma_server::{routes, telemetry, AppState, Config};
+use persistence::DesignRepository;
 use renderer::{FontRegistry, RenderCache};
 use tracing_subscriber::EnvFilter;
+
+/// Drops cached renders for designs that are gone.
+async fn sweep_render_cache(state: &AppState) -> anyhow::Result<renderer::cache::Pruned> {
+    let live: HashSet<_> = state.designs.all_ids().await?.into_iter().collect();
+    Ok(state.cache.sweep(&live)?)
+}
 
 #[actix_web::main]
 async fn main() -> anyhow::Result<()> {
@@ -27,6 +35,20 @@ async fn main() -> anyhow::Result<()> {
     let cache = Arc::new(RenderCache::new(config.data_dir.join("previews")));
     let store = Arc::new(persistence::LocalObjectStore::new(&config.data_dir));
     let state = AppState::new(pool, fonts, cache, store);
+
+    // Renders of designs that no longer exist (plan section 74). Doing it at
+    // startup rather than on every delete path means a path added later cannot
+    // forget, and anything a crash left behind is collected too.
+    match sweep_render_cache(&state).await {
+        Ok(pruned) if pruned.files > 0 => tracing::info!(
+            files = pruned.files,
+            bytes = pruned.bytes,
+            "swept renders of deleted designs"
+        ),
+        Err(error) => tracing::warn!(%error, "could not sweep the render cache"),
+        _ => {}
+    }
+
     let web_dir = config.web_dir.clone();
     let bind = config.bind.clone();
 

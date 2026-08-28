@@ -52,4 +52,11 @@ pub trait DesignRepository: Send + Sync {
     async fn snapshot(&self, id: DesignId, version: Version) -> Result<DesignDocument>;
 
     async fn delete(&self, id: DesignId) -> Result<()>;
+
+    /// Every design that still exists, for cleanup to compare against.
+    ///
+    /// Derived data keyed by design id — the render cache — has no other way to
+    /// learn that a design was deleted, because a project delete cascades in
+    /// SQL and never touches the filesystem.
+    async fn all_ids(&self) -> Result<Vec<DesignId>>;
 }
