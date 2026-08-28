@@ -12,7 +12,7 @@ test("renders the status the server reports", async () => {
     "fetch",
     vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({
+      json: () => Promise.resolve({
         name: "forma-server",
         version: "0.1.0",
         schema_version: 1,
@@ -34,7 +34,7 @@ test("surfaces the server error code instead of a blank screen", async () => {
     vi.fn().mockResolvedValue({
       ok: false,
       status: 500,
-      json: async () => ({ error: { code: "STORAGE_ERROR", message: "database is locked" } }),
+      json: () => Promise.resolve({ error: { code: "STORAGE_ERROR", message: "database is locked" } }),
     }),
   );
 

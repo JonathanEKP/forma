@@ -59,6 +59,13 @@ state: selection, zoom, pan, in-progress drag/resize), Tailwind. No WASM, no Yew
 
 ## Invariants to preserve when implementing
 
+- **No `any`, ever.** Not written, not leaked. `@typescript-eslint/no-explicit-any` plus
+  the type-aware `no-unsafe-*` rules run as errors and `pnpm lint` uses `--max-warnings 0`,
+  so a violation fails CI. Untyped data enters the app in exactly one place —
+  `readJson` in [api.ts](apps/web/src/api.ts) — which funnels `Response.json()` through
+  `unknown` and asserts once against a generated binding. Widen that boundary and the rules
+  stop protecting anything. Prefer `unknown` plus narrowing; never reach for `any` or a
+  disable comment to silence a type error.
 - **Rust is the source of truth for types.** TS bindings are generated with `ts-rs` into
   `bindings/generated/` (committed), and `scripts/check-bindings.sh` fails CI when they
   drift. The export dir comes from `TS_RS_EXPORT_DIR` in `.cargo/config.toml`; ts-rs writes

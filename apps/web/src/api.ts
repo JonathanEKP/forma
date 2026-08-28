@@ -22,16 +22,32 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * The one place where untyped data enters the app.
+ *
+ * `Response.json()` is typed as `any` by the DOM lib, which would let `any`
+ * spread silently through everything downstream. It is funnelled through
+ * `unknown` here and asserted exactly once, against a shape generated from
+ * Rust. Nothing outside this function ever handles an unasserted payload.
+ */
+async function readJson(response: Response): Promise<unknown> {
+  return (await response.json()) as unknown;
+}
+
 async function request<T>(path: string): Promise<T> {
   const response = await fetch(`/api/v1${path}`);
+
   if (!response.ok) {
     // Plan section 32: the error shape is stable, so it is parsed, not guessed.
-    const body = (await response.json().catch(() => null)) as { error?: ApiErrorBody } | null;
+    const payload = (await readJson(response).catch(() => null)) as {
+      error?: ApiErrorBody;
+    } | null;
     throw new ApiError(
-      body?.error ?? { code: "SERVER_ERROR", message: `HTTP ${response.status}` },
+      payload?.error ?? { code: "SERVER_ERROR", message: `HTTP ${response.status}` },
     );
   }
-  return (await response.json()) as T;
+
+  return (await readJson(response)) as T;
 }
 
 import type { Status } from "@forma/bindings/Status";
