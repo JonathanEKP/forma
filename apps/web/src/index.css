@@ -1,3 +1,5 @@
+@import "tailwindcss";
+
 /*
  * Geist, self-hosted rather than imported from Google Fonts.
  *
@@ -29,13 +31,50 @@
   src: url("./fonts/GeistMono-Variable-latin.woff2") format("woff2");
 }
 
-:root {
-  --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+/*
+ * Forma's own identity (docs/brand/README.md), not the user's BrandKit.
+ *
+ * Signal is semantic: active, selected, transforming, primary action. It marks
+ * a selected layer and a transform handle, and nothing else. These tokens must
+ * never reach the renderer or a BrandKit default — a design comes out orange
+ * only because the user's own brand is orange.
+ */
+@theme {
+  --color-ink: #171717;
+  --color-paper: #f4f1ea;
+  --color-signal: #ff5a36;
+  --color-graphite: #62605c;
+
+  --color-surface: #1e1e1d;
+  --color-surface-2: #252524;
+  --color-canvas: #20201f;
+
+  --color-edge: rgba(244, 241, 234, 0.1);
+  --color-edge-strong: rgba(244, 241, 234, 0.18);
+
+  --color-muted: #aaa79f;
+  --color-faint: #77746e;
+
+  --font-sans:
+    "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono:
+    "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/*
+ * Dark-first: dark is the canonical environment, not a mode to opt into.
+ * A light alternative would use warm Paper rather than pure white.
+ */
+html,
+body,
+#root {
+  height: 100%;
 }
 
 body {
   margin: 0;
+  background: var(--color-ink);
+  color: var(--color-paper);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
@@ -45,4 +84,10 @@ kbd,
 pre,
 samp {
   font-family: var(--font-mono);
+}
+
+/* The canvas scrolls independently of the chrome around it. */
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-edge-strong) transparent;
 }

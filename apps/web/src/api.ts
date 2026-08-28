@@ -5,21 +5,83 @@
  * redeclared here: CI fails if the checked-in bindings drift.
  */
 
-export type { Status } from "@forma/bindings/Status";
+import type { Asset } from "@forma/bindings/Asset";
+import type { AssetRequest } from "@forma/bindings/AssetRequest";
+import type { BrandKit } from "@forma/bindings/BrandKit";
+import type { DesignOperation } from "@forma/bindings/DesignOperation";
+import type { DesignRecord } from "@forma/bindings/DesignRecord";
+import type { DesignSummary } from "@forma/bindings/DesignSummary";
+import type { Project } from "@forma/bindings/Project";
+import type { Status } from "@forma/bindings/Status";
+import type { ValidationReport } from "@forma/bindings/ValidationReport";
+import type { Version } from "@forma/bindings/Version";
+import type { VersionSummary } from "@forma/bindings/VersionSummary";
+
+export type {
+  Asset,
+  AssetRequest,
+  BrandKit,
+  DesignOperation,
+  DesignRecord,
+  DesignSummary,
+  Project,
+  Status,
+  ValidationReport,
+  Version,
+  VersionSummary,
+};
 
 export interface ApiErrorBody {
   code: string;
   message: string;
   details?: unknown;
+  hint?: string;
 }
 
+/**
+ * A failed call, carrying the stable code of plan section 32.
+ *
+ * The code is what callers branch on; the HTTP status is a coarser signal that
+ * the server derives from it.
+ */
 export class ApiError extends Error {
   readonly code: string;
+  readonly hint?: string;
+  readonly details?: unknown;
+  readonly status: number;
 
-  constructor(body: ApiErrorBody) {
+  constructor(body: ApiErrorBody, status: number) {
     super(body.message);
+    this.name = "ApiError";
     this.code = body.code;
+    this.hint = body.hint;
+    this.details = body.details;
+    this.status = status;
   }
+
+  /** The design moved under us: refetch, rebase, resend (plan section 27). */
+  get isConflict(): boolean {
+    return this.code === "VERSION_CONFLICT";
+  }
+}
+
+/** The two versions a conflict reports, when it reports them. */
+export interface ConflictDetails {
+  expected: number;
+  actual: number;
+}
+
+export function conflictDetails(error: ApiError): ConflictDetails | null {
+  const details = error.details;
+  if (typeof details !== "object" || details === null) return null;
+
+  const record = details as Record<string, unknown>;
+  const expected = record.expected;
+  const actual = record.actual;
+
+  return typeof expected === "number" && typeof actual === "number"
+    ? { expected, actual }
+    : null;
 }
 
 /**
@@ -34,22 +96,158 @@ async function readJson(response: Response): Promise<unknown> {
   return (await response.json()) as unknown;
 }
 
-async function request<T>(path: string): Promise<T> {
-  const response = await fetch(`/api/v1${path}`);
+/** Who the server records as the author of a mutation (plan section 61). */
+const ACTOR_HEADER = { "x-forma-actor": "human" } as const;
 
-  if (!response.ok) {
-    // Plan section 32: the error shape is stable, so it is parsed, not guessed.
-    const payload = (await readJson(response).catch(() => null)) as {
-      error?: ApiErrorBody;
-    } | null;
-    throw new ApiError(
-      payload?.error ?? { code: "SERVER_ERROR", message: `HTTP ${response.status}` },
-    );
-  }
+async function fail(response: Response): Promise<never> {
+  const payload = (await readJson(response).catch(() => null)) as {
+    error?: ApiErrorBody;
+  } | null;
+
+  throw new ApiError(
+    payload?.error ?? { code: "SERVER_ERROR", message: `HTTP ${response.status}` },
+    response.status,
+  );
+}
+
+async function request<T>(
+  path: string,
+  init?: { method?: string; body?: unknown },
+): Promise<T> {
+  const hasBody = init?.body !== undefined;
+
+  const response = await fetch(`/api/v1${path}`, {
+    method: init?.method ?? "GET",
+    headers: hasBody
+      ? { "content-type": "application/json", ...ACTOR_HEADER }
+      : ACTOR_HEADER,
+    body: hasBody ? JSON.stringify(init.body) : undefined,
+  });
+
+  if (!response.ok) await fail(response);
+  if (response.status === 204) return undefined as T;
 
   return (await readJson(response)) as T;
 }
 
-import type { Status } from "@forma/bindings/Status";
+// --- meta -----------------------------------------------------------------
 
 export const getStatus = () => request<Status>("/status");
+
+// --- projects -------------------------------------------------------------
+
+export const listProjects = () => request<Project[]>("/projects");
+
+export const createProject = (name: string) =>
+  request<Project>("/projects", { method: "POST", body: { name } });
+
+export const getProject = (id: string) => request<Project>(`/projects/${id}`);
+
+export const getBrand = (projectId: string) =>
+  request<BrandKit | null>(`/projects/${projectId}/brand`);
+
+// --- designs --------------------------------------------------------------
+
+export const listDesigns = (projectId: string) =>
+  request<DesignSummary[]>(`/projects/${projectId}/designs`);
+
+export const createDesign = (projectId: string, name: string) =>
+  request<DesignRecord>(`/projects/${projectId}/designs`, {
+    method: "POST",
+    body: { name },
+  });
+
+export const getDesign = (id: string) => request<DesignRecord>(`/designs/${id}`);
+
+export const getHistory = (id: string) =>
+  request<VersionSummary[]>(`/designs/${id}/history`);
+
+/**
+ * The single mutation entry point (plan section 28).
+ *
+ * `baseVersion` is what the caller last read. A design that moved in between
+ * answers VERSION_CONFLICT rather than silently overwriting the other writer.
+ */
+export const applyOperations = (
+  id: string,
+  baseVersion: Version,
+  operations: DesignOperation[],
+) =>
+  request<DesignRecord>(`/designs/${id}/operations`, {
+    method: "POST",
+    body: { base_version: baseVersion, operations },
+  });
+
+export const undo = (id: string, baseVersion: Version) =>
+  request<DesignRecord>(`/designs/${id}/undo`, {
+    method: "POST",
+    body: { base_version: baseVersion },
+  });
+
+export const validateDesign = (id: string) =>
+  request<ValidationReport>(`/designs/${id}/validate`, { method: "POST" });
+
+// --- assets ---------------------------------------------------------------
+
+export const listAssets = (projectId: string) =>
+  request<Asset[]>(`/projects/${projectId}/assets`);
+
+export async function uploadAsset(projectId: string, file: File): Promise<Asset> {
+  const form = new FormData();
+  form.append("file", file);
+
+  // No content-type header: the browser sets it with the multipart boundary.
+  const response = await fetch(`/api/v1/projects/${projectId}/assets`, {
+    method: "POST",
+    headers: ACTOR_HEADER,
+    body: form,
+  });
+
+  if (!response.ok) await fail(response);
+  return (await readJson(response)) as Asset;
+}
+
+export const assetContentUrl = (id: string) => `/api/v1/assets/${id}/content`;
+
+// --- asset requests -------------------------------------------------------
+
+export const listAssetRequests = (projectId: string) =>
+  request<AssetRequest[]>(`/projects/${projectId}/asset-requests`);
+
+export const resolveAssetRequest = (id: string, assetId: string) =>
+  request<AssetRequest>(`/asset-requests/${id}/resolve`, {
+    method: "POST",
+    body: { asset_id: assetId },
+  });
+
+export const cancelAssetRequest = (id: string) =>
+  request<AssetRequest>(`/asset-requests/${id}/cancel`, { method: "POST" });
+
+// --- rendering ------------------------------------------------------------
+
+/**
+ * The authoritative SVG for one page, with text already flattened to paths.
+ *
+ * The editor draws this and puts its interaction layer on top; it never
+ * reimplements typography (plan section 37). The version is in the URL so a
+ * cached response can never be shown against a newer document.
+ */
+export const previewSvgUrl = (designId: string, pageId: string, version: Version) =>
+  `/api/v1/designs/${designId}/pages/${pageId}/preview.svg?v=${version}`;
+
+export const previewPngUrl = (
+  designId: string,
+  pageId: string,
+  version: Version,
+  scale = 1,
+) => `/api/v1/designs/${designId}/pages/${pageId}/preview.png?scale=${scale}&v=${version}`;
+
+export async function fetchPreviewSvg(
+  designId: string,
+  pageId: string,
+  version: Version,
+): Promise<string> {
+  const response = await fetch(previewSvgUrl(designId, pageId, version));
+  if (!response.ok) await fail(response);
+  return await response.text();
+}
