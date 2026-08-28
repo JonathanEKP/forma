@@ -318,8 +318,16 @@ Testing layers: unit tests per crate; **golden rendering tests** comparing rende
 (each golden change needs visual review — do not update goldens mechanically); integration
 tests over a temp SQLite doing the full create → operations → validate → render → export
 transaction; MCP tests via the in-process transport plus a stdio smoke test; Vitest +
-React Testing Library on the frontend; Playwright E2E against Forma itself (Playwright is
-for testing our app — the plan explicitly forbids driving external AI services with it).
+React Testing Library on the frontend; and the Playwright walkthrough in `e2e/`, which
+drives a real browser against a real server serving the built app (§67 — Playwright is for
+testing our app; the plan explicitly forbids driving external AI services with it).
+
+The end-to-end layer is the only one that fakes nothing: Vitest mocks `fetch`, the Rust
+integration tests have no browser, the MCP tests have no person. It exists to catch the
+failure where the backend can do something and the interface never exposes it — which
+shipped twice before it existed. It covers the browser half of §79; steps 6 to 14 are the
+agent's and are covered in `apps/mcp/tests/agent_flow.rs`. **Never wait on a clock in it** —
+wait on a condition, or it becomes the flaky layer everyone learns to ignore.
 
 ## Config
 

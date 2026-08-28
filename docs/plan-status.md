@@ -33,13 +33,7 @@ passes" is not enough — Phase 6's acceptance passed with two panels missing.
 
 ## Open, with the section that asks for it
 
-### 1. Playwright end-to-end — §67
-
-The plan lists it as a testing layer. No phase was ever given it, and it does
-not exist. It is what would have caught the Brand panel gap: it walks §79's script,
-which starts with creating a project and configuring a Brand Kit.
-
-### 2. Default font — §94 (93.2)
+### 1. Default font — §94 (93.2)
 
 Still an open decision, which the plan says must be closed by reviewing licence,
 required weights, `usvg` compatibility and visual result. `data/fonts` currently
@@ -54,8 +48,7 @@ invented.
 
 1. ~~**Brand panel**~~ — done. Phase 6 is closed and §79 step 4 is reachable.
 2. ~~**Export from the editor**~~ — done. §10's layout is complete.
-3. **Playwright end-to-end** — §67, walking §79's twenty steps, so this class of
-   drift is caught by CI instead of by an audit.
+3. ~~**Playwright end-to-end**~~ — done. §79's walkthrough runs in CI.
 4. **Default font decision** — §94 (93.2), written down.
 5. **Phase 11, remote deploy** — after the above, and only once Oracle capacity
    is confirmed (§90). The plan says explicitly that the architecture does not
@@ -85,3 +78,4 @@ reasoning for each is an invariant in [CLAUDE.md](../CLAUDE.md).
 | Brand version in the render cache key | A `$brand.*` token resolves at render time, so a brand edit changes the picture without changing the design's version. |
 | The Brand panel appears in the project view too | §79 configures a Brand Kit before any design exists, so the editor alone would be too late. |
 | The editor warns before exporting a design with errors, but allows it | §42 says errors block export, and the server does not enforce it. The agent is told to fix them first; a person is told what they are shipping and decides. |
+| The end-to-end covers the browser half of §79, not the agent half | Steps 6 to 14 are already driven against the real binaries in `apps/mcp/tests/agent_flow.rs`. Repeating them in a browser would be slower and prove less. |

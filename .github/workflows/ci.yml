@@ -75,3 +75,51 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+  # Plan section 67. Separate from the web job because it needs the Rust binary
+  # too, and because a browser download is worth caching on its own.
+  e2e:
+    name: End to end
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # ~115 MB, and it does not change between runs.
+      - name: Cache the browser
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install the browser
+        run: pnpm e2e:install --with-deps
+
+      # The walkthrough drives the real server serving the real built app.
+      - name: Build the server
+        run: cargo build --bin forma-server
+
+      - name: Build the app
+        run: pnpm build
+
+      - name: Walk the Definition of Done
+        run: pnpm e2e
+
+      - name: Keep the trace of a failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-trace
+          path: e2e/test-results/
+          retention-days: 7

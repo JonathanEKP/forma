@@ -29,7 +29,7 @@ import { PagesAndLayers, Panel, Properties } from "./Panels";
 import { Validation } from "./Validation";
 
 export function Editor({ designId, onBack }: { designId: string; onBack: () => void }) {
-  const { data: record, isLoading, error } = useDesign(designId);
+  const { data: record, isLoading, error, refetch } = useDesign(designId);
   const { selectedPageId, selectPage, panel, setPanel, zoom, setZoom } = useEditor();
 
   const apply = useApplyOperations(designId);
@@ -158,7 +158,16 @@ export function Editor({ designId, onBack }: { designId: string; onBack: () => v
       {/* The conflict is not a toast: the edit did not happen, and the user has
           to know that before they carry on typing (plan section 27). */}
       {apply.error instanceof ApiError && apply.error.isConflict && (
-        <Conflict error={apply.error} onReload={() => apply.reset()} />
+        <Conflict
+          error={apply.error}
+          onReload={() => {
+            // Actually refetch. Clearing the error alone would hide the banner
+            // while the editor still held the stale version, so the next edit
+            // would conflict again — the blind retry the plan warns about,
+            // built into the UI.
+            void refetch().then(() => apply.reset());
+          }}
+        />
       )}
 
       {apply.error instanceof ApiError && !apply.error.isConflict && (

@@ -1,5 +1,6 @@
 packages:
   - "apps/web"
+  - "e2e"
 
 # esbuild ships a platform binary that its postinstall script links into place;
 # pnpm blocks install scripts until they are approved explicitly.
