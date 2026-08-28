@@ -260,6 +260,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
+name = "application"
+version = "0.1.0"
+dependencies = [
+ "design-core",
+ "persistence",
+ "renderer",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "ts-rs",
+ "uuid",
+ "validator",
+]
+
+[[package]]
 name = "arrayref"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -913,6 +930,8 @@ dependencies = [
  "actix-files",
  "actix-web",
  "anyhow",
+ "application",
+ "base64 0.22.1",
  "design-core",
  "persistence",
  "renderer",
@@ -926,6 +945,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "ts-rs",
+ "uuid",
  "validator",
 ]
 

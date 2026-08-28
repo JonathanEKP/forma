@@ -1,4 +1,4 @@
-//! Phase 0 REST surface, under the `/api/v1` prefix of plan section 31.
+//! Liveness, capability reporting and the Phase 0 test card.
 
 use actix_web::{get, post, web, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
@@ -32,11 +32,17 @@ pub struct Status {
     pub schema_version: u32,
     #[ts(type = "string")]
     pub database: &'static str,
+    /// The families the renderer can draw. An agent must not name one outside
+    /// this list: the renderer cannot substitute a font it does not have.
     pub fonts: Vec<String>,
     /// i64 comes from SQLite's COUNT, but it travels as a plain JSON number,
     /// so it must not be typed as bigint on the TypeScript side.
     #[ts(type = "number")]
     pub projects: i64,
+    /// The ceiling on one `apply_operations` batch (plan section 28), reported
+    /// so a client can split its work without discovering the limit by failing.
+    #[ts(type = "number")]
+    pub max_ops_per_batch: usize,
 }
 
 #[get("/status")]
@@ -55,6 +61,7 @@ async fn status(state: web::Data<AppState>) -> Result<HttpResponse, ApiError> {
         database: "sqlite",
         fonts: state.fonts.families().to_vec(),
         projects,
+        max_ops_per_batch: design_core::MAX_OPS_PER_BATCH,
     }))
 }
 
@@ -85,7 +92,7 @@ async fn render_test_card(
         &renderer::NoAssets,
         1.0,
     )
-    .map_err(|e| ApiError::internal("RENDER_FAILED", e.to_string()))?;
+    .map_err(|e| ApiError::Application(e.into()))?;
 
     Ok(HttpResponse::Ok()
         .content_type("image/png")
@@ -97,10 +104,7 @@ async fn render_test_card(
 }
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
-    cfg.service(
-        web::scope("/api/v1")
-            .service(health)
-            .service(status)
-            .service(render_test_card),
-    );
+    cfg.service(health)
+        .service(status)
+        .service(render_test_card);
 }

@@ -4,9 +4,19 @@
  * Exported to TypeScript (plan section 30) so the editor never hand-maintains
  * a copy of this shape.
  */
-export type Status = { name: string, version: string, schema_version: number, database: string, fonts: Array<string>, 
+export type Status = { name: string, version: string, schema_version: number, database: string, 
+/**
+ * The families the renderer can draw. An agent must not name one outside
+ * this list: the renderer cannot substitute a font it does not have.
+ */
+fonts: Array<string>, 
 /**
  * i64 comes from SQLite's COUNT, but it travels as a plain JSON number,
  * so it must not be typed as bigint on the TypeScript side.
  */
-projects: number, };
+projects: number, 
+/**
+ * The ceiling on one `apply_operations` batch (plan section 28), reported
+ * so a client can split its work without discovering the limit by failing.
+ */
+max_ops_per_batch: number, };

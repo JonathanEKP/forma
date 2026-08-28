@@ -1,0 +1,21 @@
+[package]
+name = "application"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+design-core.workspace = true
+persistence.workspace = true
+renderer.workspace = true
+validator.workspace = true
+
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+ts-rs.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+tempfile.workspace = true
+uuid.workspace = true

@@ -25,7 +25,8 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!(database_url = %config.database_url, "migrations applied");
 
     let cache = Arc::new(RenderCache::new(config.data_dir.join("previews")));
-    let state = AppState::new(pool, fonts, cache);
+    let store = Arc::new(persistence::LocalObjectStore::new(&config.data_dir));
+    let state = AppState::new(pool, fonts, cache, store);
     let web_dir = config.web_dir.clone();
     let bind = config.bind.clone();
 

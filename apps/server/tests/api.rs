@@ -18,7 +18,9 @@ async fn state() -> (AppState, tempfile::TempDir) {
     let fonts = Arc::new(FontRegistry::from_dir(font_dir).expect("fonts"));
     let cache = Arc::new(renderer::RenderCache::new(dir.path().join("previews")));
 
-    (AppState::new(pool, fonts, cache), dir)
+    let store = Arc::new(persistence::LocalObjectStore::new(dir.path()));
+
+    (AppState::new(pool, fonts, cache, store), dir)
 }
 
 #[actix_web::test]

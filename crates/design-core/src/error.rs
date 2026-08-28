@@ -42,6 +42,18 @@ pub enum DomainError {
 
     #[error("unknown brand token ${0}")]
     UnknownBrandToken(String),
+
+    /// Names the operation a batch failed on, wrapping the error it failed with.
+    ///
+    /// A rejected batch of twenty is only actionable if the caller knows which
+    /// one broke. The code and hint stay those of the wrapped error, because
+    /// that is what a client branches on; only the message gains the position.
+    #[error("operation {index} ({op}): {source}")]
+    InOperation {
+        index: usize,
+        op: &'static str,
+        source: Box<DomainError>,
+    },
 }
 
 impl DomainError {
@@ -66,6 +78,8 @@ impl DomainError {
             Self::LimitExceeded(_) => "LIMIT_EXCEEDED",
             Self::InvalidDocument(_) => "INVALID_DOCUMENT",
             Self::UnknownBrandToken(_) => "UNKNOWN_BRAND_TOKEN",
+            // The wrapper reports the wrapped error, never a code of its own.
+            Self::InOperation { source, .. } => source.code(),
         }
     }
 
@@ -94,6 +108,7 @@ impl DomainError {
             Self::UnknownBrandToken(_) => {
                 "Call get_brand and use a token it lists, or pass an explicit color literal."
             }
+            Self::InOperation { source, .. } => source.hint(),
         }
     }
 }

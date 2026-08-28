@@ -256,13 +256,17 @@ pub fn apply_operations(
 }
 
 /// Names the failing operation, so a rejected batch of twenty is actionable.
+///
+/// Every failure is wrapped, not just the malformed ones: a batch rejected for
+/// naming a page that does not exist is exactly as hard to debug as one
+/// rejected for a bad patch, and the caller cannot tell which of twenty
+/// operations carried the bad id. The wrapper keeps the original code and hint,
+/// so what a client branches on is unchanged.
 fn annotate(error: DomainError, index: usize, operation: &DesignOperation) -> DomainError {
-    match error {
-        DomainError::InvalidOp { message, hint } => DomainError::InvalidOp {
-            message: format!("operation {index} ({}): {message}", operation.name()),
-            hint,
-        },
-        other => other,
+    DomainError::InOperation {
+        index,
+        op: operation.name(),
+        source: Box::new(error),
     }
 }
 

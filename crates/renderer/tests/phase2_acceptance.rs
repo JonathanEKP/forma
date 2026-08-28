@@ -266,10 +266,7 @@ fn a_missing_asset_is_an_error_not_a_blank_space() {
     )
     .unwrap_err();
 
-    assert!(
-        error.to_string().contains("ASSET_NOT_FOUND"),
-        "got: {error}"
-    );
+    assert!(error.code() == "ASSET_NOT_FOUND", "got: {error}");
 }
 
 #[test]
