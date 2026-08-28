@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md"]
+  pull_request:
+    paths-ignore: ["**.md"]
+
+# Supersede in-flight runs on the same ref. On a private repo those minutes are
+# billed, and a run for an overwritten commit is never worth paying for.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: Rust
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      # Without this every run recompiles actix, sqlx, resvg and rmcp from
+      # scratch, which is most of the wall clock and most of the cost.
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      # This covers the renderer golden tests of plan section 63 too, once they
+      # exist: they are ordinary workspace tests, not a separate runner.
+      - name: Test
+        run: cargo test --workspace
+
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      # Plan section 69: the lockfile is the build input, never a suggestion.
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+  # TODO (Phase 1): plan section 30 requires CI to fail when the generated
+  # TypeScript bindings are stale. Wire this up with the ts-rs export step as
+  # soon as design-core actually derives TS. Adding a step now that cannot
+  # detect anything would only look like coverage without providing it.

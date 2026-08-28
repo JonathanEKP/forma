@@ -55,6 +55,12 @@ cargo test --workspace
 pnpm dev
 ```
 
+Before pushing, run everything CI runs:
+
+```bash
+./scripts/check.sh
+```
+
 `pnpm dev` runs Vite on port 5173 and proxies `/api` to `forma-server`, so run
 the server alongside it.
 

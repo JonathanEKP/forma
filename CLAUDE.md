@@ -142,9 +142,11 @@ by piping JSON-RPC lines into it:
 printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"cli","version":"0"}}}' '{"jsonrpc":"2.0","method":"notifications/initialized"}' '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' | ./target/debug/forma-mcp
 ```
 
-CI runs: `cargo fmt --check`, the clippy line above, `cargo test --workspace`,
-`pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, a generated-bindings freshness
-check, then the renderer golden tests.
+`./scripts/check.sh` runs the whole CI pipeline locally (`--rust` or `--web` to run half).
+[.github/workflows/ci.yml](.github/workflows/ci.yml) runs the same commands on push to
+main and on PRs, in two cached jobs. The generated-bindings freshness check of §30 is
+still a TODO in that workflow — wire it up with `ts-rs` in Phase 1. Golden renderer tests
+need no separate step: they are ordinary workspace tests.
 
 `forma-mcp` logs to **stderr**, never stdout — stdout carries the MCP protocol, and a
 stray println breaks the transport.
