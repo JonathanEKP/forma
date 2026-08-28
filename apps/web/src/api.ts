@@ -12,6 +12,8 @@ import type { BrandKitDraft } from "@forma/bindings/BrandKitDraft";
 import type { DesignOperation } from "@forma/bindings/DesignOperation";
 import type { DesignRecord } from "@forma/bindings/DesignRecord";
 import type { DesignSummary } from "@forma/bindings/DesignSummary";
+import type { Export } from "@forma/bindings/Export";
+import type { ExportScope } from "@forma/bindings/ExportScope";
 import type { Project } from "@forma/bindings/Project";
 import type { Status } from "@forma/bindings/Status";
 import type { ValidationReport } from "@forma/bindings/ValidationReport";
@@ -19,6 +21,7 @@ import type { Version } from "@forma/bindings/Version";
 import type { VersionSummary } from "@forma/bindings/VersionSummary";
 
 export type { BrandKitDraft } from "@forma/bindings/BrandKitDraft";
+export type { Export, ExportScope };
 
 export type {
   Asset,
@@ -234,6 +237,39 @@ export const resolveAssetRequest = (id: string, assetId: string) =>
 
 export const cancelAssetRequest = (id: string) =>
   request<AssetRequest>(`/asset-requests/${id}/cancel`, { method: "POST" });
+
+// --- exports ---------------------------------------------------------------
+
+export interface ExportedFile {
+  filename: string;
+  byte_size: number;
+}
+
+export interface ExportResult {
+  export: Export;
+  files: ExportedFile[];
+}
+
+/**
+ * Renders the design to PNG files and records what was written.
+ *
+ * The export pins the version it came from, so the files stay reproducible
+ * after the design moves on (plan section 71).
+ */
+export const createExport = (
+  designId: string,
+  scope: ExportScope,
+  pageId: string | null,
+  scale: number,
+) =>
+  request<ExportResult>(`/designs/${designId}/exports`, {
+    method: "POST",
+    body: { scope, page_id: pageId, scale },
+  });
+
+/** A plain link: the server sends the bytes as an attachment. */
+export const exportDownloadUrl = (exportId: string, filename: string) =>
+  `/api/v1/exports/${exportId}/download?file=${encodeURIComponent(filename)}`;
 
 // --- rendering ------------------------------------------------------------
 

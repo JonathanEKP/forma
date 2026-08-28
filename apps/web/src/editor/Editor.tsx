@@ -23,6 +23,7 @@ import { findPage } from "../types";
 import { Assets } from "./Assets";
 import { Brand } from "./Brand";
 import { Canvas } from "./Canvas";
+import { ExportButton } from "./Export";
 import { addImageOperation } from "./insert";
 import { PagesAndLayers, Panel, Properties } from "./Panels";
 import { Validation } from "./Validation";
@@ -119,6 +120,14 @@ export function Editor({ designId, onBack }: { designId: string; onBack: () => v
         <div className="flex-1" />
 
         <ZoomControl zoom={zoom} setZoom={setZoom} />
+
+        <ExportButton
+          designId={record.id}
+          pageId={page?.id ?? null}
+          pageCount={record.document.pages.length}
+          report={validation.data}
+          disabled={busy}
+        />
 
         <button
           type="button"

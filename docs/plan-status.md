@@ -33,21 +33,13 @@ passes" is not enough — Phase 6's acceptance passed with two panels missing.
 
 ## Open, with the section that asks for it
 
-### 1. Export from the editor — §10
-
-§10's layout puts "Preview Export" at the top right. `POST /designs/{id}/exports`
-and the download routes exist and are tested, but the editor calls neither, so a
-piece built by hand cannot be turned into a PNG. Phase 6's acceptance — "a
-complete piece can be built manually without MCP" — is only half true without
-it.
-
-### 2. Playwright end-to-end — §67
+### 1. Playwright end-to-end — §67
 
 The plan lists it as a testing layer. No phase was ever given it, and it does
 not exist. It is what would have caught the Brand panel gap: it walks §79's script,
 which starts with creating a project and configuring a Brand Kit.
 
-### 3. Default font — §94 (93.2)
+### 2. Default font — §94 (93.2)
 
 Still an open decision, which the plan says must be closed by reviewing licence,
 required weights, `usvg` compatibility and visual result. `data/fonts` currently
@@ -61,7 +53,7 @@ invented.
 ## Agreed order
 
 1. ~~**Brand panel**~~ — done. Phase 6 is closed and §79 step 4 is reachable.
-2. **Export from the editor** — finishes §10's layout.
+2. ~~**Export from the editor**~~ — done. §10's layout is complete.
 3. **Playwright end-to-end** — §67, walking §79's twenty steps, so this class of
    drift is caught by CI instead of by an audit.
 4. **Default font decision** — §94 (93.2), written down.
@@ -92,3 +84,4 @@ reasoning for each is an invariant in [CLAUDE.md](../CLAUDE.md).
 | `checkpoint_and_close` rather than `pool.close()` | Closing checkpoints only *usually*; a backup cannot rest on usually. |
 | Brand version in the render cache key | A `$brand.*` token resolves at render time, so a brand edit changes the picture without changing the design's version. |
 | The Brand panel appears in the project view too | §79 configures a Brand Kit before any design exists, so the editor alone would be too late. |
+| The editor warns before exporting a design with errors, but allows it | §42 says errors block export, and the server does not enforce it. The agent is told to fix them first; a person is told what they are shipping and decides. |

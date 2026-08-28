@@ -228,6 +228,26 @@ export function useResolveAssetRequest(projectId: string | null) {
   });
 }
 
+/**
+ * Exports a design.
+ *
+ * Nothing is invalidated: an export writes new files and a new row, and changes
+ * nothing about the design itself.
+ */
+export function useCreateExport(designId: string | null) {
+  return useMutation({
+    mutationFn: ({
+      scope,
+      pageId,
+      scale,
+    }: {
+      scope: api.ExportScope;
+      pageId: string | null;
+      scale: number;
+    }) => api.createExport(designId ?? "", scope, pageId, scale),
+  });
+}
+
 export function useCancelAssetRequest(projectId: string | null) {
   const client = useQueryClient();
 
