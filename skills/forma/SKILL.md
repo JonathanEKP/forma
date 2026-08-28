@@ -256,6 +256,12 @@ Do not export a design with errors. Warnings are a judgement call: a bleeding
 photo warns and is fine; an off-brand literal warns and may be exactly what the
 user asked for.
 
+**Validate after your last edit, not before it.** Validating, then nudging a
+size or a box, then calling the piece finished is how an invalid design ships:
+the run that came back clean was describing an earlier version. Every batch you
+apply invalidates the last answer. The final call before you report the piece
+done is `validate_design`.
+
 ## 10. Preview and visual inspection
 
 `render_preview` returns a structured result **and** the PNG as an image block.
@@ -303,15 +309,52 @@ next.
   difference obvious rather than subtle.
 - Respect the safe margin from the Brand Kit's rules for anything that must be
   read.
-- Text over a photograph needs a real contrast solution — a scrim, a shape
-  behind it, or a crop with empty space — not just a colour change.
 - Break lines yourself, at meaningful points, since there is no auto-wrap.
-- Prefer type and shapes you can make now over requesting a generic image the
-  piece does not really need.
 - Do not invent facts, statistics, names, prices or claims. If the user has not
   given you the copy, use theirs or ask.
 - Do not invent schema fields. If something is not in section 5, the renderer
   cannot draw it.
+
+### Type on a photograph
+
+A photograph already has quiet regions — sky, road, a wall, anything large and
+tonally even. **Find them in the render and put the type there.** That is what
+makes a cover look photographed rather than captioned.
+
+Reach for a scrim only when no quiet region exists. A flat rectangle behind text
+is opaque to its own edges, so it lays a visible seam across the picture, and a
+seam that crosses the subject is worse than the contrast problem it solved. Before
+adding one, try moving the text, changing its colour, or re-framing the photo with
+`focal_point`.
+
+Contrast is something you **look at**, not something you assume. A small element
+in an accent colour, dropped on a busy or mid-toned part of a photo, can be
+invisible at full size and you will not know until you see it.
+
+### Scale
+
+Display type on a cover or poster is meant to be decisive. A nameplate set small
+and centred reads as a caption, not as a masthead — if you are unsure between two
+sizes, the larger one is almost always right. Hierarchy comes from the gap between
+sizes, so a headline two steps above its deck says more than one a step above.
+
+Keep the register of each face. A display serif is for display; metadata, credits
+and labels belong in the body face. Setting a high-contrast serif small makes its
+hairlines disappear.
+
+### Boxes
+
+A text box does not grow to fit, and text that does not fit is an **error**, not a
+cosmetic issue. Give a box more height than you think the lines need — the cost of
+a generous box is nothing, and `TEXT_OVERFLOW_HEIGHT` costs you a round trip. When
+it does overflow, prefer making the box taller over making the type smaller: you
+chose that size for a reason.
+
+### Placement
+
+Everything on the page belongs to a structure. An element parked on its own, far
+from the margin the rest of the piece aligns to, reads as forgotten rather than as
+deliberate — put it in relation to something, or give it a reason to be alone.
 
 ## 13. A full session
 

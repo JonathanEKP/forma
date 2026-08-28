@@ -94,3 +94,29 @@ uniform:
 to the model. An agent that says "it looks good" without having seen anything is
 reporting a guess as an observation, and the person has no way to tell the
 difference. Say which of the two you are doing.
+
+## Why section 12 talks about photographs specifically
+
+The heuristics used to be generic, and one line of them caused a defect. It read
+"text over a photograph needs a real contrast solution — a scrim, a shape behind
+it, or a crop with empty space", listing the scrim first. An agent asked for a
+magazine cover did exactly that: two flat rectangles at 55% and 60% opacity, one
+cutting across a building and one across the subject's calves. The advice was
+followed faithfully and the result was wrong.
+
+A flat fill is opaque to its own edges, so a rectangle behind text lays a visible
+seam over the picture. The fix was not to add a gradient primitive — that would
+have made a bad instinct easier to execute. The photograph already had two large
+quiet regions, and the piece that read as a cover was the one that used them and
+added nothing.
+
+The other rules in that section come from the same two renders: a nameplate set at
+60pt and centred while the rest of the piece ranged left; an accent-coloured
+"n.º 12" dropped on wet asphalt where it disappeared; two text boxes sized tighter
+than their own lines, which is an error rather than a cosmetic problem; and a
+design reported as finished while `validate_design` still returned two of them,
+because the clean validation run had described an earlier version.
+
+None of this is medium-specific in the sense plan section 51.11 excludes. Carousel
+hooks and story arcs belong in a `social-carousel` skill. Where type can sit on a
+photograph is craft that a poster, a cover and a slide all need.
