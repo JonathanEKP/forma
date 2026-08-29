@@ -71,14 +71,51 @@ does not depend on the agent having a good day.
 
 ## Agreed order
 
+Items 1 to 4 closed the V1 plan itself. Everything from 5 on came out of using
+the product against a real brief — a magazine cover, four agent runs, one
+photograph — and each one names the section it belongs to and the §100 criterion
+that lets it in. Nothing enters this list because it would be interesting.
+
 1. ~~**Brand panel**~~ — done. Phase 6 is closed and §79 step 4 is reachable.
 2. ~~**Export from the editor**~~ — done. §10's layout is complete.
 3. ~~**Playwright end-to-end**~~ — done. §79's walkthrough runs in CI.
 4. ~~**Default font decision**~~ — done. §94 (93.2) is settled and written down.
-5. **Phase 11, remote deploy** — after the above, and only once Oracle capacity
-   is confirmed (§90). The plan says explicitly that the architecture does not
-   depend on it.
-6. **Phase 12, Supabase** — optional, and only after 11 works.
+5. **`DELETE /designs/:id`** — §31 defines a delete for projects and for assets
+   and not for designs, so nothing a person or an agent creates can ever be taken
+   back. One session left three dead designs in a real project, one of them
+   permanently unrenderable. §100 criterion 2: the manual work it removes is
+   currently impossible, not merely tedious. Follow §74 on what a delete may
+   touch — asset bytes stay, since historical versions reference them — and
+   decide deliberately between a soft delete and a hard one, the way `assets`
+   already did.
+6. **The orphan rule, in the skill** — the last defect standing in the best cover
+   the agent has produced: a photo credit alone in the far corner, unrelated to
+   the margin everything else aligns to. The rule is written and lands only half
+   the time, so this is a rewrite of an existing line, not a new one. §100
+   criterion 3.
+7. **An overlay on the image layer** — a `ShapeLayer` is the only way to darken a
+   photograph today, and a flat rectangle lays a seam across it. Belongs on
+   `ImageLayer` beside `fit` and `focal_point`, as a property of the photograph
+   rather than a box on top of it. Only for the photographs that genuinely have
+   no quiet region: removing both scrims from a real cover improved it, so this
+   is not a licence to reach for one. §100 criterion 3, and §2.2 does not exclude
+   it — "advanced masks" is not a tint.
+8. **Templates (§85)** — the plan already specifies the shape,
+   `TemplateRole { page_index, role, max_chars, sample_text }`, and calls it a
+   structural brief rather than a duplicated document. Demoted from first place
+   by the effort experiment above: it buys a cheap model the composition an
+   expensive one already finds, which is worth having and is not the ceiling.
+   §100 criterion 3.
+9. **Phase 11, remote deploy** — only once Oracle capacity is confirmed (§90).
+   The plan says explicitly that the architecture does not depend on it.
+10. **Phase 12, Supabase** — optional, and only after 9 works.
+
+**Deliberately not on this list: editorial style modes in the skill.** It is the
+intervention type with the worst measured record here — the scrim rule was
+written twice and landed neither time, while adding two fonts moved the output
+more than every prose change combined. If it is ever wanted, it belongs in a
+template (item 8) or in a `social-carousel` skill per §51.11, not as more
+adjectives in the core one.
 
 Anything proposed that is not on this list goes through §100 first: a feature
 enters when it unblocks the main workflow, removes real repeated manual work,

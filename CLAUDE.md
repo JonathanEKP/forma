@@ -24,9 +24,17 @@ id directly.
 **Phase 10 (hardening) is complete**, and with it every phase of the V1 plan: golden
 renders (§63), structured logging (§60), render-cache cleanup, graceful shutdown and
 backups. Upload security and SVG sanitizing landed back in Phase 5, and the error UX in
-the §32 envelope. Beyond it: the brand panel — `Panel` in `store.ts`
-still carries a `"brand"` variant with no component behind it — the Playwright E2E of §67,
-and the remote deploy of Phases 11 and 12.
+the §32 envelope. The brand panel, the editor's export control and the §67 Playwright
+walkthrough closed afterwards, so the V1 plan has nothing open.
+
+**What comes next is in [docs/plan-status.md](docs/plan-status.md) under *Agreed order*,
+and it is ordered.** Items 5 to 8 came out of using the product against a real brief
+rather than from the plan, and each carries the §100 criterion that admitted it: a delete
+for designs (§31 has one for projects and assets but not designs, so nothing an agent
+makes can be taken back), the orphan rule in the skill, an overlay on `ImageLayer`, and
+the templates of §85. Then the remote deploy of Phases 11 and 12. Editorial style modes
+are on that page too, listed as deliberately excluded, with the measurement that decided
+it — read the reason before proposing them again.
 
 ## What the product is
 
