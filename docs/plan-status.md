@@ -89,11 +89,16 @@ that lets it in. Nothing enters this list because it would be interesting.
    of someone's work should stop existing is not the agent's call. **Still no
    delete in the web UI**, for designs or projects; the API is what §31 asked for
    and a button is a separate decision.
-6. **The orphan rule, in the skill** — the last defect standing in the best cover
-   the agent has produced: a photo credit alone in the far corner, unrelated to
-   the margin everything else aligns to. The rule is written and lands only half
-   the time, so this is a rewrite of an existing line, not a new one. §100
-   criterion 3.
+6. ~~**The orphan rule, in the skill**~~ — **struck, on the evidence.** It was
+   listed because a photo credit looked stranded in the far corner of the best
+   cover so far. Reading the coordinates instead of the picture says otherwise:
+   the credit shares its baseline with the section line (both y=1210) and is
+   right-aligned to x=984, the same measure the nameplate and the headline end
+   on. That is an ordinary editorial footer, one item flush left and one flush
+   right on a shared measure, not a leftover. The same cover validates with no
+   errors and no warnings at all. The rule the item proposed to rewrite is
+   already landing; the complaint was a preference of the reviewer's, and it was
+   wrong.
 7. **An overlay on the image layer** — a `ShapeLayer` is the only way to darken a
    photograph today, and a flat rectangle lays a seam across it. Belongs on
    `ImageLayer` beside `fit` and `focal_point`, as a property of the photograph
