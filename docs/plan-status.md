@@ -127,33 +127,31 @@ that lets it in. Nothing enters this list because it would be interesting.
    fifteenth tool for it. There is still no way for an agent to *save* a
    template: which design is worth keeping is the person's call.
 
-9. **Phase 11, remote deploy** — in progress, and the two halves have not met
-   yet. [docs/deploy/status.md](deploy/status.md) is the live state and says
-   which claims were verified where; [docs/deploy/oracle.md](deploy/oracle.md)
-   is what the machine has to be.
+9. ~~**Phase 11, remote deploy**~~ — **done.** Its acceptance is *an authorized
+   remote MCP host can create/render a piece*, and
+   `./scripts/smoke-remote.py https://forma.hintly.online` reports 15 passed, 0
+   failed, that check among them. Bearer auth on both processes (§57), MCP over
+   Streamable HTTP on 4766 (§56), the guard that refuses to bind the network
+   without a token (§70), Caddy in front, systemd units, and an aarch64 build.
 
-   Done and verified here: bearer auth on both processes (§57),
-   `forma-mcp --transport http` on 4766 (§56), the guard that refuses to bind
-   the network without a token (§70), the `deploy/` files, an aarch64 build that
-   runs on `ubuntu:24.04` arm64, and — the question that actually mattered — the
-   same page rendering **byte-identically on x86_64 and aarch64**, which is what
-   lets the goldens run on an Ampere box unchanged.
+   Two bugs were found by deploying rather than by reading, which is what a
+   deploy is for. Caddy validated as root and created its own log file `0600
+   root:root`, so the service could not reopen it — the file log is gone, since
+   the journal was already doing that job. And rmcp validates the inbound `Host`
+   against a loopback-only allowlist, so everything through Caddy was 403 before
+   any JSON-RPC was read; the deployment now names itself through `FORMA_DOMAIN`,
+   with the loopback entries kept.
 
-   Done on the machine, reported: the instance (AD-3 answered *out of capacity*
-   exactly as §90 warns, AD-1 worked), both firewalls, Caddy, the token, and
-   `forma.hintly.online` answering on port 80.
-
-   Not started: copying anything to the VM, the units, HTTPS, external smoke
-   tests, and a backup timer. One open item on the machine — whether the host
-   `iptables` rules survive a reboot — is worth closing first, because if they
-   do not, the first restart takes out HTTP, HTTPS and certificate renewal
-   together and silently.
+   [docs/deploy/status.md](deploy/status.md) is the live state.
+   **Still open there:** whether the host firewall survives a reboot (never
+   confirmed, and the largest single risk to a working deployment), backups on
+   the machine, and getting them off it.
 
    **Known limitation, deliberate:** the browser editor is not usable remotely.
-   The API needs a bearer and the SPA has nowhere to put one, so §57's "first
-   remote testing" reaches the agent half only — which is exactly Phase 11's own
-   acceptance, "an authorized remote MCP host can create/render a piece". A
-   token box in the editor is a separate decision, not an oversight.
+   Every path except `/api/v1/health` requires the bearer, so the domain answers
+   401 to a visitor rather than serving an app whose every call then fails. The
+   SPA has nowhere to hold a token. §57 calls this "first remote testing" and the
+   phase's acceptance is the agent half, which is what this delivers.
 10. **Phase 12, Supabase** — optional, and only after 9 works.
 
 **Deliberately not on this list: editorial style modes in the skill.** It is the

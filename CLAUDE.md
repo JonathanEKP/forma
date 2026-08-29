@@ -27,6 +27,10 @@ backups. Upload security and SVG sanitizing landed back in Phase 5, and the erro
 the §32 envelope. The brand panel, the editor's export control and the §67 Playwright
 walkthrough closed afterwards, so the V1 plan has nothing open.
 
+**Phase 11 is deployed and its acceptance is met**: an authorized remote MCP host
+creates and renders a piece over `https://forma.hintly.online/mcp`, bearer
+authenticated, behind Caddy. The hostname is temporary and borrowed.
+
 The remote deploy has three documents, and they answer different questions:
 [docs/deploy/oracle.md](docs/deploy/oracle.md) is what the machine has to be,
 [docs/deploy/runbook.md](docs/deploy/runbook.md) is how to deploy onto it, and

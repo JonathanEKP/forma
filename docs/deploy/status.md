@@ -15,18 +15,24 @@ status document starts lying.
 
 ## The short version
 
-The machine exists and answers on port 80 through its temporary domain. The
-build artefact exists and is proven to work on the target architecture. **They
-have not met yet:** nothing from the repo has been copied to the VM.
+**Deployed, and Phase 11's acceptance is met.** `scripts/smoke-remote.py` against
+`https://forma.hintly.online` reports 15 passed, 0 failed — including the one
+that is the phase's own criterion: an authorized remote MCP host creating a
+design and rendering it.
 
 | | |
 | --- | --- |
 | VM provisioned, reachable, Caddy running | reported ✅ |
 | aarch64 build, and the stack running on it | verified here ✅ |
-| Binaries, SPA, units, Caddyfile installed on the VM | not started ❌ |
-| HTTPS | not yet — Caddy still serves its own default site |
-| External smoke tests | not run |
-| Backups on the VM | not configured |
+| Binaries, SPA, units, Caddyfile installed | reported ✅ |
+| HTTPS, and the whole origin behind the credential | smoke ✅ |
+| 4765 and 4766 unreachable from outside | smoke ✅ |
+| Phase 11 acceptance: create and render, remotely | smoke ✅ |
+| Backups on the VM | not configured ❌ |
+| Host firewall survives a reboot | **still unconfirmed** ⚠ |
+
+The MCP endpoint is `https://forma.hintly.online/mcp`, bearer-authenticated. The
+hostname is temporary; see the decision note in `plan-status.md`.
 
 ---
 
@@ -61,11 +67,15 @@ and rules were added before the final REJECT. Oracle's `169.254.0.0/16` and
 `InstanceServices` rules were left alone; `iptables -F` would remove them and
 break instance metadata.
 
-> **Open item, and the one worth closing first.** The handoff says persistence
-> across reboot was *not* explicitly verified. If those rules are not saved,
-> the first reboot takes out HTTP and HTTPS together — and with them the
-> certificate renewal, silently, until someone notices. `netfilter-persistent
-> save`, then reboot, then re-check 80 and 443 from outside.
+> **Still open, and now the largest single risk to a working deployment.**
+> Persistence across reboot was never confirmed. The deploy succeeded, so the
+> rules are in place *now*; nothing says they come back. If they do not, the
+> first reboot takes out HTTP and HTTPS together — and with them Caddy's
+> certificate renewal, silently, until a certificate expires weeks later.
+>
+> `netfilter-persistent save`, reboot, then `curl -I https://forma.hintly.online`
+> from outside. It is ten minutes and it is the difference between a deployment
+> that survives a restart and one that appears to.
 
 ### Users and directories, as reported
 
@@ -188,15 +198,21 @@ Reproduced and tested here, unlike the Caddy fix: a test starts the real binary
 without `FORMA_DOMAIN` and asserts 403 for a public Host, then with it and
 asserts the handshake, and a second test asserts loopback still works.
 
-## What has not happened
+## What is still open
 
-Nothing from the repo is on the VM. **[runbook.md](runbook.md) is how to change
-that** — who does which step, the two commands, what to do when one fails, and
-how to roll back.
+**[runbook.md](runbook.md)** covers all of it: redeploying (idempotent, one
+command), rolling back, and the backup timer.
 
-In short: close the reboot question about the host firewall first, then
-`./scripts/deploy.sh`, then `./scripts/smoke-remote.py`, then a backup timer.
-Getting backups off the machine is still open.
+1. **The reboot question above.** First, and it is not a formality.
+2. **Backups.** `forma-server backup` on a timer, per [backup.md](../backup.md).
+   Right now a deployment holding real work has no copy of it. An Oracle
+   block-volume snapshot is not a substitute: it copies a live SQLite with a
+   write-ahead log, which `VACUUM INTO` exists to avoid.
+3. **Getting the backups off the machine.** A backup on the same volume as the
+   database survives a mistake, not a lost instance.
+4. **The domain.** `forma.hintly.online` is borrowed. Migrating is a new A
+   record, `FORMA_DOMAIN` in `/etc/forma/domain.env` — which both Caddy and
+   `forma-mcp` read — a restart, and repointing whatever MCP clients exist.
 
 ## What will not work, and is not a bug
 
