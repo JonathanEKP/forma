@@ -1,11 +1,16 @@
 # Plan section 56. Caddy is the only thing the internet talks to; both processes
 # bind loopback and are not reachable from outside.
 #
-# Replace forma.example.com with the real name. Caddy issues and renews the
-# certificate itself, which needs the name resolving to this machine and port 80
-# reachable before it first runs.
+# The name is a variable with a default rather than a literal, because the
+# default is admittedly temporary: Forma has no domain of its own yet and
+# forma.hintly.online is a subdomain borrowed from one that exists. Set
+# FORMA_DOMAIN in /etc/forma/forma.env to move it without editing this file on
+# the machine.
+#
+# Caddy issues and renews the certificate itself, which needs the name resolving
+# here and port 80 reachable before it first runs.
 
-forma.example.com {
+{$FORMA_DOMAIN:forma.hintly.online} {
 	encode zstd gzip
 
 	# MCP over Streamable HTTP. The bearer token is checked by forma-mcp

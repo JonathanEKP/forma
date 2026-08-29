@@ -45,12 +45,32 @@ that is not the design.
 
 The longest lead time on this list, so start it early.
 
-- An A record pointing at the instance's public IP.
-- Port 80 reachable **before** Caddy first runs: its automatic HTTPS solves an
-  ACME challenge there, and it will keep failing quietly until DNS resolves.
+**For now: `forma.hintly.online`.** Forma has no domain of its own yet, so this
+is a subdomain borrowed from one that does exist — see the decision note in
+`docs/plan-status.md`. A subdomain rather than the apex, so whatever
+`hintly.online` already serves is untouched and the certificate covers this name
+only.
 
-An IP address alone will not do. Caddy can issue a certificate for a name, not
-for an address, and MCP hosts want an `https://` URL.
+Create:
+
+```
+forma.hintly.online.   A   <the instance's public IP>
+```
+
+Then, before Caddy first runs:
+
+- **Port 80 has to be reachable.** Caddy's automatic HTTPS solves an ACME
+  challenge there, and it will keep failing quietly until it can.
+- **The name has to resolve.** `dig +short forma.hintly.online` from anywhere
+  should return the instance's address.
+
+An IP address alone will not do: Caddy issues a certificate for a name, not for
+an address, and MCP hosts want an `https://` URL.
+
+The name is `FORMA_DOMAIN` in `/etc/forma/forma.env`, not a literal in the
+Caddyfile, precisely because it is temporary. Moving to the real domain later is
+a new A record, one line in that file and a Caddy reload — no editing files on
+the machine.
 
 ## 4. Users, directories, packages
 
