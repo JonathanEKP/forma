@@ -256,6 +256,12 @@ Do not export a design with errors. Warnings are a judgement call: a bleeding
 photo warns and is fine; an off-brand literal warns and may be exactly what the
 user asked for.
 
+A judgement call is one you **state**. If you finish with warnings standing, name
+them and say why each one is right — "the scrim bleeds past the edge on purpose"
+is a decision; silence is indistinguishable from not having read them. That goes
+double for `OUTSIDE_SAFE_AREA`, which is the Brand Kit's own rule: the person set
+that margin, and stepping over it without a word is overruling them quietly.
+
 **Validate after your last edit, not before it.** Validating, then nudging a
 size or a box, then calling the piece finished is how an invalid design ships:
 the run that came back clean was describing an earlier version. Every batch you
@@ -321,11 +327,19 @@ A photograph already has quiet regions — sky, road, a wall, anything large and
 tonally even. **Find them in the render and put the type there.** That is what
 makes a cover look photographed rather than captioned.
 
-Reach for a scrim only when no quiet region exists. A flat rectangle behind text
-is opaque to its own edges, so it lays a visible seam across the picture, and a
-seam that crosses the subject is worse than the contrast problem it solved. Before
-adding one, try moving the text, changing its colour, or re-framing the photo with
-`focal_point`.
+A scrim is the last resort, and reaching for it first is the most common way to
+make a piece look machine-made. A flat rectangle is opaque to its own edges, so it
+lays a visible seam across the picture, and a seam that crosses the subject is
+worse than the contrast problem it solved.
+
+So do it in this order: **place the type, render, and look.** If it reads, you are
+done and the photograph is intact. If one element fails, fix that element — move
+it, recolour it, or re-frame the photo with `focal_point`. Only when the page has
+no workable region at all does a scrim earn its place, and then it covers what it
+must rather than the full width out of caution.
+
+Insurance is not free here. A band added "to be safe", behind type that would have
+read anyway, costs the picture and buys nothing.
 
 Contrast is something you **look at**, not something you assume. A small element
 in an accent colour, dropped on a busy or mid-toned part of a photo, can be
