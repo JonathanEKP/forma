@@ -69,7 +69,12 @@ async fn require_bearer(
 /// that spawned it; an HTTP port is reachable by whatever can route to it, so
 /// there is no local case where running this unauthenticated is what someone
 /// meant.
-pub async fn serve(listen: &str, base_url: String, token: Option<String>) -> anyhow::Result<()> {
+pub async fn serve(
+    listen: &str,
+    base_url: String,
+    token: Option<String>,
+    public_host: Option<String>,
+) -> anyhow::Result<()> {
     let Some(token) = token else {
         anyhow::bail!(
             "--transport http needs FORMA_REMOTE_TOKEN. An HTTP port is reachable by anything \
@@ -80,6 +85,26 @@ pub async fn serve(listen: &str, base_url: String, token: Option<String>) -> any
     let guard = Guard(blake3::hash(token.as_bytes()));
     let for_client = token.clone();
 
+    // rmcp validates the inbound Host header against an allowlist, and its
+    // default is loopback only. That is a real protection rather than a nuisance:
+    // it stops a page in someone's browser from being pointed at an MCP server
+    // bound on their own machine (DNS rebinding). Behind a reverse proxy the Host
+    // is the public name, so a deployment has to name itself or every request is
+    // 403 before any JSON-RPC is read.
+    //
+    // Added to the loopback entries rather than replacing them, and never
+    // `disable_allowed_hosts()`: an empty list means "allow everything", which
+    // would trade the protection for a shorter config.
+    let mut allowed = vec![
+        "localhost".to_string(),
+        "127.0.0.1".to_string(),
+        "::1".to_string(),
+    ];
+    if let Some(host) = public_host {
+        allowed.push(host);
+    }
+    tracing::info!(?allowed, "accepting these Host headers");
+
     let mcp = StreamableHttpService::new(
         move || {
             Ok(FormaMcp::new(
@@ -87,7 +112,7 @@ pub async fn serve(listen: &str, base_url: String, token: Option<String>) -> any
             ))
         },
         Arc::new(LocalSessionManager::default()),
-        StreamableHttpServerConfig::default(),
+        StreamableHttpServerConfig::default().with_allowed_hosts(allowed),
     );
 
     let app = axum::Router::new()

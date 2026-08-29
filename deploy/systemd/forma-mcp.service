@@ -10,6 +10,10 @@ Type=exec
 User=forma
 Group=forma
 EnvironmentFile=/etc/forma/forma.env
+# The public name too: rmcp validates the inbound Host header, and behind Caddy
+# that header is the domain rather than loopback. One source of truth for the
+# name, shared with Caddy, rather than the same value in two files.
+EnvironmentFile=/etc/forma/domain.env
 ExecStart=/opt/forma/forma-mcp --transport http
 WorkingDirectory=/var/lib/forma
 Restart=on-failure

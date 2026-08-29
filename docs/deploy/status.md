@@ -165,6 +165,29 @@ Neither was reproduced here — there is no Caddy on the build machine — so th
 rests on the reported symptom and on how Caddy creates log files. The next deploy
 is the test.
 
+## Fixed after the second attempt
+
+Caddy then reached `forma-mcp` and every MCP check failed together with
+`403 Forbidden: Host header is not allowed`. They were all cascading from one
+refusal that happens before any JSON-RPC is read.
+
+rmcp validates the inbound `Host` against an allowlist defaulting to loopback —
+real protection, not a nuisance: it stops a page in someone's browser being
+pointed at an MCP server bound on their own machine. Behind Caddy the Host is
+`forma.hintly.online`, which the server had never been told about.
+
+`forma-mcp` now adds `FORMA_DOMAIN` to rmcp's loopback entries, and its unit
+reads `/etc/forma/domain.env` so the name has one source of truth shared with
+Caddy rather than being written in two files. The loopback entries stay, and
+`disable_allowed_hosts()` is not used — an empty allowlist means "allow
+everything", which would trade the protection for a shorter config. The accepted
+hosts are logged at startup, so the next 403 of this kind is one `journalctl`
+away.
+
+Reproduced and tested here, unlike the Caddy fix: a test starts the real binary
+without `FORMA_DOMAIN` and asserts 403 for a public Host, then with it and
+asserts the handshake, and a second test asserts loopback still works.
+
 ## What has not happened
 
 Nothing from the repo is on the VM. **[runbook.md](runbook.md) is how to change

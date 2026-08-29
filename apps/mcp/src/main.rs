@@ -41,6 +41,8 @@ async fn main() -> anyhow::Result<()> {
                 );
                 println!("  FORMA_MCP_BIND      listen address for --transport http (default 127.0.0.1:4766)");
                 println!("  FORMA_REMOTE_TOKEN  bearer token; required by --transport http");
+                println!("  FORMA_DOMAIN        public hostname to accept in the Host header,");
+                println!("                      for --transport http behind a reverse proxy");
                 println!("  FORMA_LOG           log filter (default warn)");
                 return Ok(());
             }
@@ -72,7 +74,15 @@ async fn main() -> anyhow::Result<()> {
 
             service.waiting().await?;
         }
-        "http" => http::serve(&listen, base_url, token).await?,
+        "http" => {
+            // Behind a reverse proxy the inbound Host is the public name, and
+            // rmcp validates it. The deployment names itself here.
+            let public_host = std::env::var("FORMA_DOMAIN")
+                .ok()
+                .map(|host| host.trim().to_string())
+                .filter(|host| !host.is_empty());
+            http::serve(&listen, base_url, token, public_host).await?
+        }
         other => anyhow::bail!("unknown transport {other:?}; use stdio or http"),
     }
 

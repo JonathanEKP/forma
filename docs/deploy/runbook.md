@@ -109,6 +109,14 @@ The three failures worth naming in advance:
   If you add a `log { output file ... }` to the Caddyfile, create the file owned
   by `caddy` first — Caddy makes log files `0600` owned by the opener.
 
+- **`/mcp` answers 403 `Host header is not allowed`**, and every MCP check fails
+  together because the refusal happens before any JSON-RPC is read. rmcp
+  validates the inbound Host against an allowlist that defaults to loopback, and
+  behind Caddy the Host is the public name. `FORMA_DOMAIN` is what names the
+  deployment; `forma-mcp.service` reads `/etc/forma/domain.env` for it, so a
+  missing or stale value there is the thing to check. `journalctl -u forma-mcp`
+  prints the accepted hosts at startup.
+
 A deploy from before 2026-08-29 may have left `/var/log/caddy/forma.log` owned by
 root. Nothing references it any more; it can be deleted or ignored.
 

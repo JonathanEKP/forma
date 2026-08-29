@@ -72,6 +72,10 @@ impl Drop for Mcp {
 }
 
 async fn start_mcp(base_url: &str, token: Option<&str>) -> Mcp {
+    start_mcp_for(base_url, token, None).await
+}
+
+async fn start_mcp_for(base_url: &str, token: Option<&str>, domain: Option<&str>) -> Mcp {
     let port = free_port();
     let mut command = Command::new(env!("CARGO_BIN_EXE_forma-mcp"));
     command
@@ -86,6 +90,10 @@ async fn start_mcp(base_url: &str, token: Option<&str>) -> Mcp {
     match token {
         Some(token) => command.env("FORMA_REMOTE_TOKEN", token),
         None => command.env_remove("FORMA_REMOTE_TOKEN"),
+    };
+    match domain {
+        Some(domain) => command.env("FORMA_DOMAIN", domain),
+        None => command.env_remove("FORMA_DOMAIN"),
     };
 
     let child = command.spawn().expect("forma-mcp starts");
@@ -214,4 +222,76 @@ async fn an_authorized_host_can_speak_mcp_and_the_token_travels_onward() {
         !called.contains("UNAUTHORIZED"),
         "the token did not travel to forma-server: {called}"
     );
+}
+
+/// The first real deploy failed here, and every smoke check after it cascaded
+/// from the same 403.
+///
+/// rmcp validates the inbound `Host` header against an allowlist — a real
+/// protection: it stops a page in someone's browser from being pointed at an MCP
+/// server bound on their own machine. Its default is loopback only, and behind a
+/// reverse proxy the Host is the public name, so a deployment has to name itself
+/// or nothing is read at all.
+#[tokio::test]
+async fn a_public_host_is_refused_until_the_deployment_names_itself() {
+    let dir = tempfile::tempdir().unwrap();
+    let base_url = start_server(dir.path());
+
+    let anonymous = start_mcp_for(&base_url, Some(TOKEN), None).await;
+    let refused = reqwest::Client::new()
+        .post(&anonymous.url)
+        .bearer_auth(TOKEN)
+        .header("host", "forma.example.org")
+        .header("content-type", "application/json")
+        .header("accept", "application/json, text/event-stream")
+        .json(&json!({
+            "jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": { "name": "test", "version": "0" }
+            }
+        }))
+        .send()
+        .await
+        .expect("it answers");
+    assert_eq!(
+        refused.status(),
+        reqwest::StatusCode::FORBIDDEN,
+        "an unnamed host must not be served"
+    );
+    drop(anonymous);
+
+    let named = start_mcp_for(&base_url, Some(TOKEN), Some("forma.example.org")).await;
+    let served = reqwest::Client::new()
+        .post(&named.url)
+        .bearer_auth(TOKEN)
+        .header("host", "forma.example.org")
+        .header("content-type", "application/json")
+        .header("accept", "application/json, text/event-stream")
+        .json(&json!({
+            "jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": { "name": "test", "version": "0" }
+            }
+        }))
+        .send()
+        .await
+        .expect("it answers");
+    assert_eq!(served.status(), reqwest::StatusCode::OK);
+    assert!(served.text().await.unwrap().contains("forma-mcp"));
+}
+
+/// Naming the deployment must not stop the loopback defaults working, or every
+/// local check and the stdio path lose their transport for no reason.
+#[tokio::test]
+async fn naming_a_public_host_keeps_loopback_working() {
+    let dir = tempfile::tempdir().unwrap();
+    let base_url = start_server(dir.path());
+    let mcp = start_mcp_for(&base_url, Some(TOKEN), Some("forma.example.org")).await;
+
+    let response = initialize(&mcp.url, Some(TOKEN)).await;
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
 }
