@@ -73,7 +73,28 @@ pub struct ApplyOperationsParams {
     pub base_version: u64,
     /// The batch, applied in order and atomically: if one operation fails,
     /// none of them are saved. At most 20 per call.
+    ///
+    /// Each entry is an object with an `op` field; section 8 of the skill lists
+    /// the thirteen and their fields. The schema says "object" rather than
+    /// spelling them out: `serde_json::Value` alone emits `items: true`, which
+    /// is legal JSON Schema for "anything" and which some hosts refuse to
+    /// convert — one unconvertible schema breaks the whole tool list, not just
+    /// this tool.
+    #[schemars(schema_with = "operations_schema")]
     pub operations: Vec<Value>,
+}
+
+/// An array of plain objects, described without a single boolean subschema.
+///
+/// JSON Schema lets `true` stand for "any value", and that is what
+/// `Vec<serde_json::Value>` generates for its items. It is legal and some hosts
+/// refuse to convert it — and because a host converts the whole tool list at
+/// once, one unconvertible schema takes down every tool, not just this one.
+fn operations_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    schemars::json_schema!({
+        "type": "array",
+        "items": { "type": "object" }
+    })
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]

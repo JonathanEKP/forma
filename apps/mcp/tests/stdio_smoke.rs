@@ -202,3 +202,61 @@ async fn closing_stdin_ends_the_process() {
 
     assert!(status.success(), "exited with {status}");
 }
+
+/// No tool schema may contain a boolean subschema.
+///
+/// JSON Schema lets `true` stand for "any value", and `Vec<serde_json::Value>`
+/// generates exactly that for its items. It is legal, and some hosts refuse to
+/// convert it — one did, with `JSON schema conversion failed: Unrecognized
+/// schema: true`. The cost is not one broken tool: a host converts the whole
+/// list at once, so every tool disappeared and even a plain "hello" failed.
+///
+/// Cheap to check and invisible until someone else's converter meets it, which
+/// is the combination that earns a test.
+#[tokio::test]
+async fn no_tool_schema_uses_a_boolean_subschema() {
+    let mut mcp = Harness::start().await;
+    let response = mcp.call(2, "tools/list", serde_json::json!({})).await;
+
+    fn walk(node: &serde_json::Value, path: &str, found: &mut Vec<String>) {
+        match node {
+            serde_json::Value::Bool(value) => found.push(format!("{path} = {value}")),
+            serde_json::Value::Object(map) => {
+                for (key, value) in map {
+                    match key.as_str() {
+                        "properties" | "$defs" | "definitions" => {
+                            if let Some(entries) = value.as_object() {
+                                for (name, sub) in entries {
+                                    walk(sub, &format!("{path}.{name}"), found);
+                                }
+                            }
+                        }
+                        "items" | "additionalProperties" | "not" | "additionalItems" => {
+                            walk(value, &format!("{path}.{key}"), found)
+                        }
+                        "anyOf" | "oneOf" | "allOf" | "prefixItems" => {
+                            if let Some(entries) = value.as_array() {
+                                for (index, sub) in entries.iter().enumerate() {
+                                    walk(sub, &format!("{path}.{key}[{index}]"), found);
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let mut found = Vec::new();
+    for tool in response["result"]["tools"].as_array().expect("tools") {
+        let name = tool["name"].as_str().unwrap_or("?");
+        walk(&tool["inputSchema"], name, &mut found);
+    }
+
+    assert!(
+        found.is_empty(),
+        "these are legal JSON Schema and unconvertible for some hosts: {found:?}"
+    );
+}
