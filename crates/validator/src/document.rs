@@ -64,6 +64,23 @@ pub fn check(ctx: &ValidationContext, issues: &mut Vec<ValidationIssue>) {
                 );
             }
 
+            // The overlay carries its own opacity, and a non-finite one reaches
+            // the SVG as "NaN" rather than being clamped anywhere.
+            if let Layer::Image(image) = layer {
+                if let Some(overlay) = &image.overlay {
+                    if !overlay.opacity.is_finite() || !(0.0..=1.0).contains(&overlay.opacity) {
+                        issues.push(
+                            ValidationIssue::error(
+                                "INVALID_OPACITY",
+                                format!("overlay opacity {} is outside 0..=1", overlay.opacity),
+                            )
+                            .at_layer(page.id, common.id)
+                            .with_details(serde_json::json!({ "opacity": overlay.opacity })),
+                        );
+                    }
+                }
+            }
+
             let t = &common.transform;
             let bad_dimension = [
                 ("x", t.x, false),

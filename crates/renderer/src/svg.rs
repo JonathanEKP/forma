@@ -6,8 +6,8 @@ use std::fmt::Write as _;
 
 use base64::Engine as _;
 use design_core::{
-    Color, DesignColor, DesignDocument, ImageLayer, Layer, LayerCommon, Page, ShapeKind, TextAlign,
-    TextLayer,
+    Color, DesignColor, DesignDocument, ImageLayer, Layer, LayerCommon, OverlayEdge, Page,
+    ShapeKind, TextAlign, TextLayer,
 };
 
 use crate::error::RenderError;
@@ -169,7 +169,7 @@ pub fn page_to_svg(
         match layer {
             Layer::Shape(shape) => write_shape(&mut body, shape, palette)?,
             Layer::Text(text) => write_text(&mut body, text, palette)?,
-            Layer::Image(image) => write_image(&mut body, &mut defs, image, assets)?,
+            Layer::Image(image) => write_image(&mut body, &mut defs, image, palette, assets)?,
         }
     }
 
@@ -316,6 +316,7 @@ fn write_image(
     svg: &mut String,
     defs: &mut String,
     image: &ImageLayer,
+    palette: &BrandPalette,
     assets: &dyn AssetSource,
 ) -> Result<(), RenderError> {
     let asset = assets
@@ -370,6 +371,38 @@ fn write_image(
         placement.x, placement.y, placement.width, placement.height, asset.mime_type
     )
     .unwrap();
+
+    // The tint covers the photograph rather than the frame, so a `contain` image
+    // is darkened where it actually is and the layer's painted bounds do not
+    // grow to the frame it was fitted inside.
+    if let Some(overlay) = &image.overlay {
+        let color = resolve(&overlay.color, palette)?;
+        let strength = (overlay.opacity * image.common.opacity).clamp(0.0, 1.0);
+        let paint = match overlay.from {
+            None => format!(r#"fill="{}" fill-opacity="{strength:.4}""#, paint(&color)),
+            Some(edge) => {
+                let (x1, y1, x2, y2) = match edge {
+                    OverlayEdge::Top => (0, 0, 0, 1),
+                    OverlayEdge::Bottom => (0, 1, 0, 0),
+                    OverlayEdge::Left => (0, 0, 1, 0),
+                    OverlayEdge::Right => (1, 0, 0, 0),
+                };
+                write!(
+                    defs,
+                    r#"<linearGradient id="tint-{group_id}" x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}"><stop offset="0" stop-color="{c}" stop-opacity="{strength:.4}"/><stop offset="1" stop-color="{c}" stop-opacity="0"/></linearGradient>"#,
+                    c = paint(&color)
+                )
+                .unwrap();
+                format!(r##"fill="url(#tint-{group_id})""##)
+            }
+        };
+        write!(
+            svg,
+            r#"<rect x="{}" y="{}" width="{}" height="{}" {paint}/>"#,
+            placement.x, placement.y, placement.width, placement.height
+        )
+        .unwrap();
+    }
 
     svg.push_str("</g>");
     Ok(())

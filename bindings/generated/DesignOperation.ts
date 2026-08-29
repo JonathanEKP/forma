@@ -5,6 +5,7 @@ import type { DesignFormat } from "./DesignFormat";
 import type { FocalPoint } from "./FocalPoint";
 import type { FramePatch } from "./FramePatch";
 import type { ImageFit } from "./ImageFit";
+import type { ImageOverlay } from "./ImageOverlay";
 import type { Layer } from "./Layer";
 import type { LayerId } from "./LayerId";
 import type { Page } from "./Page";
@@ -23,7 +24,11 @@ color: DesignColor | null, } | { "op": "add_layer", page_id: PageId, layer: Laye
 /**
  * Appended on top when absent; layer order is the z-order.
  */
-index?: number | null, } | { "op": "remove_layer", layer_id: LayerId, } | { "op": "move_layer", layer_id: LayerId, frame: FramePatch, } | { "op": "reorder_layer", layer_id: LayerId, index: number, } | { "op": "set_text", layer_id: LayerId, content: string, font_size?: number | null, } | { "op": "patch_text_style", layer_id: LayerId, font_family?: string | null, font_size?: number | null, font_weight?: number | null, line_height?: number | null, letter_spacing?: number | null, align?: TextAlign | null, color?: DesignColor | null, } | { "op": "set_image", layer_id: LayerId, asset_id: AssetId, fit?: ImageFit | null, focal_point?: FocalPoint | null, } | { "op": "patch_shape_style", layer_id: LayerId, 
+index?: number | null, } | { "op": "remove_layer", layer_id: LayerId, } | { "op": "move_layer", layer_id: LayerId, frame: FramePatch, } | { "op": "reorder_layer", layer_id: LayerId, index: number, } | { "op": "set_text", layer_id: LayerId, content: string, font_size?: number | null, } | { "op": "patch_text_style", layer_id: LayerId, font_family?: string | null, font_size?: number | null, font_weight?: number | null, line_height?: number | null, letter_spacing?: number | null, align?: TextAlign | null, color?: DesignColor | null, } | { "op": "set_image", layer_id: LayerId, asset_id: AssetId, fit?: ImageFit | null, focal_point?: FocalPoint | null, 
+/**
+ * `Some(None)` removes the tint; absent leaves it untouched.
+ */
+overlay?: ImageOverlay | null | null, } | { "op": "patch_shape_style", layer_id: LayerId, 
 /**
  * `Some(None)` clears the fill; absent leaves it untouched.
  */

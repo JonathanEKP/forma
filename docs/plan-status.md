@@ -99,13 +99,16 @@ that lets it in. Nothing enters this list because it would be interesting.
    errors and no warnings at all. The rule the item proposed to rewrite is
    already landing; the complaint was a preference of the reviewer's, and it was
    wrong.
-7. **An overlay on the image layer** — a `ShapeLayer` is the only way to darken a
-   photograph today, and a flat rectangle lays a seam across it. Belongs on
-   `ImageLayer` beside `fit` and `focal_point`, as a property of the photograph
-   rather than a box on top of it. Only for the photographs that genuinely have
-   no quiet region: removing both scrims from a real cover improved it, so this
-   is not a licence to reach for one. §100 criterion 3, and §2.2 does not exclude
-   it — "advanced masks" is not a tint.
+7. ~~**An overlay on the image layer**~~ — done. `ImageOverlay { color, opacity,
+   from? }` sits beside `fit` and `focal_point`. With `from` the tint is anchored
+   to an edge and fades to nothing, which is the whole point: a `ShapeLayer` is
+   opaque to its own edges and leaves a seam. It covers the drawn photograph
+   rather than the frame, so a `contain` image is tinted where it actually is and
+   the layer's painted bounds do not grow. The validator checks the overlay's
+   colour token and its opacity — an image layer carried no colour at all before
+   this, and an empty arm there would have rebuilt the font-token bug exactly.
+   Still not a licence to reach for one: removing both scrims from a real cover
+   improved it.
 8. **Templates (§85)** — the plan already specifies the shape,
    `TemplateRole { page_index, role, max_chars, sample_text }`, and calls it a
    structural brief rather than a duplicated document. Demoted from first place

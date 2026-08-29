@@ -11,7 +11,7 @@ use crate::color::DesignColor;
 use crate::document::{DesignDocument, DesignFormat, FormatPreset};
 use crate::error::DomainError;
 use crate::ids::{AssetId, LayerId, PageId};
-use crate::layer::{FocalPoint, ImageFit, Layer, TextAlign};
+use crate::layer::{FocalPoint, ImageFit, ImageOverlay, Layer, TextAlign};
 use crate::page::Page;
 
 /// Plan section 28. Not a renderer limitation: an operational limit that keeps
@@ -160,6 +160,9 @@ pub enum DesignOperation {
         fit: Option<ImageFit>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         focal_point: Option<FocalPoint>,
+        /// `Some(None)` removes the tint; absent leaves it untouched.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        overlay: Option<Option<ImageOverlay>>,
     },
     PatchShapeStyle {
         layer_id: LayerId,
@@ -488,6 +491,7 @@ fn apply_one(
             asset_id,
             fit,
             focal_point,
+            overlay,
         } => {
             let (p, l) = locate_layer(document, *layer_id)?;
             let layer = &mut document.pages[p].layers[l];
@@ -497,6 +501,18 @@ fn apply_one(
             image.asset_id = *asset_id;
             if let Some(fit) = fit {
                 image.fit = *fit;
+            }
+            if let Some(overlay) = overlay {
+                if let Some(overlay) = overlay {
+                    let opacity = finite(overlay.opacity, "overlay.opacity")?;
+                    if !(0.0..=1.0).contains(&opacity) {
+                        return Err(DomainError::invalid_op(
+                            format!("overlay.opacity {opacity} is outside 0 to 1"),
+                            "Opacity runs from 0 (no tint) to 1 (the colour, solid).",
+                        ));
+                    }
+                }
+                image.overlay = overlay.clone();
             }
             if let Some(point) = focal_point {
                 if !(0.0..=1.0).contains(&point.x) || !(0.0..=1.0).contains(&point.y) {

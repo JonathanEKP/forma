@@ -133,12 +133,18 @@ There is **no automatic word wrap**. Line breaks are literal `\n` characters in
 **image**
 
 ```
-asset_id, fit (contain|cover|fill), focal_point{x,y}
+asset_id, fit (contain|cover|fill), focal_point{x,y},
+overlay?{color, opacity, from?(top|bottom|left|right)}
 ```
 
 `cover` fills the frame and crops; `contain` fits the whole image inside and
 leaves gaps; `fill` stretches and distorts. `focal_point` is a fraction from 0
 to 1 that decides what survives a `cover` crop — `{x:0.5,y:0.5}` crops evenly.
+
+`overlay` tints the photograph itself. With `from`, the tint is strongest at that
+edge and fades to nothing across the image; without it, the whole photograph is
+tinted evenly, which changes the mood of the picture rather than making room for
+a headline. `opacity` runs 0 to 1 and is the strength at the anchored edge.
 
 **shape**
 
@@ -222,7 +228,7 @@ The thirteen operations:
 | `reorder_layer` | `layer_id`, `index` |
 | `set_text` | `layer_id`, `content`, `font_size?` |
 | `patch_text_style` | `layer_id` + any text style field |
-| `set_image` | `layer_id`, `asset_id`, `fit?`, `focal_point?` |
+| `set_image` | `layer_id`, `asset_id`, `fit?`, `focal_point?`, `overlay?` (`null` removes it) |
 | `patch_shape_style` | `layer_id` + any shape style field |
 | `set_format` | `format` |
 
@@ -336,10 +342,12 @@ A photograph already has quiet regions — sky, road, a wall, anything large and
 tonally even. **Find them in the render and put the type there.** That is what
 makes a cover look photographed rather than captioned.
 
-A scrim is the last resort, and reaching for it first is the most common way to
-make a piece look machine-made. A flat rectangle is opaque to its own edges, so it
-lays a visible seam across the picture, and a seam that crosses the subject is
-worse than the contrast problem it solved.
+If the page has no workable region, the answer is the image layer's own
+`overlay`, not a shape. Anchored to an edge it fades to nothing, so there is no
+edge to see; a `ShapeLayer` laid over the photo is opaque to its own edges and
+leaves a visible seam, and a seam crossing the subject is worse than the contrast
+problem it solved. Reaching for one first is the most common way to make a piece
+look machine-made.
 
 So do it in this order: **place the type, render, and look.** If it reads, you are
 done and the photograph is intact. If one element fails, fix that element — move

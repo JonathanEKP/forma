@@ -364,6 +364,7 @@ fn image_layer(name: &str, asset_id: design_core::AssetId) -> ImageLayer {
         asset_id,
         fit: ImageFit::Cover,
         focal_point: Default::default(),
+        overlay: None,
     }
 }
 
@@ -725,4 +726,55 @@ fn a_colour_that_breaks_by_hue_is_not_reported() {
             .any(|issue| issue.code == "TEXT_LOW_CONTRAST"),
         "a hue break is contrast too"
     );
+}
+
+/// An image layer carried no colour at all until it gained an overlay. A token
+/// the kit cannot resolve is fatal in the renderer, so an empty arm here would
+/// let a design validate clean and then refuse to draw — the exact shape of the
+/// font-token bug this project already paid for once.
+#[test]
+fn an_overlay_naming_an_unknown_token_is_reported() {
+    let brand = brand();
+    let mut layer = image_layer("Photo", design_core::AssetId::new());
+    layer.overlay = Some(design_core::ImageOverlay {
+        color: DesignColor::token("brand.nonesuch"),
+        opacity: 0.6,
+        from: Some(design_core::OverlayEdge::Bottom),
+    });
+    let id = layer.common.id;
+    let document = document_with(vec![Layer::Image(layer)]);
+
+    let report = validate(&clean_context(&document, &brand).with_asset(
+        match &document.pages[0].layers[0] {
+            Layer::Image(image) => image.asset_id,
+            _ => unreachable!(),
+        },
+        AssetInfo::usable(),
+    ));
+    let found: Vec<_> = report
+        .issues
+        .iter()
+        .filter(|issue| issue.code == "UNKNOWN_BRAND_TOKEN")
+        .collect();
+    assert_eq!(found.len(), 1, "{:?}", report.issues);
+    assert_eq!(found[0].layer_id, Some(id));
+}
+
+/// The overlay carries its own opacity, and a non-finite one reaches the SVG as
+/// the literal text "NaN".
+#[test]
+fn an_overlay_with_an_impossible_opacity_is_reported() {
+    let brand = brand();
+    let mut layer = image_layer("Photo", design_core::AssetId::new());
+    layer.overlay = Some(design_core::ImageOverlay {
+        color: DesignColor::token("brand.background"),
+        opacity: f32::NAN,
+        from: None,
+    });
+    let document = document_with(vec![Layer::Image(layer)]);
+
+    assert!(validate(&clean_context(&document, &brand))
+        .issues
+        .iter()
+        .any(|issue| issue.code == "INVALID_OPACITY"));
 }

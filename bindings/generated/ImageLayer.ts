@@ -2,6 +2,7 @@
 import type { AssetId } from "./AssetId";
 import type { FocalPoint } from "./FocalPoint";
 import type { ImageFit } from "./ImageFit";
+import type { ImageOverlay } from "./ImageOverlay";
 import type { LayerId } from "./LayerId";
 import type { LayerRole } from "./LayerRole";
 import type { Transform } from "./Transform";
@@ -10,4 +11,8 @@ import type { Transform } from "./Transform";
  * Plan section 19 and the portability rule in section 21: only an `asset_id`,
  * never a URL or a local path.
  */
-export type ImageLayer = { asset_id: AssetId, fit: ImageFit, focal_point: FocalPoint, id: LayerId, name: string, role?: LayerRole | null, visible: boolean, locked: boolean, opacity: number, transform: Transform, };
+export type ImageLayer = { asset_id: AssetId, fit: ImageFit, focal_point: FocalPoint, 
+/**
+ * A tint belonging to the photograph, for holding type over it.
+ */
+overlay?: ImageOverlay | null, id: LayerId, name: string, role?: LayerRole | null, visible: boolean, locked: boolean, opacity: number, transform: Transform, };

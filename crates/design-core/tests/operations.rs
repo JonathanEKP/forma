@@ -164,6 +164,7 @@ fn reports_which_operation_in_the_batch_failed() {
                 asset_id: design_core::AssetId::new(),
                 fit: None,
                 focal_point: None,
+                overlay: None,
             },
         ],
     )
@@ -377,6 +378,7 @@ fn set_image_keeps_the_asset_reference_portable() {
             asset_id: asset,
             fit: Some(design_core::ImageFit::Contain),
             focal_point: None,
+            overlay: None,
         }],
     )
     .unwrap();

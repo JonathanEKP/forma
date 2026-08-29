@@ -128,6 +128,39 @@ pub struct ImageLayer {
     pub fit: ImageFit,
     #[serde(default)]
     pub focal_point: FocalPoint,
+    /// A tint belonging to the photograph, for holding type over it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overlay: Option<ImageOverlay>,
+}
+
+/// Darkens (or lightens) a photograph so text can sit on it.
+///
+/// This is a property of the image rather than a rectangle drawn on top, and the
+/// difference is the whole point. A `ShapeLayer` covering part of a photo is
+/// opaque to its own edges, so it lays a visible seam across the picture — the
+/// most common way an otherwise good piece announces that a machine made it.
+/// Anchored to an edge, the tint fades to nothing and there is no edge to see.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ImageOverlay {
+    pub color: DesignColor,
+    /// Strength where the tint is strongest, 0 to 1.
+    pub opacity: f32,
+    /// The edge the tint is anchored to, fading across the image. Absent tints
+    /// the whole photograph evenly, which is a different tool: it changes the
+    /// mood of the picture rather than making room for a headline.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<OverlayEdge>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum OverlayEdge {
+    Top,
+    Bottom,
+    Left,
+    Right,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]

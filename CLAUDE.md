@@ -135,6 +135,14 @@ from Signal and unrelated to it; do not unify them.
   decided server-side, with the id kept stable across edits so the project's `brand_id`
   does not churn. Every other request body already followed this; the brand route was the
   exception.
+- **Darkening a photograph is a property of the photograph.** `ImageOverlay` sits on
+  `ImageLayer`; a `ShapeLayer` laid over a photo is opaque to its own edges and leaves
+  a seam, which is the single most common way a generated piece announces itself.
+  Anchored with `from`, the tint fades to nothing and there is no edge to see. It
+  covers the *drawn* image rather than the frame, so a `contain` image is tinted where
+  it is and painted bounds do not grow to the frame. Adding it also meant teaching the
+  validator that an image layer can carry a colour at all — `Layer::Image(_) => {}` in
+  `brand.rs` would otherwise have recreated the font-token bug in a new place.
 - **`ImageLayer` holds only `asset_id`** — never a URL or a local path. Importing a remote
   image is a separate operation that first creates an `Asset`.
 - **A design the validator calls valid must render.** That is the contract the agent's

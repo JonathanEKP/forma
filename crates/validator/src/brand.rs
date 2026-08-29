@@ -96,7 +96,23 @@ pub fn check(ctx: &ValidationContext, issues: &mut Vec<ValidationIssue>) {
                         );
                     }
                 }
-                Layer::Image(_) => {}
+                // An image layer used to carry no colour at all. Its overlay
+                // does, and a token the kit cannot resolve is fatal in the
+                // renderer, so leaving this arm empty would let a design
+                // validate clean and then refuse to draw.
+                Layer::Image(image) => {
+                    if let Some(overlay) = &image.overlay {
+                        check_color(
+                            ctx.brand,
+                            &palette,
+                            &overlay.color,
+                            Some(image.common.id),
+                            "overlay color",
+                            page.id,
+                            issues,
+                        );
+                    }
+                }
             }
         }
     }

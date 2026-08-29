@@ -31,8 +31,8 @@ pub use export::{Export, ExportScope};
 pub use geometry::{Rect, Transform};
 pub use ids::{AssetId, AssetRequestId, BrandId, DesignId, ExportId, LayerId, PageId, ProjectId};
 pub use layer::{
-    FocalPoint, ImageFit, ImageLayer, Layer, LayerCommon, LayerRole, ShapeKind, ShapeLayer,
-    TextAlign, TextLayer,
+    FocalPoint, ImageFit, ImageLayer, ImageOverlay, Layer, LayerCommon, LayerRole, OverlayEdge,
+    ShapeKind, ShapeLayer, TextAlign, TextLayer,
 };
 pub use operation::{
     apply_operations, DesignOperation, FramePatch, ShapeStylePatch, TextStylePatch,
