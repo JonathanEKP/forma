@@ -319,6 +319,14 @@ when to load the skill and how to start the server.
 rules, and [docs/agent-evaluation.md](docs/agent-evaluation.md) the by-hand prompts for
 checking an agent's judgement.
 
+The file lives at `skills/forma/SKILL.md`, which plan §51.2 fixes and which **no host
+looks in**. Claude Code reads `.claude/skills/<name>/SKILL.md`, Codex reads
+`.agents/skills` walking up from the working directory, and opencode reads both; a bare
+`skills/` at the repo root is nobody's convention, so the skill was invisible to every
+agent that was not told to open it by path. Symlinks at both locations fix that without
+moving anything — copies of a 400-line document diverge, and `skill_matches_the_code.rs`
+asserts they are symlinks that still resolve.
+
 A skill that drifts from the code is worse than none, because an agent follows it
 confidently and is wrong. `apps/mcp/tests/skill_matches_the_code.rs` asserts that every
 tool, operation, brand token, error code and layer field the skill names actually exists,

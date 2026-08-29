@@ -283,3 +283,40 @@ fn the_skill_lists_the_real_layer_fields() {
         );
     }
 }
+
+/// The skill lives at `skills/forma/SKILL.md` (plan section 51.2) and is
+/// discovered from two other places by symlink, because no host looks there.
+///
+/// Claude Code reads `.claude/skills/<name>/SKILL.md`; Codex reads
+/// `.agents/skills`, walking up from the working directory; opencode reads both.
+/// Nobody reads a bare `skills/` at the repository root, which is why the skill
+/// was invisible to every agent but the one told to open it by path.
+///
+/// Symlinks rather than copies: a 400-line document duplicated three ways
+/// diverges, and this file exists because a skill that disagrees with the code
+/// is worse than none.
+#[test]
+fn the_skill_is_reachable_from_where_agents_actually_look() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+
+    for host in [".claude", ".agents"] {
+        let link = root.join(host).join("skills/forma/SKILL.md");
+
+        let metadata =
+            std::fs::symlink_metadata(&link).unwrap_or_else(|e| panic!("{}: {e}", link.display()));
+        assert!(
+            metadata.file_type().is_symlink(),
+            "{} must be a symlink, not a copy that can drift",
+            link.display()
+        );
+
+        let content = std::fs::read_to_string(&link)
+            .unwrap_or_else(|e| panic!("{} does not resolve: {e}", link.display()));
+        assert_eq!(
+            content,
+            SKILL,
+            "{} resolves to something other than the skill",
+            link.display()
+        );
+    }
+}

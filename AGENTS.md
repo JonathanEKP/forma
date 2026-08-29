@@ -6,6 +6,12 @@ Forma executes and renders it deterministically.
 ## When to load the skill
 
 Load [skills/forma/SKILL.md](skills/forma/SKILL.md) before touching a design.
+
+If your host discovers skills itself, it already has this one: the same file is
+reachable at `.claude/skills/forma/SKILL.md` (Claude Code) and
+`.agents/skills/forma/SKILL.md` (Codex, opencode), both symlinks to the path
+above. To use Forma from a project that is not this repository, copy or link the
+skill into `~/.claude/skills/forma/` or `~/.agents/skills/forma/`.
 It is the operational contract: the document schema, the valid fields, the
 atomic batch rules, the error recovery table and a worked session. Working from
 memory instead is how an agent invents a field the renderer cannot draw.
