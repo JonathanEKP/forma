@@ -9,7 +9,8 @@ use design_core::{
     apply_operations, Actor, DesignDocument, DesignId, DesignOperation, DesignRecord,
     DesignSummary, ProjectId, Version,
 };
-use persistence::{DesignRepository, VersionSummary};
+use persistence::{DesignRepository, ExportRepository, ObjectStore, VersionSummary};
+use renderer::RenderCache;
 
 use crate::error::{ApplicationError, Result};
 
@@ -108,6 +109,36 @@ pub async fn undo(
     Ok(designs.save(id, base_version, &snapshot, actor).await?)
 }
 
-pub async fn delete(designs: &dyn DesignRepository, id: DesignId) -> Result<()> {
-    Ok(designs.delete(id).await?)
+/// Deletes a design and the derived data that only existed for it.
+///
+/// The row cascade takes the version snapshots and the export records; the files
+/// those records pointed at, and the cached previews, are on the filesystem and
+/// no SQL reaches them. Plan section 74 draws the line: asset **bytes stay**,
+/// because they belong to the person and other designs may reference them.
+///
+/// The export keys are read before the delete, since the cascade removes the
+/// only record of where those files are. The design row goes first all the same:
+/// a delete of something that is not there must fail without destroying
+/// anything, and cleanup that fails afterwards is logged rather than raised —
+/// the design is gone either way, and that is what the caller was promised.
+pub async fn delete(
+    designs: &dyn DesignRepository,
+    exports: &dyn ExportRepository,
+    store: &dyn ObjectStore,
+    cache: &RenderCache,
+    id: DesignId,
+) -> Result<()> {
+    let exported = exports.list_for_design(id).await.unwrap_or_default();
+
+    designs.delete(id).await?;
+
+    for export in exported {
+        if let Err(error) = store.delete(&export.storage_key).await {
+            tracing::warn!(%error, key = %export.storage_key, "could not remove an export of a deleted design");
+        }
+    }
+    if let Err(error) = cache.forget_design(id) {
+        tracing::warn!(%error, design_id = %id, "could not clear the preview cache of a deleted design");
+    }
+    Ok(())
 }

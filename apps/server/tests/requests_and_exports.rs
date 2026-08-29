@@ -527,3 +527,139 @@ async fn every_created_record_is_stamped_with_a_real_time() {
         );
     }
 }
+
+/// Plan section 31 had a delete for projects and for assets and none for a
+/// single design, so nothing anyone made could be taken back. A design that
+/// cannot render is then as permanent as a good one.
+#[actix_web::test]
+async fn a_design_can_be_deleted_and_takes_its_derived_files_with_it() {
+    let (state, dir) = state().await;
+    let previews = dir.path().join("previews");
+    let exports = dir.path().join("exports");
+    let app = app!(state);
+    let project = a_project(&app).await;
+    let design = a_design(&app, &project, "Throwaway").await;
+    let design_id = design["id"].as_str().unwrap().to_string();
+    let page_id = design["document"]["pages"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Give it both kinds of derived file: a cached preview and an export set.
+    let preview = test::call_service(
+        &app,
+        TestRequest::get()
+            .uri(&format!(
+                "/api/v1/designs/{design_id}/pages/{page_id}/preview.png"
+            ))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(preview.status(), StatusCode::OK);
+
+    let exported = test::call_service(
+        &app,
+        TestRequest::post()
+            .uri(&format!("/api/v1/designs/{design_id}/exports"))
+            .set_json(json!({ "scope": "all_pages", "scale": 1.0 }))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(exported.status(), StatusCode::CREATED);
+
+    assert!(
+        previews.join(&design_id).exists(),
+        "no cached preview to clear"
+    );
+    let export_dirs = || {
+        std::fs::read_dir(&exports)
+            .map(|entries| entries.flatten().count())
+            .unwrap_or(0)
+    };
+    assert_eq!(export_dirs(), 1, "no export files to clear");
+
+    let deleted = test::call_service(
+        &app,
+        TestRequest::delete()
+            .uri(&format!("/api/v1/designs/{design_id}"))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(deleted.status(), StatusCode::NO_CONTENT);
+
+    let gone = test::call_service(
+        &app,
+        TestRequest::get()
+            .uri(&format!("/api/v1/designs/{design_id}"))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(gone.status(), StatusCode::NOT_FOUND);
+
+    // The row cascade cannot reach the filesystem, so the use case has to.
+    assert!(
+        !previews.join(&design_id).exists(),
+        "the cached previews outlived the design"
+    );
+    assert_eq!(export_dirs(), 0, "the exported files outlived the design");
+}
+
+/// Deleting something that is not there must fail without destroying anything,
+/// which is why the row goes before the files.
+#[actix_web::test]
+async fn deleting_a_design_that_does_not_exist_is_a_404() {
+    let (state, _dir) = state().await;
+    let app = app!(state);
+
+    let response = test::call_service(
+        &app,
+        TestRequest::delete()
+            .uri("/api/v1/designs/6d3f1a1e-0000-4000-8000-000000000000")
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(
+        body_json(response).await["error"]["code"],
+        "DESIGN_NOT_FOUND"
+    );
+}
+
+/// The user's work is not derived data. Deleting a design that used an uploaded
+/// photograph must leave the photograph alone: plan section 74, and other
+/// designs may be pointing at the same bytes.
+#[actix_web::test]
+async fn deleting_a_design_leaves_the_assets_it_used() {
+    let (state, _dir) = state().await;
+    let app = app!(state);
+    let project = a_project(&app).await;
+
+    let uploaded =
+        body_json(test::call_service(&app, upload_request(&project, &png())).await).await;
+    let asset_id = uploaded["id"].as_str().unwrap().to_string();
+
+    let design = a_design(&app, &project, "Uses the photo").await;
+    let design_id = design["id"].as_str().unwrap().to_string();
+
+    let deleted = test::call_service(
+        &app,
+        TestRequest::delete()
+            .uri(&format!("/api/v1/designs/{design_id}"))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(deleted.status(), StatusCode::NO_CONTENT);
+
+    let still_there = test::call_service(
+        &app,
+        TestRequest::get()
+            .uri(&format!("/api/v1/assets/{asset_id}"))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(
+        still_there.status(),
+        StatusCode::OK,
+        "the asset belongs to the person, not to the design"
+    );
+}

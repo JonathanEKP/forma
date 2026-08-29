@@ -80,14 +80,15 @@ that lets it in. Nothing enters this list because it would be interesting.
 2. ~~**Export from the editor**~~ — done. §10's layout is complete.
 3. ~~**Playwright end-to-end**~~ — done. §79's walkthrough runs in CI.
 4. ~~**Default font decision**~~ — done. §94 (93.2) is settled and written down.
-5. **`DELETE /designs/:id`** — §31 defines a delete for projects and for assets
-   and not for designs, so nothing a person or an agent creates can ever be taken
-   back. One session left three dead designs in a real project, one of them
-   permanently unrenderable. §100 criterion 2: the manual work it removes is
-   currently impossible, not merely tedious. Follow §74 on what a delete may
-   touch — asset bytes stay, since historical versions reference them — and
-   decide deliberately between a soft delete and a hard one, the way `assets`
-   already did.
+5. ~~**`DELETE /designs/:id`**~~ — done. A hard delete, unlike an asset's soft
+   one: an asset is pointed at by historical versions of *other* designs, while a
+   design is pointed at by nothing and its snapshots exist only to undo it. It
+   also clears the two kinds of derived file no SQL cascade reaches — the cached
+   previews and the exported PNGs — while asset bytes stay, per §74. There is no
+   MCP tool for it: §48 fixes the surface at thirteen, and deciding that a piece
+   of someone's work should stop existing is not the agent's call. **Still no
+   delete in the web UI**, for designs or projects; the API is what §31 asked for
+   and a button is a separate decision.
 6. **The orphan rule, in the skill** — the last defect standing in the best cover
    the agent has produced: a photo credit alone in the far corner, unrelated to
    the margin everything else aligns to. The rule is written and lands only half

@@ -65,8 +65,22 @@ impl ObjectStore for LocalObjectStore {
         Ok(self.resolve(key)?.exists())
     }
 
+    /// A key ending in `/` names a prefix rather than a file, which is how an
+    /// all-pages export records itself (plan section 71: one directory of PNGs
+    /// that a future ZIP replaces). Deleting one has to take the whole tree, or
+    /// the files outlive the row that pointed at them.
     async fn delete(&self, key: &str) -> Result<()> {
         let path = self.resolve(key)?;
+        if key.ends_with('/') {
+            return match tokio::fs::remove_dir_all(&path).await {
+                Ok(()) => Ok(()),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(e) => Err(PersistenceError::Storage(format!(
+                    "{}: {e}",
+                    path.display()
+                ))),
+            };
+        }
         match tokio::fs::remove_file(&path).await {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),

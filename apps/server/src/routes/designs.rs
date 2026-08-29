@@ -1,6 +1,6 @@
 //! Designs, the mutation path, undo and history (plan section 31).
 
-use actix_web::{get, post, web, HttpRequest, HttpResponse};
+use actix_web::{delete, get, post, web, HttpRequest, HttpResponse};
 use design_core::{DesignDocument, DesignFormat, DesignOperation, FormatPreset, Page, Version};
 use serde::Deserialize;
 use ts_rs::TS;
@@ -201,11 +201,39 @@ async fn history(
     Ok(HttpResponse::Ok().json(history))
 }
 
+/// Plan section 31 defined a delete for projects and for assets and not for one
+/// design, so nothing a person or an agent made could ever be taken back — a
+/// design that fails to render is as permanent as a good one.
+///
+/// It is a hard delete, unlike an asset's. An asset is soft-deleted because
+/// historical versions of *other* designs still point at its bytes; a design is
+/// pointed at by nothing, and its snapshots exist only to undo it.
+///
+/// There is deliberately no MCP tool for this. Section 48 fixes the surface at
+/// thirteen, and an agent works inside a workspace the person owns: deciding
+/// that a piece of their work should stop existing is not the agent's call.
+#[delete("/designs/{id}")]
+async fn remove(
+    state: web::Data<AppState>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, ApiError> {
+    application::designs::delete(
+        &*state.designs,
+        &*state.exports,
+        &*state.store,
+        &state.cache,
+        design_id(&path)?,
+    )
+    .await?;
+    Ok(HttpResponse::NoContent().finish())
+}
+
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(list)
         .service(create)
         .service(get)
         .service(operations)
         .service(undo)
-        .service(history);
+        .service(history)
+        .service(remove);
 }
