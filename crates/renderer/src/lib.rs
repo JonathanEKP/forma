@@ -4,6 +4,7 @@
 //! authority: the editor preview and the exported PNG both come from here.
 
 pub mod cache;
+pub mod contrast;
 pub mod error;
 pub mod flatten;
 pub mod fonts;
@@ -14,6 +15,7 @@ pub mod svg;
 use design_core::{DesignDocument, Page};
 
 pub use cache::RenderCache;
+pub use contrast::TextContrast;
 pub use error::RenderError;
 pub use flatten::{LayerBounds, RenderInspection};
 pub use fonts::FontRegistry;

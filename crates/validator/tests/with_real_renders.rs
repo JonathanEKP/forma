@@ -82,10 +82,7 @@ fn measure(document: &DesignDocument) -> HashMap<design_core::LayerId, MeasuredL
             let bounds = rendered.inspection.layer(layer.id())?;
             Some((
                 layer.id(),
-                MeasuredLayer {
-                    layout: bounds.layout,
-                    painted: bounds.painted,
-                },
+                MeasuredLayer::new(bounds.layout, bounds.painted),
             ))
         })
         .collect()

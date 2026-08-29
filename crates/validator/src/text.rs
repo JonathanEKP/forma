@@ -14,6 +14,25 @@ use crate::severity::Severity;
 /// Sub-pixel differences are shaping noise, not overflow.
 const OVERFLOW_TOLERANCE: f32 = 1.0;
 
+/// WCAG's floor for large text. Below it, a line stops being comfortable
+/// against a photograph.
+const READABLE_RATIO: f32 = 3.0;
+
+/// Near enough to the backdrop's own tone that the copy is simply lost. That is
+/// an error rather than a warning for the same reason text off the canvas is:
+/// the words do not reach the reader.
+const INVISIBLE_RATIO: f32 = 1.5;
+
+/// Perceptual distance at which two colours are plainly different whatever their
+/// lightness. The renderer measures it; this is the line. Without it the check
+/// calls an accent red on wet asphalt invisible -- the two are nearly the same
+/// lightness -- and sends an agent to fix the one element that worked.
+const DISTINCT_DELTA_E: f32 = 25.0;
+
+/// A line can average out to a passing ratio while most of it lies on a patch
+/// that swallows it.
+const MOSTLY_ILLEGIBLE: f32 = 0.5;
+
 pub fn check(ctx: &ValidationContext, issues: &mut Vec<ValidationIssue>) {
     let minimum_font_size = ctx.brand.map(|b| b.rules.minimum_font_size);
 
@@ -75,6 +94,56 @@ pub fn check(ctx: &ValidationContext, issues: &mut Vec<ValidationIssue>) {
             let Some(measured) = ctx.measurements.get(&common.id) else {
                 continue;
             };
+
+            if let Some(contrast) = measured.contrast {
+                // Two ways to be unreadable. A line can sit on a backdrop of
+                // nearly its own tone, and a line can average out to a passing
+                // number while crossing a bright stripe that swallows half of
+                // it, so both the mean and the spread are checked.
+                let alike = contrast.delta_e < DISTINCT_DELTA_E;
+                let issue = if alike && contrast.ratio < INVISIBLE_RATIO {
+                    Some((
+                        Severity::Error,
+                        format!(
+                            "\"{}\" is nearly the same tone as what is behind it",
+                            common.name
+                        ),
+                    ))
+                } else if alike && contrast.ratio < READABLE_RATIO {
+                    Some((
+                        Severity::Warning,
+                        format!(
+                            "\"{}\" has little contrast against its backdrop",
+                            common.name
+                        ),
+                    ))
+                } else if contrast.illegible_fraction > MOSTLY_ILLEGIBLE {
+                    Some((
+                        Severity::Warning,
+                        format!(
+                            "\"{}\" reads on average but not over most of its own area",
+                            common.name
+                        ),
+                    ))
+                } else {
+                    None
+                };
+
+                if let Some((severity, message)) = issue {
+                    issues.push(
+                        ValidationIssue::new("TEXT_LOW_CONTRAST", severity, message)
+                            .at_layer(page.id, common.id)
+                            .with_details(serde_json::json!({
+                                "ratio": contrast.ratio,
+                                "illegible_fraction": contrast.illegible_fraction,
+                                "delta_e": contrast.delta_e,
+                                "readable_ratio": READABLE_RATIO,
+                                "hint": "Use a near-white or near-black over photography; \
+                                         mid tones only read against a solid background.",
+                            })),
+                    );
+                }
+            }
             let frame = common.transform;
 
             if measured.layout.width > frame.width + OVERFLOW_TOLERANCE {

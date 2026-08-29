@@ -13,7 +13,7 @@ pub mod report;
 pub mod severity;
 pub mod text;
 
-pub use context::{AssetInfo, MeasuredLayer, ValidationContext};
+pub use context::{AssetInfo, MeasuredLayer, TextContrast, ValidationContext};
 pub use report::{ValidationIssue, ValidationReport};
 pub use severity::Severity;
 

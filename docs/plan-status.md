@@ -43,6 +43,32 @@ code, DejaVu kept as the per-glyph fallback.
 
 What remains is Phase 11 and, behind it, the optional Phase 12.
 
+## What the three-model experiment settled
+
+Recorded because it changed the order below, and an order changed without a
+reason written down is an order nobody can revisit.
+
+The same prompt, brand and photograph were run four times: three with Sonnet 5 at
+low reasoning effort, one at maximum. The three low runs produced the same piece
+each time — nameplate top left at 42 to 60pt, headline bottom left, a full-width
+scrim over the photograph in two of them, and in one case four validation warnings
+that were never mentioned. The maximum-effort run broke that skeleton on every
+axis: the nameplate moved to the empty sky at top right at 100pt, no scrim at all,
+zero warnings standing, and it narrated its own fixes including a rebase after a
+`VERSION_CONFLICT`.
+
+So the genericness was largely a reasoning budget, not a missing feature. That
+demotes **templates (§85)**: they remain worth building, but as a way to let a
+cheap model reach where an expensive one already gets on its own, not as the
+ceiling on quality.
+
+What survived the maximum-effort run was a legibility failure — two metadata lines
+in `$brand.muted`, a mid grey, over mid-grey wet asphalt. The accent red beside
+them stayed readable because it breaks by hue rather than by luminance. Nothing in
+Forma checks this, which is why it reached a person's eye. That is what the
+contrast check above is for, and it is the only one of the candidate fixes that
+does not depend on the agent having a good day.
+
 ## Agreed order
 
 1. ~~**Brand panel**~~ — done. Phase 6 is closed and §79 step 4 is reachable.
@@ -80,3 +106,4 @@ reasoning for each is an invariant in [CLAUDE.md](../CLAUDE.md).
 | The end-to-end covers the browser half of §79, not the agent half | Steps 6 to 14 are already driven against the real binaries in `apps/mcp/tests/agent_flow.rs`. Repeating them in a browser would be slower and prove less. |
 | Geist is the default; DejaVu is kept as a fallback | Geist ships four weights to DejaVu's two, which is what a typographic scale needs, and covers every character a design reaches for. DejaVu's eight-fold coverage is the floor that stops a non-Latin design rendering as tofu. |
 | The renderer sorts the font directory and picks the fallback face by weight | usvg's default selector takes the first face in `fontdb` order, which `read_dir` decides, and its style guard lets a Bold face answer a Regular request — so the same commit rendered Greek in different weights on two machines. Found by CI, not by review. |
+| A contrast check, `TEXT_LOW_CONTRAST` | Seventeen validation codes and not one asked whether the text could be seen. Metadata in `$brand.muted` over wet asphalt survived a max-effort agent, a skill rule telling it to look, and its own visual pass; the user caught it by eye. §100 criteria 1 and 3. It measures lightness *and* colour: a luminance-only version called the accent red the worst offender on the very cover whose author said it was the one element that worked. |

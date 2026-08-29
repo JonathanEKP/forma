@@ -252,6 +252,15 @@ Text overflow is *measured* from the rendered glyphs, not estimated, so
 `TEXT_OVERFLOW_WIDTH` means the text genuinely does not fit — shorten it, break
 the line, reduce `font_size`, or widen the box.
 
+`TEXT_LOW_CONTRAST` is measured the same way: the renderer samples what is drawn
+under the line and compares it with the ink, by lightness *and* by colour. An
+accent that breaks by hue passes even when the two are the same lightness. It is
+an **error** when the two are near enough to be the same thing, because that is
+copy the reader never gets, and a **warning** when it is merely thin or when the
+line reads on average while most of its own area does not — a headline half on
+dark road and half on a bright stripe. The fix is almost never a band across the
+photograph: move the line, or take it to a near-white or near-black.
+
 Do not export a design with errors. Warnings are a judgement call: a bleeding
 photo warns and is fine; an off-brand literal warns and may be exactly what the
 user asked for.
@@ -341,9 +350,14 @@ must rather than the full width out of caution.
 Insurance is not free here. A band added "to be safe", behind type that would have
 read anyway, costs the picture and buys nothing.
 
-Contrast is something you **look at**, not something you assume. A small element
-in an accent colour, dropped on a busy or mid-toned part of a photo, can be
-invisible at full size and you will not know until you see it.
+Contrast is checked, not assumed. `validate_design` measures every line against
+what is behind it, so a small label dropped on a mid-toned part of a photo comes
+back as `TEXT_LOW_CONTRAST` rather than reaching the reader as a grey smudge.
+
+Mid tones are the trap. `$brand.muted` is defined against `$brand.background`,
+where it has all the contrast it needs; over a photograph of the same lightness
+it has none. Over photography the reliable inks are the near-white and the
+near-black, and an accent used deliberately.
 
 ### Scale
 

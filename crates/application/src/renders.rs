@@ -15,7 +15,7 @@ use renderer::{
     render_page, svg::BrandPalette, AssetSource, FontRegistry, InMemoryAssets, RasterAsset,
     RenderCache, RenderedPage,
 };
-use validator::{AssetInfo, MeasuredLayer, ValidationContext, ValidationReport};
+use validator::{AssetInfo, MeasuredLayer, TextContrast, ValidationContext, ValidationReport};
 
 use crate::error::{ApplicationError, Result};
 
@@ -204,6 +204,19 @@ pub async fn validate(
             continue;
         };
 
+        // What is behind each text layer, from the same render authority that
+        // shaped it. A page that cannot be sampled contributes no contrast and
+        // the check is skipped, exactly like the bounds above.
+        let backdrops = renderer::contrast::measure(
+            document,
+            page,
+            &palette(brand),
+            fonts,
+            &loaded,
+            &rendered.inspection,
+        )
+        .unwrap_or_default();
+
         for layer in &page.layers {
             if let Some(bounds) = rendered.inspection.layer(layer.id()) {
                 measurements.insert(
@@ -211,6 +224,11 @@ pub async fn validate(
                     MeasuredLayer {
                         layout: bounds.layout,
                         painted: bounds.painted,
+                        contrast: backdrops.get(&layer.id()).map(|c| TextContrast {
+                            ratio: c.ratio,
+                            illegible_fraction: c.illegible_fraction,
+                            delta_e: c.delta_e,
+                        }),
                     },
                 );
             }

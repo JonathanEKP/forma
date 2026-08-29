@@ -137,6 +137,14 @@ from Signal and unrelated to it; do not unify them.
   `FONT_TOO_SMALL`) are skipped when there is no kit. `application::renders::validate`
   skips a page that fails to render, on the assumption that the failure already has its own
   issue — so any new render failure mode needs a matching check, or it will be swallowed.
+- **Legibility is two measurements, not one.** `TEXT_LOW_CONTRAST` compares the ink
+  with what is drawn under it by WCAG luminance ratio *and* by perceptual distance
+  (CIE76 ΔE), because an accent red on wet asphalt sits at a ratio of 1.09 and reads
+  perfectly — it breaks by hue. A luminance-only check called it the worst offender
+  on a cover whose author said it was the one thing that worked, and an error that
+  wrong is worse than no check: it sends an agent to fix what is not broken. The
+  ΔE line at 25 was calibrated on that cover, where the unreadable greys measured 12
+  and the red 75. Both the mean and the per-pixel test weigh colour.
 - **The validator measures nothing.** Text bounds come from the renderer and are handed in
   as `MeasuredLayer`; without them the overflow checks are *skipped*, never approximated.
   A second typographic implementation would drift from the render authority. The validator

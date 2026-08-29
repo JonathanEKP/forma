@@ -10,7 +10,7 @@ use design_core::{
     Page, ProjectId, Rect, ShapeKind, ShapeLayer, TextAlign, TextLayer, Transform, Version,
 };
 use validator::{
-    validate, AssetInfo, MeasuredLayer, Severity, ValidationContext, ValidationReport,
+    validate, AssetInfo, MeasuredLayer, Severity, TextContrast, ValidationContext, ValidationReport,
 };
 
 fn brand() -> BrandKit {
@@ -280,10 +280,10 @@ fn text_overflow_width() {
     let document = document_with(vec![Layer::Text(layer)]);
     let context = clean_context(&document, &brand).with_measurement(
         id,
-        MeasuredLayer {
-            layout: Rect::new(100.0, 100.0, 620.0, 120.0),
-            painted: Rect::new(100.0, 100.0, 620.0, 120.0),
-        },
+        MeasuredLayer::new(
+            Rect::new(100.0, 100.0, 620.0, 120.0),
+            Rect::new(100.0, 100.0, 620.0, 120.0),
+        ),
     );
 
     let report = validate(&context);
@@ -299,10 +299,10 @@ fn text_overflow_height() {
     let document = document_with(vec![Layer::Text(layer)]);
     let context = clean_context(&document, &brand).with_measurement(
         id,
-        MeasuredLayer {
-            layout: Rect::new(100.0, 100.0, 700.0, 260.0),
-            painted: Rect::new(100.0, 100.0, 700.0, 260.0),
-        },
+        MeasuredLayer::new(
+            Rect::new(100.0, 100.0, 700.0, 260.0),
+            Rect::new(100.0, 100.0, 700.0, 260.0),
+        ),
     );
 
     let report = validate(&context);
@@ -599,12 +599,130 @@ fn painted_bounds_decide_the_canvas_check_not_the_frame() {
         // back inside the frame must not be reported as leaving the canvas.
         .with_measurement(
             id,
-            MeasuredLayer {
-                layout: Rect::new(-300.0, 100.0, 1400.0, 500.0),
-                painted: Rect::new(100.0, 100.0, 500.0, 500.0),
-            },
+            MeasuredLayer::new(
+                Rect::new(-300.0, 100.0, 1400.0, 500.0),
+                Rect::new(100.0, 100.0, 500.0, 500.0),
+            ),
         );
 
     let report = validate(&context);
     assert!(!report.has("OUTSIDE_CANVAS"), "{:?}", report.issues);
+}
+
+/// Contrast arrives measured, exactly like bounds do. These pin the severities,
+/// because severity is what decides whether an export is allowed (plan §42).
+fn measured_with(ratio: f32, illegible_fraction: f32) -> MeasuredLayer {
+    // Colours that are alike in hue as well as lightness. The cases where they
+    // are not have their own test.
+    measured_alike(ratio, illegible_fraction, 8.0)
+}
+
+fn measured_alike(ratio: f32, illegible_fraction: f32, delta_e: f32) -> MeasuredLayer {
+    MeasuredLayer {
+        layout: Rect::new(100.0, 100.0, 400.0, 60.0),
+        painted: Rect::new(100.0, 100.0, 400.0, 60.0),
+        contrast: Some(TextContrast {
+            ratio,
+            illegible_fraction,
+            delta_e,
+        }),
+    }
+}
+
+#[test]
+fn text_the_same_tone_as_its_backdrop_is_an_error() {
+    let brand = brand();
+    let layer = text_layer("Footer", Transform::new(100.0, 100.0, 800.0, 200.0));
+    let id = layer.common.id;
+    let document = document_with(vec![Layer::Text(layer)]);
+    let context = clean_context(&document, &brand).with_measurement(id, measured_with(1.2, 1.0));
+
+    assert_only(&validate(&context), "TEXT_LOW_CONTRAST", Severity::Error);
+}
+
+#[test]
+fn text_with_little_contrast_is_a_warning() {
+    let brand = brand();
+    let layer = text_layer("Footer", Transform::new(100.0, 100.0, 800.0, 200.0));
+    let id = layer.common.id;
+    let document = document_with(vec![Layer::Text(layer)]);
+    let context = clean_context(&document, &brand).with_measurement(id, measured_with(2.1, 0.9));
+
+    assert_only(&validate(&context), "TEXT_LOW_CONTRAST", Severity::Warning);
+}
+
+/// The case a single ratio cannot see: comfortable on average, lost across most
+/// of its own area.
+#[test]
+fn text_that_reads_on_average_but_not_over_most_of_itself_is_a_warning() {
+    let brand = brand();
+    let layer = text_layer("Headline", Transform::new(100.0, 100.0, 800.0, 200.0));
+    let id = layer.common.id;
+    let document = document_with(vec![Layer::Text(layer)]);
+    let context = clean_context(&document, &brand).with_measurement(id, measured_with(6.0, 0.8));
+
+    assert_only(&validate(&context), "TEXT_LOW_CONTRAST", Severity::Warning);
+}
+
+#[test]
+fn text_that_reads_reports_nothing() {
+    let brand = brand();
+    let layer = text_layer("Headline", Transform::new(100.0, 100.0, 800.0, 200.0));
+    let id = layer.common.id;
+    let document = document_with(vec![Layer::Text(layer)]);
+    let context = clean_context(&document, &brand).with_measurement(id, measured_with(9.4, 0.02));
+
+    assert!(
+        !validate(&context)
+            .issues
+            .iter()
+            .any(|issue| issue.code == "TEXT_LOW_CONTRAST"),
+        "a readable line must not be reported"
+    );
+}
+
+/// Without a measurement the check is skipped, never approximated -- the same
+/// rule the overflow checks follow.
+#[test]
+fn contrast_is_skipped_when_it_was_not_measured() {
+    let brand = brand();
+    let layer = text_layer("Headline", Transform::new(100.0, 100.0, 800.0, 200.0));
+    let id = layer.common.id;
+    let document = document_with(vec![Layer::Text(layer)]);
+    let context = clean_context(&document, &brand).with_measurement(
+        id,
+        MeasuredLayer::new(
+            Rect::new(100.0, 100.0, 400.0, 60.0),
+            Rect::new(100.0, 100.0, 400.0, 60.0),
+        ),
+    );
+
+    assert!(!validate(&context)
+        .issues
+        .iter()
+        .any(|issue| issue.code == "TEXT_LOW_CONTRAST"));
+}
+
+/// The accent red on wet asphalt: nearly the same lightness as its backdrop, and
+/// perfectly readable, because it breaks by hue. Reporting it would send an agent
+/// to fix the one element on the cover that worked.
+#[test]
+fn a_colour_that_breaks_by_hue_is_not_reported() {
+    let brand = brand();
+    let layer = text_layer("Number", Transform::new(100.0, 100.0, 800.0, 200.0));
+    let id = layer.common.id;
+    let document = document_with(vec![Layer::Text(layer)]);
+    // Measured from the real cover: ratio 1.09, ΔE 75.2. The illegible share is
+    // low because the renderer's per-pixel test weighs colour as well, which
+    // `renderer/tests/contrast.rs` pins separately.
+    let context =
+        clean_context(&document, &brand).with_measurement(id, measured_alike(1.09, 0.01, 75.2));
+
+    assert!(
+        !validate(&context)
+            .issues
+            .iter()
+            .any(|issue| issue.code == "TEXT_LOW_CONTRAST"),
+        "a hue break is contrast too"
+    );
 }

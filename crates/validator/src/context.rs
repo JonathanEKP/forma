@@ -15,6 +15,40 @@ pub struct MeasuredLayer {
     pub layout: Rect,
     /// What survives clipping and actually reaches the raster.
     pub painted: Rect,
+    /// How the text reads against what is drawn under it, for text layers the
+    /// render authority could sample. `None` means the question was not asked
+    /// or could not be answered, and the check is skipped rather than guessed —
+    /// the same rule the overflow checks follow.
+    pub contrast: Option<TextContrast>,
+}
+
+impl MeasuredLayer {
+    /// Bounds alone, for the callers and tests that have nothing to say about
+    /// what is behind the layer.
+    pub fn new(layout: Rect, painted: Rect) -> Self {
+        Self {
+            layout,
+            painted,
+            contrast: None,
+        }
+    }
+}
+
+/// How legible one text layer is against its backdrop.
+///
+/// Measured by the renderer, which resolves the colour and owns the pixels. It
+/// is redeclared here rather than imported because this crate must not depend on
+/// the renderer (plan section 8): a validator that could render would grow a
+/// second opinion about what a design looks like.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TextContrast {
+    /// WCAG contrast ratio against the mean backdrop.
+    pub ratio: f32,
+    /// Share of the area whose own ratio is below the readable floor.
+    pub illegible_fraction: f32,
+    /// Perceptual distance between the ink and the backdrop. Luminance alone
+    /// calls an accent red on wet asphalt unreadable, and it is not.
+    pub delta_e: f32,
 }
 
 /// What is known about an asset the document references.

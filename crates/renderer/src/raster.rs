@@ -6,6 +6,14 @@ use resvg::tiny_skia;
 use crate::error::RenderError;
 
 pub fn render_png(tree: &usvg::Tree, scale: f32) -> Result<Vec<u8>, RenderError> {
+    render_pixmap(tree, scale)?
+        .encode_png()
+        .map_err(|e| RenderError::PngEncode(e.to_string()))
+}
+
+/// The raster before it is encoded. The contrast check reads pixels, so it would
+/// otherwise encode a PNG only to decode it again.
+pub fn render_pixmap(tree: &usvg::Tree, scale: f32) -> Result<tiny_skia::Pixmap, RenderError> {
     if scale <= 0.0 {
         return Err(RenderError::InvalidDimension(format!(
             "scale must be positive, got {scale}"
@@ -25,7 +33,5 @@ pub fn render_png(tree: &usvg::Tree, scale: f32) -> Result<Vec<u8>, RenderError>
         &mut pixmap.as_mut(),
     );
 
-    pixmap
-        .encode_png()
-        .map_err(|e| RenderError::PngEncode(e.to_string()))
+    Ok(pixmap)
 }

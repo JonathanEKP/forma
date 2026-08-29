@@ -25,7 +25,7 @@ pub fn layer_group_id(common: &LayerCommon) -> String {
     format!("{LAYER_ID_PREFIX}{}", common.id)
 }
 
-fn resolve(color: &DesignColor, palette: &BrandPalette) -> Result<Color, RenderError> {
+pub(crate) fn resolve(color: &DesignColor, palette: &BrandPalette) -> Result<Color, RenderError> {
     match color {
         DesignColor::Literal(c) => Ok(*c),
         DesignColor::BrandToken(token) => palette.get(token).copied().ok_or_else(|| {
