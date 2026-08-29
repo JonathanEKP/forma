@@ -143,9 +143,8 @@ a write-ahead log is not.
 - [ ] `df -h /var/lib/forma` shows room to grow
 - [ ] 4765 and 4766 are **not** reachable from outside
 
-Then the repo half is: build for `aarch64-unknown-linux-gnu`, copy the two
-binaries and `apps/web/dist`, install the units and the Caddyfile, start, and run
-the external smoke tests.
+Then the machine is ready and [runbook.md](runbook.md) takes over: build, install,
+verify, back up.
 
 ## 9. What was checked before anything reached the machine
 

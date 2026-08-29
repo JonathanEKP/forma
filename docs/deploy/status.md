@@ -1,7 +1,8 @@
 # Remote deploy: where this actually is
 
-State, not intent. [oracle.md](oracle.md) says what the machine has to be; this
-says what it is, what has been checked, and by whom.
+State, not intent. [oracle.md](oracle.md) says what the machine has to be,
+[runbook.md](runbook.md) how to deploy onto it; this says what it is, what has
+been checked, and by whom.
 
 Last updated 2026-08-29.
 
@@ -142,47 +143,15 @@ environment of a process that only proxies, so the name has a file of its own.
 
 ---
 
-## What has not happened, and how to do it
+## What has not happened
 
-Nothing from the repo is on the VM. Two commands, in this order.
+Nothing from the repo is on the VM. **[runbook.md](runbook.md) is how to change
+that** — who does which step, the two commands, what to do when one fails, and
+how to roll back.
 
-**Install.** From the repo root on a machine that can `ssh` to the box:
-
-```bash
-./scripts/deploy.sh ubuntu@129.213.28.225 -i ~/.ssh/id_rsa2
-```
-
-It builds for aarch64, stages everything into `/tmp/forma-deploy`, and runs
-`deploy/install.sh` there under `sudo`. That script is the one doing the work,
-and it is idempotent: run it again for every deploy.
-
-It **never writes the token and never overwrites `/etc/forma/forma.env`** — it
-appends keys that are missing and leaves the rest alone. A deploy script that can
-destroy the credential is one that eventually will. It refuses to run at all if
-that file is absent or has no `FORMA_REMOTE_TOKEN`, and it checks the staged
-binary really is aarch64 before touching anything.
-
-It stops both services before replacing the binaries, because a running
-executable cannot be overwritten in place — the kernel answers `ETXTBSY`.
-
-**Verify, from off the machine:**
-
-```bash
-export FORMA_REMOTE_TOKEN=$(ssh -i ~/.ssh/id_rsa2 ubuntu@129.213.28.225 \
-    "sudo sed -n 's/^FORMA_REMOTE_TOKEN=//p' /etc/forma/forma.env")
-./scripts/smoke-remote.py https://forma.hintly.online
-```
-
-Fifteen checks: TLS, the credential on every surface, that 4765 and 4766 are
-**not** reachable, the MCP handshake, and Phase 11's own acceptance — an
-authorized host creating and rendering a piece — after which it deletes what it
-made. It has been run end to end against a real server and MCP pair locally; what
-it cannot rehearse here is TLS and Caddy.
-
-**Then, still to do:** a backup timer calling `forma-server backup`, per
-[backup.md](../backup.md). On a laptop a backup is something you run; on a VM it
-has to happen without you, and an Oracle volume snapshot is not a substitute for
-`VACUUM INTO` against a live write-ahead log.
+In short: close the reboot question about the host firewall first, then
+`./scripts/deploy.sh`, then `./scripts/smoke-remote.py`, then a backup timer.
+Getting backups off the machine is still open.
 
 ## What will not work, and is not a bug
 

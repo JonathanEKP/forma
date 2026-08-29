@@ -27,6 +27,13 @@ backups. Upload security and SVG sanitizing landed back in Phase 5, and the erro
 the §32 envelope. The brand panel, the editor's export control and the §67 Playwright
 walkthrough closed afterwards, so the V1 plan has nothing open.
 
+The remote deploy has three documents, and they answer different questions:
+[docs/deploy/oracle.md](docs/deploy/oracle.md) is what the machine has to be,
+[docs/deploy/runbook.md](docs/deploy/runbook.md) is how to deploy onto it, and
+[docs/deploy/status.md](docs/deploy/status.md) is where it currently stands —
+which keeps *reported* and *verified here* apart, because a status document that
+blurs those is how one starts lying.
+
 **What comes next is in [docs/plan-status.md](docs/plan-status.md) under *Agreed order*,
 and it is ordered.** Items 5 to 8 came out of using the product against a real brief
 rather than from the plan, and each carries the §100 criterion that admitted it: a delete

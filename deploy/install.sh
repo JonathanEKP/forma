@@ -11,6 +11,23 @@ STAGE=${1:-/tmp/forma-deploy}
 say() { printf '==> %s\n' "$*"; }
 
 [ "$(id -u)" -eq 0 ] || { echo "run as root" >&2; exit 1; }
+
+# --- rollback -------------------------------------------------------------
+if [ "$STAGE" = "--rollback" ]; then
+    [ -x /opt/forma/previous/forma-server ] || {
+        echo "no previous build kept in /opt/forma/previous" >&2; exit 1; }
+    say "rolling back to the previous build"
+    systemctl stop forma-mcp.service forma-server.service 2>/dev/null || true
+    install -o root -g root -m 755 /opt/forma/previous/forma-server \
+        /opt/forma/previous/forma-mcp /opt/forma/
+    if [ -d /opt/forma/previous/web ]; then
+        rm -rf /opt/forma/web
+        cp -a /opt/forma/previous/web /opt/forma/web
+    fi
+    systemctl start forma-server.service forma-mcp.service
+    say "rolled back. The data and the config were never touched."
+    exit 0
+fi
 [ -x "$STAGE/forma-server" ] || { echo "no build staged in $STAGE" >&2; exit 1; }
 
 if ! file "$STAGE/forma-server" | grep -q aarch64; then
@@ -56,6 +73,18 @@ fi
 say "stopping services"
 systemctl stop forma-mcp.service 2>/dev/null || true
 systemctl stop forma-server.service 2>/dev/null || true
+
+# --- keep what is being replaced ------------------------------------------
+# One previous version, so a bad deploy is a rollback rather than a rebuild.
+# Only the binaries and the editor: the fonts and the config are not what a
+# deploy breaks, and the data is never touched.
+if [ -x /opt/forma/forma-server ]; then
+    say "keeping the current build in /opt/forma/previous"
+    rm -rf /opt/forma/previous
+    install -d -o root -g root -m 755 /opt/forma/previous
+    cp -a /opt/forma/forma-server /opt/forma/forma-mcp /opt/forma/previous/ 2>/dev/null || true
+    [ -d /opt/forma/web ] && cp -a /opt/forma/web /opt/forma/previous/web
+fi
 
 # --- binaries, editor, fonts ----------------------------------------------
 say "installing binaries and the editor into /opt/forma"
@@ -111,3 +140,5 @@ done
 
 say "installed. Caddy issues the certificate on first request to the domain;"
 say "give it a few seconds, then run the external smoke tests."
+[ -x /opt/forma/previous/forma-server ] && \
+    say "to roll back: sudo bash $STAGE/install.sh --rollback"
