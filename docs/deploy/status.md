@@ -142,26 +142,57 @@ environment of a process that only proxies, so the name has a file of its own.
 
 ---
 
-## What has not happened
+## What has not happened, and how to do it
 
-Nothing from the repo is on the VM. In order:
+Nothing from the repo is on the VM. Two commands, in this order.
 
-1. Copy `dist/aarch64-unknown-linux-gnu/` into `/opt/forma` and `/var/lib/forma/fonts`.
-2. Install both units, the Caddy drop-in, and Forma's Caddyfile.
-3. Write `/etc/forma/domain.env`; add the missing keys to `/etc/forma/forma.env`
-   from `forma.env.example` (the token is already there).
-4. Start both services; reload Caddy and let it issue the certificate.
-5. Smoke test from outside: HTTPS, the editor, and an MCP handshake against
-   `https://forma.hintly.online/mcp`.
-6. A backup timer calling `forma-server backup`, per [backup.md](../backup.md).
-   On a laptop a backup is something you run; on a VM it has to happen without
-   you, and an Oracle volume snapshot is not a substitute for `VACUUM INTO`.
+**Install.** From the repo root on a machine that can `ssh` to the box:
+
+```bash
+./scripts/deploy.sh ubuntu@129.213.28.225 -i ~/.ssh/id_rsa2
+```
+
+It builds for aarch64, stages everything into `/tmp/forma-deploy`, and runs
+`deploy/install.sh` there under `sudo`. That script is the one doing the work,
+and it is idempotent: run it again for every deploy.
+
+It **never writes the token and never overwrites `/etc/forma/forma.env`** — it
+appends keys that are missing and leaves the rest alone. A deploy script that can
+destroy the credential is one that eventually will. It refuses to run at all if
+that file is absent or has no `FORMA_REMOTE_TOKEN`, and it checks the staged
+binary really is aarch64 before touching anything.
+
+It stops both services before replacing the binaries, because a running
+executable cannot be overwritten in place — the kernel answers `ETXTBSY`.
+
+**Verify, from off the machine:**
+
+```bash
+export FORMA_REMOTE_TOKEN=$(ssh -i ~/.ssh/id_rsa2 ubuntu@129.213.28.225 \
+    "sudo sed -n 's/^FORMA_REMOTE_TOKEN=//p' /etc/forma/forma.env")
+./scripts/smoke-remote.py https://forma.hintly.online
+```
+
+Fifteen checks: TLS, the credential on every surface, that 4765 and 4766 are
+**not** reachable, the MCP handshake, and Phase 11's own acceptance — an
+authorized host creating and rendering a piece — after which it deletes what it
+made. It has been run end to end against a real server and MCP pair locally; what
+it cannot rehearse here is TLS and Caddy.
+
+**Then, still to do:** a backup timer calling `forma-server backup`, per
+[backup.md](../backup.md). On a laptop a backup is something you run; on a VM it
+has to happen without you, and an Oracle volume snapshot is not a substitute for
+`VACUUM INTO` against a live write-ahead log.
 
 ## What will not work, and is not a bug
 
-**The browser editor is not usable remotely.** The API requires a bearer token
-and the SPA has nowhere to hold one, so `https://forma.hintly.online` will serve
-the editor and its API calls will come back 401. §57 calls this "first remote
-testing" and Phase 11's own acceptance is *an authorized remote MCP host can
-create/render a piece* — the agent half, which is what this deploy delivers. A
-token box in the editor is a separate decision, not an oversight.
+**The browser editor is not usable remotely, and the whole origin says so.**
+Every path except `/api/v1/health` requires the bearer, the editor included, so
+`https://forma.hintly.online` answers 401 to a visitor rather than serving an app
+whose every call then fails in the console. The SPA has nowhere to hold a token,
+so serving it anonymously would buy nothing and mislead.
+
+§57 calls this "first remote testing" and Phase 11's own acceptance is *an
+authorized remote MCP host can create/render a piece* — the agent half, which is
+what this deploy delivers. A token box in the editor is a separate decision, not
+an oversight.
