@@ -257,6 +257,11 @@ from Signal and unrelated to it; do not unify them.
   weight distance, preferring a match but still using a mismatched face over tofu. The
   goldens are Latin-only and never exercise the fallback, so `tests/geist.rs` is the only
   thing guarding it.
+- **The render is identical on x86_64 and aarch64.** Measured, not assumed: the same
+  page rendered through the REST API on both came back byte-identical, same SHA-256.
+  The rasteriser takes different SIMD paths per architecture, so this was the open
+  question behind deploying to an Ampere box, and it is what lets the goldens run
+  there unchanged.
 - Never log tokens, auth headers, or asset binary content.
 
 ## MCP surface (14 tools, §48 plus templates)

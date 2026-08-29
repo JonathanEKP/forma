@@ -146,3 +146,18 @@ a write-ahead log is not.
 Then the repo half is: build for `aarch64-unknown-linux-gnu`, copy the two
 binaries and `apps/web/dist`, install the units and the Caddyfile, start, and run
 the external smoke tests.
+
+## 9. What was checked before anything reached the machine
+
+Not to be repeated on the VM, but worth knowing was done:
+
+- The two binaries cross-compile and **link** for `aarch64-unknown-linux-gnu`
+  (`scripts/build-aarch64.sh`), and run on `ubuntu:24.04` arm64 under emulation.
+- Server, MCP-over-HTTP and the bearer all work there: 401 without a token, the
+  MCP handshake with one, and a `tools/call` whose answer proves the token
+  travels onward to the REST API.
+- **The same page renders byte-identically on x86_64 and aarch64** — same
+  SHA-256, same length. It is the promise the whole project rests on and the
+  rasteriser takes different SIMD paths per architecture, so it was worth
+  measuring rather than assuming. It also means the golden tests will pass on
+  the VM.

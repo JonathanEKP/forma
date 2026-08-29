@@ -4,8 +4,10 @@
 # The name is a variable with a default rather than a literal, because the
 # default is admittedly temporary: Forma has no domain of its own yet and
 # forma.hintly.online is a subdomain borrowed from one that exists. Set
-# FORMA_DOMAIN in /etc/forma/forma.env to move it without editing this file on
-# the machine.
+# FORMA_DOMAIN in /etc/forma/domain.env to move it without editing this file on
+# the machine — the systemd drop-in in deploy/systemd/caddy.service.d is what
+# puts that variable into Caddy's environment, since Caddy does not read
+# forma.env and must not be handed the token it contains.
 #
 # Caddy issues and renews the certificate itself, which needs the name resolving
 # here and port 80 reachable before it first runs.
