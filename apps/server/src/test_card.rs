@@ -43,7 +43,8 @@ pub fn default_brand_kit() -> BrandKit {
 }
 
 pub fn palette() -> BrandPalette {
-    default_brand_kit().color_palette()
+    let kit = default_brand_kit();
+    BrandPalette::new(kit.color_palette(), kit.font_families())
 }
 
 fn common(name: &str, role: LayerRole, transform: Transform) -> LayerCommon {

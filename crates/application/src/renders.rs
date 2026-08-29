@@ -25,7 +25,10 @@ use crate::error::{ApplicationError, Result};
 /// an empty palette: the renderer then reports the unresolved token rather than
 /// inventing a color.
 pub fn palette(brand: Option<&BrandKit>) -> BrandPalette {
-    brand.map(BrandKit::color_palette).unwrap_or_default()
+    let Some(brand) = brand else {
+        return BrandPalette::default();
+    };
+    BrandPalette::new(brand.color_palette(), brand.font_families())
 }
 
 fn find_page(document: &DesignDocument, page_id: PageId) -> Result<&Page> {

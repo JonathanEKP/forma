@@ -5,8 +5,6 @@
 //! codes, survived an agent that looked at its own render, and was caught by a
 //! person's eye.
 
-use std::collections::HashMap;
-
 use design_core::{
     Color, DesignColor, DesignDocument, DesignFormat, FormatPreset, Layer, LayerCommon, LayerId,
     Page, ShapeKind, ShapeLayer, TextAlign, TextLayer, Transform,
@@ -74,7 +72,7 @@ fn measure_over(ink: Color, backdrops: Vec<Layer>) -> contrast::TextContrast {
     let id = text.common.id;
     page.layers.push(Layer::Text(text));
 
-    let palette: BrandPalette = HashMap::new();
+    let palette = BrandPalette::default();
     let fonts = fonts();
     let rendered =
         render_page(&document, &page, &palette, &fonts, &NoAssets).expect("the sample must render");

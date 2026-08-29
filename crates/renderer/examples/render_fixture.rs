@@ -27,13 +27,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let fonts = FontRegistry::from_dir(root.join("data/fonts"))?;
 
-    let palette: BrandPalette = HashMap::from([
+    let palette: BrandPalette = BrandPalette::from_colors(HashMap::from([
         ("brand.background".to_string(), Color::rgb(0x10, 0x10, 0x10)),
         ("brand.surface".to_string(), Color::rgb(0x19, 0x19, 0x19)),
         ("brand.primary".to_string(), Color::rgb(0xFF, 0x54, 0x36)),
         ("brand.muted".to_string(), Color::rgb(0xA3, 0xA3, 0xA3)),
         ("brand.text".to_string(), Color::rgb(0xFF, 0xFF, 0xFF)),
-    ]);
+    ]));
 
     let document = DesignDocument::new(DesignFormat::from_preset(FormatPreset::InstagramPortrait));
     let mut page = Page::new("Slide 1");

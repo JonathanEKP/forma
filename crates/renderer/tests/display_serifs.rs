@@ -54,7 +54,10 @@ fn ink(fonts: &FontRegistry, glyph: char, family: &str, weight: u16) -> usize {
         align: TextAlign::Left,
         color: DesignColor::token("brand.text"),
     }));
-    let palette: BrandPalette = HashMap::from([("brand.text".to_string(), Color::rgb(20, 21, 26))]);
+    let palette: BrandPalette = BrandPalette::from_colors(HashMap::from([(
+        "brand.text".to_string(),
+        Color::rgb(20, 21, 26),
+    )]));
     let png = render_page_png(&document, &page, &palette, fonts, &NoAssets, 1.0)
         .expect("the glyph must render");
     Pixmap::decode_png(&png)

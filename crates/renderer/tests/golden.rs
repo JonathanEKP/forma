@@ -78,6 +78,7 @@ fn palette() -> BrandPalette {
         ),
         ("brand.muted".to_string(), Color::rgb(0xA3, 0xA3, 0xA3)),
     ])
+    .into()
 }
 
 /// Every asset any fixture references, all pointing at the one test image.

@@ -38,11 +38,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let fonts = FontRegistry::from_dir(root.join("data/fonts"))?;
 
-    let palette: BrandPalette = HashMap::from([
+    let palette: BrandPalette = BrandPalette::from_colors(HashMap::from([
         ("brand.background".to_string(), Color::rgb(0x0B, 0x0B, 0x0C)),
         ("brand.text".to_string(), Color::rgb(0xFF, 0xFF, 0xFF)),
         ("brand.muted".to_string(), Color::rgb(0x8A, 0x8A, 0x90)),
-    ]);
+    ]));
 
     let mut document = DesignDocument::new(DesignFormat::from_preset(FormatPreset::Square));
     document.format.height = 1240.0;

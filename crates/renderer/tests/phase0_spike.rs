@@ -27,6 +27,7 @@ fn palette() -> svg::BrandPalette {
         ("brand.primary".to_string(), Color::rgb(0xFF, 0x54, 0x36)),
         ("brand.text".to_string(), Color::rgb(0xFF, 0xFF, 0xFF)),
     ])
+    .into()
 }
 
 fn common(name: &str, role: LayerRole, transform: Transform) -> LayerCommon {

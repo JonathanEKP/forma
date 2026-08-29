@@ -145,6 +145,14 @@ from Signal and unrelated to it; do not unify them.
   wrong is worse than no check: it sends an agent to fix what is not broken. The
   ΔE line at 25 was calibrated on that cover, where the unreadable greys measured 12
   and the red 75. Both the mean and the per-pixel test weigh colour.
+- **Brand resolution is colours *and* fonts, in one place.** `BrandPalette` carries
+  both because they resolve at the same moment, and the renderer used to get only
+  the colours: it wrote `$brand.display` into the SVG as if it were a family name,
+  usvg found no such family and drew **nothing at all**, while the validator — which
+  did resolve the token — called the design valid. A cover whose headline had
+  vanished passed every check. `BrandKit::font_families` sits beside `color_palette`
+  so a caller cannot build one and forget the other, and an unresolvable font token
+  is fatal in the renderer exactly like an unresolvable colour.
 - **The validator measures nothing.** Text bounds come from the renderer and are handed in
   as `MeasuredLayer`; without them the overflow checks are *skipped*, never approximated.
   A second typographic implementation would drift from the render authority. The validator

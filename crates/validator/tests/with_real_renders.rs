@@ -70,7 +70,7 @@ fn assets() -> InMemoryAssets {
 fn measure(document: &DesignDocument) -> HashMap<design_core::LayerId, MeasuredLayer> {
     let fonts = FontRegistry::from_dir(root().join("data/fonts")).unwrap();
     let brand = brand();
-    let palette = brand.color_palette();
+    let palette = renderer::svg::BrandPalette::new(brand.color_palette(), brand.font_families());
     let page = &document.pages[0];
 
     let rendered =

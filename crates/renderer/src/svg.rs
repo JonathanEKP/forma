@@ -15,7 +15,60 @@ use crate::images::{place, AssetSource};
 
 /// Resolved `$brand.*` values. The document stays portable (plan section 14);
 /// tokens are resolved at render time, not stored expanded.
-pub type BrandPalette = HashMap<String, Color>;
+///
+/// Fonts live here beside the colours because they are resolved the same way and
+/// at the same moment. They were missing, and the renderer wrote `$brand.display`
+/// into the SVG as if it were a family name: usvg found no such family, drew
+/// nothing at all, and the validator — which *did* resolve the token — called the
+/// design valid. A page that lost its headline entirely passed every check.
+#[derive(Debug, Clone, Default)]
+pub struct BrandPalette {
+    colors: HashMap<String, Color>,
+    fonts: HashMap<String, String>,
+}
+
+impl BrandPalette {
+    pub fn new(colors: HashMap<String, Color>, fonts: HashMap<String, String>) -> Self {
+        Self { colors, fonts }
+    }
+
+    /// Colours only, for callers with nothing to say about typography. A text
+    /// layer naming a font token against one of these fails to render, which is
+    /// the same answer an unknown colour token gets.
+    pub fn from_colors(colors: HashMap<String, Color>) -> Self {
+        Self {
+            colors,
+            fonts: HashMap::new(),
+        }
+    }
+
+    pub fn color(&self, token: &str) -> Option<Color> {
+        self.colors.get(token).copied()
+    }
+
+    pub fn font(&self, token: &str) -> Option<&str> {
+        self.fonts.get(token).map(String::as_str)
+    }
+}
+
+impl From<HashMap<String, Color>> for BrandPalette {
+    fn from(colors: HashMap<String, Color>) -> Self {
+        Self::from_colors(colors)
+    }
+}
+
+/// Resolves a font family, which may be a `$brand.*` token. An unresolvable one
+/// is fatal for the same reason an unresolvable colour is (plan section 42):
+/// there is no sane substitute, and drawing nothing silently is worse.
+pub(crate) fn resolve_family(family: &str, palette: &BrandPalette) -> Result<String, RenderError> {
+    let Some(token) = family.strip_prefix('$') else {
+        return Ok(family.to_string());
+    };
+    palette
+        .font(token)
+        .map(str::to_string)
+        .ok_or_else(|| RenderError::RenderFailed(format!("UNKNOWN_BRAND_TOKEN: ${token}")))
+}
 
 /// Every layer is wrapped in a group carrying this prefix, so the editor can
 /// address rendered geometry by layer id (plan section 36).
@@ -28,7 +81,7 @@ pub fn layer_group_id(common: &LayerCommon) -> String {
 pub(crate) fn resolve(color: &DesignColor, palette: &BrandPalette) -> Result<Color, RenderError> {
     match color {
         DesignColor::Literal(c) => Ok(*c),
-        DesignColor::BrandToken(token) => palette.get(token).copied().ok_or_else(|| {
+        DesignColor::BrandToken(token) => palette.color(token).ok_or_else(|| {
             // Plan section 42: UNKNOWN_BRAND_TOKEN is an error, never a fallback color.
             RenderError::RenderFailed(format!("UNKNOWN_BRAND_TOKEN: ${token}"))
         }),
@@ -240,7 +293,7 @@ fn write_text(
         svg,
         r#"<text x="{x}" y="{y}" font-family="{family}" font-size="{size}" font-weight="{weight}" fill="{fill}" text-anchor="{anchor}"{letter_spacing}{op}>"#,
         y = t.y + text.font_size,
-        family = escape(&text.font_family),
+        family = escape(&resolve_family(&text.font_family, palette)?),
         size = text.font_size,
         weight = text.font_weight,
         fill = paint(&color),

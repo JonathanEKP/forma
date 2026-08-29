@@ -111,6 +111,16 @@ impl BrandKit {
         }
     }
 
+    /// The font side of the same resolution. Kept beside `color_palette` so a
+    /// caller cannot build one and forget the other, which is how `$brand.display`
+    /// reached the renderer unresolved and silently drew nothing.
+    pub fn font_families(&self) -> HashMap<String, String> {
+        FONT_TOKENS
+            .iter()
+            .filter_map(|token| Some((token.to_string(), self.font(token).ok()?.to_string())))
+            .collect()
+    }
+
     /// Resolved palette for the renderer. Tokens are resolved at render time so
     /// the document itself stays portable (plan section 14).
     pub fn color_palette(&self) -> HashMap<String, Color> {

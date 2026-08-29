@@ -23,7 +23,7 @@ fn registry() -> FontRegistry {
 }
 
 fn palette() -> BrandPalette {
-    HashMap::from([("brand.text".to_string(), Color::rgb(0xF4, 0xF1, 0xEA))])
+    HashMap::from([("brand.text".to_string(), Color::rgb(0xF4, 0xF1, 0xEA))]).into()
 }
 
 /// Lays out one text layer alone on a page and returns the box usvg gave it.
@@ -120,6 +120,16 @@ fn geist_mono_advances_uniformly() {
 /// it. Passing the registry in is what lets a test compare the same string
 /// rendered with and without the family that owns its glyphs.
 fn painted_width_at(fonts: &FontRegistry, text: &str, family: &str, weight: u16) -> f32 {
+    painted_width_with(&palette(), fonts, text, family, weight)
+}
+
+fn painted_width_with(
+    palette: &BrandPalette,
+    fonts: &FontRegistry,
+    text: &str,
+    family: &str,
+    weight: u16,
+) -> f32 {
     let document = DesignDocument::new(DesignFormat::from_preset(FormatPreset::InstagramPortrait));
     let mut page = Page::new("Sample");
     let id = LayerId::new();
@@ -144,8 +154,8 @@ fn painted_width_at(fonts: &FontRegistry, text: &str, family: &str, weight: u16)
         color: DesignColor::token("brand.text"),
     }));
 
-    let rendered = render_page(&document, &page, &palette(), fonts, &NoAssets)
-        .expect("the sample must render");
+    let rendered =
+        render_page(&document, &page, palette, fonts, &NoAssets).expect("the sample must render");
     rendered
         .inspection
         .layer(id)
@@ -313,5 +323,64 @@ fn the_faces_are_loaded_in_sorted_order() {
         paths.windows(2).all(|pair| pair[0] <= pair[1]),
         "the faces are not in sorted order, so the filesystem decides the \
          fallback for a glyph two faces both cover: {paths:?}"
+    );
+}
+
+/// The bug an agent found by reading the code: the validator resolved
+/// `$brand.display` and the renderer did not, so it wrote the token itself into
+/// the SVG as a family name. usvg had no such family, drew **nothing at all**,
+/// and `validate_design` still called the design valid — a cover whose headline
+/// had silently vanished passed every check.
+#[test]
+fn a_font_token_resolves_to_the_family_the_brand_kit_names() {
+    let fonts = registry();
+    let palette = renderer::svg::BrandPalette::new(
+        std::collections::HashMap::from([("brand.text".to_string(), Color::rgb(0xF4, 0xF1, 0xEA))]),
+        std::collections::HashMap::from([("brand.display".to_string(), "Bodoni Moda".to_string())]),
+    );
+
+    let direct = painted_width_with(&palette, &fonts, SAMPLE, "Bodoni Moda", 400);
+    let through_token = painted_width_with(&palette, &fonts, SAMPLE, "$brand.display", 400);
+
+    assert!(direct > 1.0, "the control must actually draw: {direct}");
+    assert!(
+        (direct - through_token).abs() < 0.01,
+        "the token must resolve to the same family: {direct} vs {through_token}"
+    );
+}
+
+/// And an unresolvable one is fatal, exactly like an unresolvable colour. There
+/// is no sane substitute, and drawing nothing quietly is the failure above.
+#[test]
+fn a_font_token_the_kit_does_not_define_fails_the_render() {
+    let fonts = registry();
+    let document = DesignDocument::new(DesignFormat::from_preset(FormatPreset::Square));
+    let mut page = Page::new("Sample");
+    page.layers.push(Layer::Text(TextLayer {
+        common: LayerCommon {
+            id: LayerId::new(),
+            name: "Headline".to_string(),
+            role: None,
+            visible: true,
+            locked: false,
+            opacity: 1.0,
+            transform: Transform::new(80.0, 80.0, 800.0, 200.0),
+        },
+        text: SAMPLE.to_string(),
+        font_family: "$brand.display".to_string(),
+        font_size: 64.0,
+        font_weight: 400,
+        line_height: 1.1,
+        letter_spacing: 0.0,
+        align: TextAlign::Left,
+        color: DesignColor::token("brand.text"),
+    }));
+
+    let Err(error) = render_page(&document, &page, &palette(), &fonts, &NoAssets) else {
+        panic!("an undefined font token must not render");
+    };
+    assert!(
+        format!("{error}").contains("UNKNOWN_BRAND_TOKEN"),
+        "got: {error}"
     );
 }

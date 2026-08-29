@@ -51,6 +51,7 @@ fn palette() -> BrandPalette {
         ),
         ("brand.muted".to_string(), Color::rgb(0xA3, 0xA3, 0xA3)),
     ])
+    .into()
 }
 
 fn document() -> (DesignDocument, Page) {
