@@ -205,10 +205,16 @@ so a failed run leaves its partial directory on disk for whoever reads
 
 ```bash
 sudo systemctl start forma-backup.service     # don't wait for midnight
-systemctl status forma-backup.service
-sudo ls -la /var/lib/forma/backups
+journalctl -u forma-backup -n 10 --no-pager
+sudo sh -c 'ls -1 /var/lib/forma/backups'
+sudo sh -c 'cat /var/lib/forma/backups/*/manifest.json'
 systemctl list-timers forma-backup.timer
 ```
+
+Note the `sudo sh -c '...'` around anything with a glob. `/var/lib/forma` is
+`0750 forma:forma`, so your shell expands the wildcard as *you*, before `sudo`
+sees it, matches nothing, and passes the literal string to `cat`. It reads like
+the backup is missing when it is only unreadable to you.
 
 A finished backup holds `forma.db`, `assets/`, and `manifest.json`. Read the
 manifest: it records how many projects, designs, versions and assets it contains,
