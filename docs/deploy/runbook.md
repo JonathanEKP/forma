@@ -102,6 +102,15 @@ The three failures worth naming in advance:
 - **Caddy serves but the certificate never appears.** Port 80 is not reachable
   from outside, or the name does not resolve here yet. `journalctl -u caddy` says
   which. Check step 0.
+- **Caddy validates and then fails to start**, usually `permission denied` on
+  something it writes. Validation provisions the config's modules, so anything it
+  opens is created by whoever ran it; the installer now validates as the `caddy`
+  user precisely so a permission the runtime lacks is one validation lacks too.
+  If you add a `log { output file ... }` to the Caddyfile, create the file owned
+  by `caddy` first — Caddy makes log files `0600` owned by the opener.
+
+A deploy from before 2026-08-29 may have left `/var/log/caddy/forma.log` owned by
+root. Nothing references it any more; it can be deleted or ignored.
 
 ### Rolling back
 

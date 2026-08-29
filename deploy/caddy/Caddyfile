@@ -32,7 +32,17 @@
 		reverse_proxy 127.0.0.1:4765
 	}
 
+	# Access logs go to stderr, which systemd captures into the journal:
+	# `journalctl -u caddy`. It rotates on its own and is where you look on a
+	# systemd box anyway.
+	#
+	# This used to write /var/log/caddy/forma.log and that was a mistake. Caddy
+	# creates a log file 0600 owned by whoever opened it, `caddy validate` runs
+	# as root, and the service then runs as `caddy` and cannot reopen its own
+	# log — so the deploy validated cleanly and the service died on start. If
+	# you do want a file here, create it owned by `caddy` first; the journal is
+	# simpler and gives up nothing.
 	log {
-		output file /var/log/caddy/forma.log
+		output stderr
 	}
 }

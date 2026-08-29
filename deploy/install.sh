@@ -115,11 +115,23 @@ systemctl daemon-reload
 # --- caddy ----------------------------------------------------------------
 say "installing the Caddyfile"
 install -o root -g root -m 644 "$STAGE/caddy/Caddyfile" /etc/caddy/Caddyfile
+
 # Validate before reloading. A Caddyfile that fails to parse takes the site down
 # rather than leaving the old one running.
+#
+# As the `caddy` user, not as root. Validation provisions the config's modules,
+# and anything that opens or creates a file does so as whoever runs it: a root
+# validation once left Caddy's own log file 0600 root:root, so the deploy passed
+# and the service then failed to start. Validating as the user that will run it
+# means a permission the runtime lacks is a permission validation lacks too.
 # shellcheck disable=SC1091
 set -a; . /etc/forma/domain.env; set +a
-caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
+if id caddy >/dev/null 2>&1; then
+    runuser -u caddy -- env "FORMA_DOMAIN=$FORMA_DOMAIN" \
+        caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
+else
+    caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
+fi
 
 # --- start ----------------------------------------------------------------
 say "starting"

@@ -143,6 +143,28 @@ environment of a process that only proxies, so the name has a file of its own.
 
 ---
 
+## Fixed after the first deploy attempt
+
+The first run reached Caddy validation and then Caddy failed to start:
+`open /var/log/caddy/forma.log: permission denied`. The Caddyfile wrote an access
+log to a file; `caddy validate` ran as root and created it `0600 root:root`; the
+service runs as `caddy` and could not reopen its own log. The deploy passed and
+the site was down.
+
+Two changes, and the first is the one that matters: **the file log is gone.**
+systemd already captures Caddy's stderr into the journal, which rotates and is
+where anyone would look on this box, so the file bought nothing and cost a
+startup failure. Access logging is still on, to stderr.
+
+Second, the installer now runs `caddy validate` as the `caddy` user rather than
+as root, so a permission the runtime lacks is a permission validation lacks too.
+That generalises past this one file, which is why it is worth doing even with the
+file log removed.
+
+Neither was reproduced here — there is no Caddy on the build machine — so this
+rests on the reported symptom and on how Caddy creates log files. The next deploy
+is the test.
+
 ## What has not happened
 
 Nothing from the repo is on the VM. **[runbook.md](runbook.md) is how to change
