@@ -16,7 +16,8 @@ pub mod layer;
 pub mod operation;
 pub mod page;
 pub mod project;
-pub mod version;
+pub mod template;
+mod version;
 
 pub use asset::{Asset, AssetKind, AssetOrigin};
 pub use asset_request::{AssetRequest, AssetRequestStatus};
@@ -29,7 +30,9 @@ pub use document::{
 pub use error::DomainError;
 pub use export::{Export, ExportScope};
 pub use geometry::{Rect, Transform};
-pub use ids::{AssetId, AssetRequestId, BrandId, DesignId, ExportId, LayerId, PageId, ProjectId};
+pub use ids::{
+    AssetId, AssetRequestId, BrandId, DesignId, ExportId, LayerId, PageId, ProjectId, TemplateId,
+};
 pub use layer::{
     FocalPoint, ImageFit, ImageLayer, ImageOverlay, Layer, LayerCommon, LayerRole, OverlayEdge,
     ShapeKind, ShapeLayer, TextAlign, TextLayer,
@@ -40,4 +43,5 @@ pub use operation::{
 };
 pub use page::Page;
 pub use project::Project;
+pub use template::{roles_of, Template, TemplateDraft, TemplateRole};
 pub use version::{Actor, ActorType, Version};

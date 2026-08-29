@@ -11,5 +11,6 @@ pub mod error;
 pub mod exports;
 pub mod projects;
 pub mod renders;
+pub mod templates;
 
 pub use error::{ApplicationError, Result};

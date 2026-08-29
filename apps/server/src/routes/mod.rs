@@ -14,6 +14,7 @@ pub mod exports;
 pub mod meta;
 pub mod projects;
 pub mod renders;
+pub mod templates;
 
 mod helpers;
 
@@ -45,6 +46,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .configure(renders::configure)
             .configure(assets::configure)
             .configure(asset_requests::configure)
-            .configure(exports::configure),
+            .configure(exports::configure)
+            .configure(templates::configure),
     );
 }

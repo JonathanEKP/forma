@@ -14,8 +14,9 @@ pub use local_fs::{asset_storage_key, export_storage_key, LocalObjectStore};
 pub use sqlite::{
     checkpoint_and_close, connect, SqliteAssetRepository, SqliteAssetRequestRepository,
     SqliteDesignRepository, SqliteExportRepository, SqliteProjectRepository,
+    SqliteTemplateRepository,
 };
 pub use traits::{
     AssetRepository, AssetRequestRepository, DesignRepository, ExportRepository, ObjectStore,
-    ProjectRepository, VersionSummary,
+    ProjectRepository, TemplateRepository, VersionSummary,
 };

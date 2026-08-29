@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use persistence::{
     LocalObjectStore, SqliteAssetRepository, SqliteAssetRequestRepository, SqliteDesignRepository,
-    SqliteExportRepository, SqliteProjectRepository,
+    SqliteExportRepository, SqliteProjectRepository, SqliteTemplateRepository,
 };
 use renderer::{FontRegistry, RenderCache};
 use sqlx::SqlitePool;
@@ -27,6 +27,7 @@ pub struct AppState {
     pub assets: Arc<SqliteAssetRepository>,
     pub asset_requests: Arc<SqliteAssetRequestRepository>,
     pub exports: Arc<SqliteExportRepository>,
+    pub templates: Arc<SqliteTemplateRepository>,
 }
 
 impl AppState {
@@ -42,6 +43,7 @@ impl AppState {
             assets: Arc::new(SqliteAssetRepository::new(pool.clone())),
             asset_requests: Arc::new(SqliteAssetRequestRepository::new(pool.clone())),
             exports: Arc::new(SqliteExportRepository::new(pool.clone())),
+            templates: Arc::new(SqliteTemplateRepository::new(pool.clone())),
             pool,
             fonts,
             cache,

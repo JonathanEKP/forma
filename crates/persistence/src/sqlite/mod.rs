@@ -5,6 +5,7 @@ pub mod asset_request;
 pub mod design;
 pub mod export;
 pub mod project;
+pub mod template;
 
 use std::path::Path;
 use std::str::FromStr;
@@ -22,6 +23,7 @@ pub use asset_request::SqliteAssetRequestRepository;
 pub use design::SqliteDesignRepository;
 pub use export::SqliteExportRepository;
 pub use project::SqliteProjectRepository;
+pub use template::SqliteTemplateRepository;
 
 /// Opens the pool and applies migrations.
 pub async fn connect(database_url: &str, data_dir: &Path) -> Result<SqlitePool> {

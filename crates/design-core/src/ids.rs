@@ -39,3 +39,4 @@ typed_id!(AssetId);
 typed_id!(BrandId);
 typed_id!(AssetRequestId);
 typed_id!(ExportId);
+typed_id!(TemplateId);

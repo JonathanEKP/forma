@@ -109,12 +109,24 @@ that lets it in. Nothing enters this list because it would be interesting.
    this, and an empty arm there would have rebuilt the font-token bug exactly.
    Still not a licence to reach for one: removing both scrims from a real cover
    improved it.
-8. **Templates (§85)** — the plan already specifies the shape,
-   `TemplateRole { page_index, role, max_chars, sample_text }`, and calls it a
-   structural brief rather than a duplicated document. Demoted from first place
-   by the effort experiment above: it buys a cheap model the composition an
-   expensive one already finds, which is worth having and is not the ceiling.
-   §100 criterion 3.
+8. **Templates (§85)** — the domain and the REST surface are **done**; the MCP
+   half is open and needs a decision first (see below). A template is the
+   document as it was when saved plus `TemplateRole { page_index, role,
+   max_chars, sample_text }` derived from it server-side, so nobody authors
+   metadata by hand and a brief cannot disagree with the layout it describes.
+   Only layers carrying a `role` become slots: a role is the author saying what
+   a layer is for, and a template of unlabelled boxes teaches nothing.
+   Instantiating mints fresh page and layer ids, which §85's choice to address
+   slots by `page_index` is what makes safe. Scoped to a project, because an
+   `ImageLayer` holds an `asset_id` and assets belong to one.
+
+   **Open: `list_templates` would be a fourteenth MCP tool.** §48 fixes the
+   surface at thirteen and CLAUDE.md repeats it, while §51.7's own V2 flow
+   reads `get_brand → list_templates → suitable template?`, so the plan
+   anticipates exactly this tool. It is a documented invariant either way, so it
+   is a decision to take rather than a detail to slip in. Until then templates
+   exist for the editor and for a person, and the agent cannot see them — which
+   is most of their value, so this should not sit open for long.
 9. **Phase 11, remote deploy** — only once Oracle capacity is confirmed (§90).
    The plan says explicitly that the architecture does not depend on it.
 10. **Phase 12, Supabase** — optional, and only after 9 works.
