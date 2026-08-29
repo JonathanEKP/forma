@@ -100,16 +100,18 @@ pub async fn serve(
         "127.0.0.1".to_string(),
         "::1".to_string(),
     ];
-    if let Some(host) = public_host {
+    if let Some(host) = public_host.clone() {
         allowed.push(host);
     }
     tracing::info!(?allowed, "accepting these Host headers");
 
+    let named = public_host.clone();
     let mcp = StreamableHttpService::new(
         move || {
             Ok(FormaMcp::new(
                 ServerClient::new(base_url.clone()).with_token(Some(for_client.clone())),
-            ))
+            )
+            .on_deployment(named.clone()))
         },
         Arc::new(LocalSessionManager::default()),
         StreamableHttpServerConfig::default().with_allowed_hosts(allowed),

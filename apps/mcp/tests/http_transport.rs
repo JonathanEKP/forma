@@ -295,3 +295,53 @@ async fn naming_a_public_host_keeps_loopback_working() {
     let response = initialize(&mcp.url, Some(TOKEN)).await;
     assert_eq!(response.status(), reqwest::StatusCode::OK);
 }
+
+/// `forma_status` is the "where am I" tool, and behind a proxy the URL it dials
+/// is loopback on the server's own machine — so a local Forma and a remote one
+/// answered identically, and the one question it exists to settle went
+/// unanswered. Named deployments say which they are.
+#[tokio::test]
+async fn status_says_which_deployment_you_reached() {
+    let dir = tempfile::tempdir().unwrap();
+    let base_url = start_server(dir.path());
+    let mcp = start_mcp_for(&base_url, Some(TOKEN), Some("forma.example.org")).await;
+
+    let response = initialize(&mcp.url, Some(TOKEN)).await;
+    let session = response
+        .headers()
+        .get("mcp-session-id")
+        .expect("a session id")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let _ = response.text().await;
+
+    let http = reqwest::Client::new();
+    let call = |body: serde_json::Value| {
+        http.post(&mcp.url)
+            .bearer_auth(TOKEN)
+            .header("content-type", "application/json")
+            .header("accept", "application/json, text/event-stream")
+            .header("mcp-session-id", &session)
+            .json(&body)
+            .send()
+    };
+    call(json!({ "jsonrpc": "2.0", "method": "notifications/initialized" }))
+        .await
+        .expect("initialized");
+
+    let said = call(json!({
+        "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+        "params": { "name": "forma_status", "arguments": {} }
+    }))
+    .await
+    .expect("tools/call")
+    .text()
+    .await
+    .unwrap();
+
+    assert!(
+        said.contains("forma.example.org"),
+        "the summary should name the deployment: {said}"
+    );
+}

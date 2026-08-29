@@ -147,6 +147,13 @@ pub struct ExportDesignParams {
 
 pub struct FormaMcp {
     client: ServerClient,
+    /// The public name this deployment answers on, when it has one.
+    ///
+    /// `forma_status` is the "where am I" tool, and without this it could only
+    /// report the URL it dials — which behind a proxy is loopback on the server's
+    /// own machine. A local Forma and a remote one then answer identically, and
+    /// the one question the tool exists to settle goes unanswered.
+    deployment: Option<String>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -154,8 +161,14 @@ impl FormaMcp {
     pub fn new(client: ServerClient) -> Self {
         Self {
             client,
+            deployment: None,
             tool_router: Self::tool_router(),
         }
+    }
+
+    pub fn on_deployment(mut self, deployment: Option<String>) -> Self {
+        self.deployment = deployment;
+        self
     }
 }
 
@@ -249,8 +262,15 @@ impl FormaMcp {
         annotations(read_only_hint = true)
     )]
     async fn forma_status(&self) -> Result<CallToolResult, ErrorData> {
+        let where_am_i = match &self.deployment {
+            Some(deployment) => format!(
+                "forma-server reachable, serving {deployment} (from {} on that host)",
+                self.client.base_url()
+            ),
+            None => format!("forma-server reachable at {}", self.client.base_url()),
+        };
         Ok(answer(
-            format!("forma-server reachable at {}", self.client.base_url()),
+            where_am_i,
             self.client.get("forma_status", "/status").await,
         ))
     }
