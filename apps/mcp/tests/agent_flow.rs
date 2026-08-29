@@ -589,3 +589,52 @@ async fn an_agent_starts_from_a_layout_a_person_kept() {
         "a design from a template must not share the template's layer ids"
     );
 }
+
+/// Every payload has to be readable by a host that ignores `structuredContent`.
+///
+/// The spec asks for it — "a tool that returns structured content SHOULD also
+/// return the serialized JSON in a TextContent block" — and a host that does not
+/// read it is not hypothetical: one answered `list_projects` with "1 project(s)"
+/// and nothing else. Ids are the only handles there are, so every tool after
+/// that one is unusable.
+#[tokio::test]
+async fn a_host_that_reads_only_text_still_gets_the_ids() {
+    let dir = tempfile::tempdir().unwrap();
+    let base_url = start_server(dir.path());
+    let fonts = FontRegistry::from_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/../../data/fonts"))
+        .expect("fonts");
+    let font = fonts.families().first().expect("a font").clone();
+    let project_id = seed(&base_url, &font).await;
+
+    let mut host = Host::connect(&base_url).await;
+
+    let text_of = |result: &Value| -> String {
+        result["content"]
+            .as_array()
+            .expect("content")
+            .iter()
+            .filter(|block| block["type"] == "text")
+            .filter_map(|block| block["text"].as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
+    let listed = host.call("list_projects", json!({})).await;
+    assert!(
+        text_of(&listed).contains(project_id.as_str()),
+        "the project id must survive into the text blocks: {}",
+        text_of(&listed)
+    );
+
+    let created = host
+        .call(
+            "create_design",
+            json!({ "project_id": project_id, "name": "Text only" }),
+        )
+        .await;
+    let design_id = created["structuredContent"]["id"].as_str().unwrap();
+    assert!(
+        text_of(&created).contains(design_id),
+        "and so must the design id, or nothing can be edited afterwards"
+    );
+}

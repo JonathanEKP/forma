@@ -287,6 +287,13 @@ Keep the tool set small and composable — per-property tools (`add_text`, `move
 block, so multimodal hosts can actually look at the piece; the base64 is deliberately
 stripped from the structured half, since repeating it would double the tokens.
 
+**Every payload goes out twice: as text and as `structuredContent`.** The spec asks for
+it — "a tool that returns structured content SHOULD also return the serialized JSON in a
+TextContent block" — and a host that reads only text is not hypothetical: one answered
+`list_projects` with "1 project(s)" and nothing else, which makes every id-taking tool
+after it unusable, because ids are the only handles there are. The duplication costs
+tokens on hosts that read both; that is the smaller problem of the two.
+
 `list_templates` is the fourteenth, added against a §48 surface fixed at thirteen because
 §51.7's own V2 flow reads `get_brand → list_templates → suitable template?`. It is not a
 per-property tool and nothing else can express it: "a layout that already worked here"

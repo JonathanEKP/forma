@@ -209,10 +209,23 @@ fn failed(error: ServerError) -> CallToolResult {
     result
 }
 
-/// A successful call: a one-line summary for a host that shows text, and the
-/// payload as structured content for one that can use it.
+/// A successful call: a one-line summary, the payload as text, and the payload
+/// again as structured content.
+///
+/// The duplication is deliberate and the spec asks for it — "a tool that returns
+/// structured content SHOULD also return the serialized JSON in a TextContent
+/// block". Without it a host that does not read `structuredContent` gets the
+/// summary and nothing else: `list_projects` answered "1 project(s)" with no
+/// name and no id, which is useless, and every id-taking tool after it is
+/// unusable because ids are the only handles there are.
+///
+/// It costs tokens on hosts that read both. That is the smaller problem: one
+/// wastes context, the other cannot work at all.
 fn ok(summary: impl Into<String>, value: Value) -> CallToolResult {
-    let mut result = CallToolResult::success(vec![ContentBlock::text(summary.into())]);
+    let mut result = CallToolResult::success(vec![
+        ContentBlock::text(summary.into()),
+        ContentBlock::text(value.to_string()),
+    ]);
     result.structured_content = Some(value);
     result
 }
@@ -677,20 +690,25 @@ impl FormaMcp {
                 // Plan section 49: the structured result AND the image, so a
                 // multimodal host can actually inspect the piece instead of
                 // trusting a path it cannot open.
-                let mut result = CallToolResult::success(vec![
-                    ContentBlock::text(format!(
-                        "Rendered version {} at scale {} ({} bytes).",
-                        render["version"], render["scale"], render["byte_size"]
-                    )),
-                    ContentBlock::image(encoded.to_string(), "image/png"),
-                ]);
-
                 let mut structured = render.clone();
                 // The base64 is already in the image block; repeating it in the
                 // structured result would double the tokens for nothing.
                 if let Some(object) = structured.as_object_mut() {
                     object.remove("png_base64");
                 }
+
+                let mut result = CallToolResult::success(vec![
+                    ContentBlock::text(format!(
+                        "Rendered version {} at scale {} ({} bytes).",
+                        render["version"], render["scale"], render["byte_size"]
+                    )),
+                    // The same JSON as text, for a host that reads no structured
+                    // content. Stripped of the base64 first, so this cannot be
+                    // the copy that doubles the image.
+                    ContentBlock::text(structured.to_string()),
+                    ContentBlock::image(encoded.to_string(), "image/png"),
+                ]);
+
                 result.structured_content = Some(structured);
                 Ok(result)
             }
