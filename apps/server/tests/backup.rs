@@ -18,6 +18,7 @@ fn config(data_dir: &Path) -> Config {
         font_dir: PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../data/fonts")),
         log: "error".to_string(),
         web_dir: PathBuf::from("./does-not-exist"),
+        remote_token: None,
     }
 }
 

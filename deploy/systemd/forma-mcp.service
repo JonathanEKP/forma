@@ -1,0 +1,29 @@
+[Unit]
+Description=Forma MCP over Streamable HTTP
+# It is a client of forma-server's REST API, never of the database, so it is
+# useless without it (plan section 5).
+After=forma-server.service
+Requires=forma-server.service
+
+[Service]
+Type=exec
+User=forma
+Group=forma
+EnvironmentFile=/etc/forma/forma.env
+ExecStart=/opt/forma/forma-mcp --transport http
+WorkingDirectory=/var/lib/forma
+Restart=on-failure
+RestartSec=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+# It writes nothing: the design database is reached over HTTP.
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6
+MemoryDenyWriteExecute=true
+
+[Install]
+WantedBy=multi-user.target

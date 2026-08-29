@@ -127,8 +127,25 @@ that lets it in. Nothing enters this list because it would be interesting.
    fifteenth tool for it. There is still no way for an agent to *save* a
    template: which design is worth keeping is the person's call.
 
-9. **Phase 11, remote deploy** — only once Oracle capacity is confirmed (§90).
-   The plan says explicitly that the architecture does not depend on it.
+9. **Phase 11, remote deploy** — the half that does not need a machine is
+   **done**: bearer auth on both processes (§57), `forma-mcp --transport http`
+   on 4766 (§56), the guard that refuses to bind the network without a token
+   (§70), the Caddyfile and systemd units in `deploy/`, and an aarch64
+   cross-build script (§89). The whole chain is tested locally, including the
+   token travelling from the host through `forma-mcp` to `forma-server`.
+
+   **Open, and needing the VM:** the aarch64 build has never been linked —
+   cross-compiling needs `gcc-aarch64-linux-gnu`, which this machine does not
+   have, so `libsqlite3-sys` and `zstd-sys` stop at their build scripts.
+   Everything else waits on Oracle capacity (§90), which the plan says the
+   architecture does not depend on: any small ARM or x86 box works, and only the
+   instance section of `docs/deploy/oracle.md` changes.
+
+   **Known limitation, deliberate:** the browser editor is not usable remotely.
+   The API needs a bearer and the SPA has nowhere to put one, so §57's "first
+   remote testing" reaches the agent half only — which is exactly Phase 11's own
+   acceptance, "an authorized remote MCP host can create/render a piece". A
+   token box in the editor is a separate decision, not an oversight.
 10. **Phase 12, Supabase** — optional, and only after 9 works.
 
 **Deliberately not on this list: editorial style modes in the skill.** It is the

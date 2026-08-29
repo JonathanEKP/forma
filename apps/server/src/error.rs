@@ -56,6 +56,21 @@ impl ApiError {
         }
     }
 
+    /// The §32 envelope with a 401, so a client that branches on `code` sees the
+    /// same shape here as everywhere else.
+    pub fn unauthorized(
+        code: &'static str,
+        message: impl Into<String>,
+        hint: &'static str,
+    ) -> Self {
+        Self::Request {
+            code,
+            message: message.into(),
+            hint,
+            status: StatusCode::UNAUTHORIZED,
+        }
+    }
+
     pub fn payload_too_large(message: impl Into<String>, hint: &'static str) -> Self {
         Self::Request {
             code: "PAYLOAD_TOO_LARGE",

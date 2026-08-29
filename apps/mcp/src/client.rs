@@ -76,6 +76,10 @@ struct ErrorBody {
 pub struct ServerClient {
     base_url: String,
     http: reqwest::Client,
+    /// Presented to `forma-server` when it is running with one (plan section
+    /// 57). The same value the remote host presents to us: for V1 remote
+    /// testing there is one credential for the deployment, not a chain of them.
+    token: Option<String>,
 }
 
 impl ServerClient {
@@ -83,6 +87,21 @@ impl ServerClient {
         Self {
             base_url: base_url.into().trim_end_matches('/').to_string(),
             http: reqwest::Client::new(),
+            token: None,
+        }
+    }
+
+    pub fn with_token(mut self, token: Option<String>) -> Self {
+        self.token = token;
+        self
+    }
+
+    /// Adds the bearer when there is one, so every call goes through one place
+    /// rather than each caller remembering.
+    fn authorized(&self, request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        match &self.token {
+            Some(token) => request.bearer_auth(token),
+            None => request,
         }
     }
 
@@ -146,8 +165,7 @@ impl ServerClient {
         tracing::debug!(tool_name = tool, request_id = %request_id, path, "GET");
 
         let response = self
-            .http
-            .get(self.url(path))
+            .authorized(self.http.get(self.url(path)))
             .header("x-forma-tool", tool)
             .header("x-request-id", &request_id)
             .send()
@@ -170,8 +188,7 @@ impl ServerClient {
         tracing::debug!(tool_name = tool, request_id = %request_id, path, actor, "POST");
 
         let response = self
-            .http
-            .post(self.url(path))
+            .authorized(self.http.post(self.url(path)))
             .header("x-forma-actor", actor)
             .header("x-forma-tool", tool)
             .header("x-request-id", &request_id)

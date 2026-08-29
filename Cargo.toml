@@ -49,7 +49,17 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "io-std", "pro
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
-rmcp = { version = "3.1", features = ["server", "macros", "transport-io", "base64"] }
+rmcp = { version = "3.1", features = [
+    "server",
+    "macros",
+    "transport-io",
+    # Plan section 56: the remote deploy speaks Streamable HTTP on 4766.
+    "transport-streamable-http-server",
+    "base64",
+] }
+# forma-mcp serves the rmcp tower service on its own runtime. Plan section 56
+# says not to force an adapter onto Actix for it, and this is that decision.
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
 schemars = "1"
 anyhow = "1"
 tempfile = "3"

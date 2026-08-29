@@ -1,0 +1,33 @@
+[Unit]
+Description=Forma design runtime
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=forma
+Group=forma
+EnvironmentFile=/etc/forma/forma.env
+ExecStart=/opt/forma/forma-server
+WorkingDirectory=/var/lib/forma
+Restart=on-failure
+RestartSec=5
+
+# The server handles SIGTERM itself: it stops accepting, lets in-flight renders
+# finish, then checkpoints the write-ahead log before closing. Killing it sooner
+# is how a backup taken afterwards ends up missing writes.
+KillSignal=SIGTERM
+TimeoutStopSec=45
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/forma
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryDenyWriteExecute=true
+
+[Install]
+WantedBy=multi-user.target

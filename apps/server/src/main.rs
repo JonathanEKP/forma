@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use actix_web::{web, App, HttpServer};
-use forma_server::{backup, routes, telemetry, AppState, Config};
+use forma_server::{auth, backup, routes, telemetry, AppState, Config};
 use persistence::DesignRepository;
 use renderer::{FontRegistry, RenderCache};
 use tracing_subscriber::EnvFilter;
@@ -86,13 +86,34 @@ async fn main() -> anyhow::Result<()> {
     let web_dir = config.web_dir.clone();
     let bind = config.bind.clone();
 
-    tracing::info!(bind = %bind, "forma-server listening");
+    // The one configuration that must not start: reachable from the network
+    // with nothing in front of it.
+    if let Err(reason) = config.binding_is_safe() {
+        tracing::error!("{reason}");
+        anyhow::bail!(reason);
+    }
+
+    tracing::info!(
+        bind = %bind,
+        authenticated = config.remote_token.is_some(),
+        "forma-server listening"
+    );
+
+    let token = config.remote_token.as_deref().map(auth::RemoteToken::new);
 
     let server = HttpServer::new(move || {
-        let app = App::new()
+        let mut app = App::new()
+            // Auth wraps outside tracing so an unauthorized call is still one
+            // logged request, with its own status rather than silence.
+            .wrap(actix_web::middleware::from_fn(auth::require_bearer))
             .wrap(actix_web::middleware::from_fn(telemetry::trace_request))
-            .app_data(web::Data::new(state.clone()))
-            .configure(routes::configure);
+            .app_data(web::Data::new(state.clone()));
+
+        if let Some(token) = token.clone() {
+            app = app.app_data(web::Data::new(token));
+        }
+
+        let app = app.configure(routes::configure);
 
         // The built React app is served from the same origin, so the whole
         // product is one URL (plan section 58).

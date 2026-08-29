@@ -1,0 +1,31 @@
+# Plan section 56. Caddy is the only thing the internet talks to; both processes
+# bind loopback and are not reachable from outside.
+#
+# Replace forma.example.com with the real name. Caddy issues and renews the
+# certificate itself, which needs the name resolving to this machine and port 80
+# reachable before it first runs.
+
+forma.example.com {
+	encode zstd gzip
+
+	# MCP over Streamable HTTP. The bearer token is checked by forma-mcp
+	# itself, not here: this is a proxy, and putting the credential in two
+	# places is how they drift apart.
+	handle /mcp* {
+		uri strip_prefix /mcp
+		reverse_proxy 127.0.0.1:4766 {
+			# An MCP session streams; a read timeout would cut a long
+			# render off mid-flight.
+			flush_interval -1
+		}
+	}
+
+	# The REST API and the built editor, from one origin (plan section 58).
+	handle {
+		reverse_proxy 127.0.0.1:4765
+	}
+
+	log {
+		output file /var/log/caddy/forma.log
+	}
+}

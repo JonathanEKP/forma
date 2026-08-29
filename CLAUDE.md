@@ -393,7 +393,23 @@ FORMA_DATA_DIR=./data
 FORMA_DATABASE_URL=sqlite://data/forma.db
 FORMA_FONT_DIR=./data/fonts
 FORMA_LOG=info
+
+# Remote only (plan §57). Unset locally.
+FORMA_REMOTE_TOKEN=
+FORMA_MCP_BIND=127.0.0.1:4766
+FORMA_SERVER_URL=http://127.0.0.1:4765
 ```
+
+**Reaching the network without a token is the one configuration that refuses to
+start.** `Config::binding_is_safe` rejects a non-loopback `FORMA_BIND` with no
+`FORMA_REMOTE_TOKEN`, and `forma-mcp --transport http` refuses outright — an HTTP
+port is reachable by anything that can route to it, unlike stdio, so there is no
+local case where running it open is what someone meant. An address that does not
+parse counts as remote: a hostname may resolve anywhere, and guessing permissively
+is the wrong way round for that question. The token is held as a blake3 hash whose
+comparison is constant time, in both processes, and one credential serves the whole
+deployment — the host presents it to `forma-mcp`, which presents it onward to
+`forma-server`.
 
 Logging is `tracing`/`tracing-subscriber` with structured fields: `request_id`,
 `project_id`, `design_id`, `version`, `tool_name`, `render_ms`, `actor_type`, `actor_id`.
