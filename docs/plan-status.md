@@ -127,19 +127,27 @@ that lets it in. Nothing enters this list because it would be interesting.
    fifteenth tool for it. There is still no way for an agent to *save* a
    template: which design is worth keeping is the person's call.
 
-9. **Phase 11, remote deploy** — the half that does not need a machine is
-   **done**: bearer auth on both processes (§57), `forma-mcp --transport http`
-   on 4766 (§56), the guard that refuses to bind the network without a token
-   (§70), the Caddyfile and systemd units in `deploy/`, and an aarch64
-   cross-build script (§89). The whole chain is tested locally, including the
-   token travelling from the host through `forma-mcp` to `forma-server`.
+9. **Phase 11, remote deploy** — in progress, and the two halves have not met
+   yet. [docs/deploy/status.md](deploy/status.md) is the live state and says
+   which claims were verified where; [docs/deploy/oracle.md](deploy/oracle.md)
+   is what the machine has to be.
 
-   **Open, and needing the VM:** the aarch64 build has never been linked —
-   cross-compiling needs `gcc-aarch64-linux-gnu`, which this machine does not
-   have, so `libsqlite3-sys` and `zstd-sys` stop at their build scripts.
-   Everything else waits on Oracle capacity (§90), which the plan says the
-   architecture does not depend on: any small ARM or x86 box works, and only the
-   instance section of `docs/deploy/oracle.md` changes.
+   Done and verified here: bearer auth on both processes (§57),
+   `forma-mcp --transport http` on 4766 (§56), the guard that refuses to bind
+   the network without a token (§70), the `deploy/` files, an aarch64 build that
+   runs on `ubuntu:24.04` arm64, and — the question that actually mattered — the
+   same page rendering **byte-identically on x86_64 and aarch64**, which is what
+   lets the goldens run on an Ampere box unchanged.
+
+   Done on the machine, reported: the instance (AD-3 answered *out of capacity*
+   exactly as §90 warns, AD-1 worked), both firewalls, Caddy, the token, and
+   `forma.hintly.online` answering on port 80.
+
+   Not started: copying anything to the VM, the units, HTTPS, external smoke
+   tests, and a backup timer. One open item on the machine — whether the host
+   `iptables` rules survive a reboot — is worth closing first, because if they
+   do not, the first restart takes out HTTP, HTTPS and certificate renewal
+   together and silently.
 
    **Known limitation, deliberate:** the browser editor is not usable remotely.
    The API needs a bearer and the SPA has nowhere to put one, so §57's "first
