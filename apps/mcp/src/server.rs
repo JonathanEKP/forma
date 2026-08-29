@@ -47,6 +47,12 @@ pub struct CreateDesignParams {
     pub project_id: String,
     /// A short human name, shown in the editor's design list.
     pub name: String,
+    /// Start from a saved template instead of an empty canvas, by its id from
+    /// list_templates. The new design carries the template's layout and its
+    /// words, for you to replace; the canvas comes from the template, so preset
+    /// and dimensions are ignored with one.
+    #[serde(default)]
+    pub template_id: Option<String>,
     /// The canvas preset. One of instagram_portrait, square, story, landscape
     /// or custom. Defaults to square.
     #[serde(default)]
@@ -333,6 +339,42 @@ impl FormaMcp {
     }
 
     #[tool(
+        name = "list_templates",
+        description = "List the layouts this project has saved, each with the roles it expects: \
+                       the page a slot sits on, what it is for, how many characters the layout \
+                       actually held, and the text that was in it. That is a brief. Read it \
+                       before designing from scratch: a template whose shape matches what the \
+                       piece has to say is a better starting point than an empty canvas, and \
+                       its budgets tell you how much copy the layout can take. A project with \
+                       none returns an empty list, which is not a problem -- design from \
+                       scratch. You cannot save a template; a person does that from a design \
+                       they liked.",
+        annotations(read_only_hint = true)
+    )]
+    async fn list_templates(
+        &self,
+        Parameters(params): Parameters<ProjectParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        match self
+            .client
+            .get::<Value>(
+                "list_templates",
+                &format!("/projects/{}/templates", params.project_id),
+            )
+            .await
+        {
+            Ok(templates) => {
+                let count = templates.as_array().map(Vec::len).unwrap_or(0);
+                Ok(ok(
+                    format!("{count} template(s)"),
+                    json!({ "templates": templates }),
+                ))
+            }
+            Err(error) => Ok(failed(error)),
+        }
+    }
+
+    #[tool(
         name = "get_design",
         description = "Read a design in full: its current version and every page and layer. The \
                        ids it returns are the only valid handles for later operations, and the \
@@ -383,8 +425,11 @@ impl FormaMcp {
 
     #[tool(
         name = "create_design",
-        description = "Create an empty design in a project. It starts with one page; add more \
-                       with an add_page operation for a carousel. All pages share one canvas.",
+        description = "Create a design in a project, empty or from a saved template. An empty \
+                       one starts with a single page; add more with an add_page operation for a \
+                       carousel, and all pages share one canvas. Passing template_id starts from \
+                       a layout that already worked in this project, carrying its words for you \
+                       to replace.",
         annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn create_design(
@@ -392,6 +437,22 @@ impl FormaMcp {
         peer: Peer<RoleServer>,
         Parameters(params): Parameters<CreateDesignParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        if let Some(template_id) = &params.template_id {
+            return match self
+                .client
+                .post::<Value, _>(
+                    "create_design",
+                    &format!("/templates/{template_id}/designs"),
+                    &actor_of(&peer),
+                    &json!({ "name": params.name }),
+                )
+                .await
+            {
+                Ok(record) => Ok(ok(outline(&record), record)),
+                Err(error) => Ok(failed(error)),
+            };
+        }
+
         let preset = params.preset.unwrap_or_else(|| "square".to_string());
         let mut body = json!({ "name": params.name, "format": { "preset": preset } });
 

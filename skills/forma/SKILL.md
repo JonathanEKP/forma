@@ -176,17 +176,47 @@ When the design needs an image:
 Never invent an asset id, and never claim to know what an image shows if you
 have not been shown it.
 
+## 6b. Templates: layouts this project already trusts
+
+`list_templates` returns the layouts a person kept from designs that came out
+well. Each one carries its document **and its roles**, which is what makes it a
+brief rather than a copy:
+
+```
+page_index  role      max_chars  sample_text
+0           logo      6          "VEREDA"
+0           headline  28         "llueve y la ciudad\nno afloja"
+```
+
+`max_chars` is how much text that layout actually held, so it is a budget you
+can trust rather than a guess. `sample_text` shows the register the layout was
+drawn for — a headline of 28 characters in two lines is a different instruction
+from one of 28 characters in one.
+
+**Read the templates before designing from scratch.** If one matches the shape
+of what the piece has to say, `create_design` with its `template_id` starts you
+from a layout that already worked here, carrying its words for you to replace.
+Then change the copy that needs changing, leave the rest, and validate.
+
+A template whose shape does not match the content is worse than none: bending a
+carousel layout into a single cover costs more than starting clean. An empty
+list is not a problem — most projects have none, and designing from scratch is
+the normal path.
+
+You cannot save one. A person decides which of their designs is worth keeping.
+
 ## 7. MCP tools
 
 Read: `forma_status`, `list_projects`, `get_project`, `get_brand`,
-`list_assets`, `get_design`, `get_asset_request`.
+`list_assets`, `list_templates`, `get_design`, `get_asset_request`.
 
 Write: `create_design`, `apply_operations`, `request_asset`.
 
 Output: `validate_design`, `render_preview`, `export_design`.
 
-There is no tool to create a project or edit a Brand Kit. Those belong to the
-person; if the project or the kit you need does not exist, say so and ask.
+There is no tool to create a project, edit a Brand Kit, or save a template.
+Those belong to the person; if the project, the kit or the layout you need does
+not exist, say so and ask.
 
 `forma_status` also reports `max_ops_per_batch` and the font catalog, so you can
 size your batches and check a family without guessing.

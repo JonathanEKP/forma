@@ -109,8 +109,7 @@ that lets it in. Nothing enters this list because it would be interesting.
    this, and an empty arm there would have rebuilt the font-token bug exactly.
    Still not a licence to reach for one: removing both scrims from a real cover
    improved it.
-8. **Templates (§85)** — the domain and the REST surface are **done**; the MCP
-   half is open and needs a decision first (see below). A template is the
+8. ~~**Templates (§85)**~~ — done. A template is the
    document as it was when saved plus `TemplateRole { page_index, role,
    max_chars, sample_text }` derived from it server-side, so nobody authors
    metadata by hand and a brief cannot disagree with the layout it describes.
@@ -120,13 +119,14 @@ that lets it in. Nothing enters this list because it would be interesting.
    slots by `page_index` is what makes safe. Scoped to a project, because an
    `ImageLayer` holds an `asset_id` and assets belong to one.
 
-   **Open: `list_templates` would be a fourteenth MCP tool.** §48 fixes the
-   surface at thirteen and CLAUDE.md repeats it, while §51.7's own V2 flow
-   reads `get_brand → list_templates → suitable template?`, so the plan
-   anticipates exactly this tool. It is a documented invariant either way, so it
-   is a decision to take rather than a detail to slip in. Until then templates
-   exist for the editor and for a person, and the agent cannot see them — which
-   is most of their value, so this should not sit open for long.
+   **The MCP surface is now fourteen tools.** §48 fixed it at thirteen, but
+   §51.7's own V2 flow reads `get_brand → list_templates → suitable template?`,
+   so the plan anticipated exactly this one. It is not a per-property tool and
+   nothing else in the surface can express "a layout that already worked here".
+   `create_design` takes an optional `template_id` rather than growing a
+   fifteenth tool for it. There is still no way for an agent to *save* a
+   template: which design is worth keeping is the person's call.
+
 9. **Phase 11, remote deploy** — only once Oracle capacity is confirmed (§90).
    The plan says explicitly that the architecture does not depend on it.
 10. **Phase 12, Supabase** — optional, and only after 9 works.

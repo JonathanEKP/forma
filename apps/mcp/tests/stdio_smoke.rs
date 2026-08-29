@@ -96,15 +96,21 @@ async fn exposes_the_v1_tool_surface_over_stdio() {
         .map(|t| t["name"].as_str().unwrap())
         .collect();
 
-    // Plan section 48 fixes the surface at thirteen: few and composable, with
+    // Plan section 48 fixed the surface at thirteen: few and composable, with
     // no per-property tools, because apply_operations covers those in a batch.
-    assert_eq!(names.len(), 13, "got {names:?}");
+    // `list_templates` is the fourteenth, added deliberately -- §51.7's own V2
+    // flow reads `get_brand -> list_templates -> suitable template?`, so the
+    // plan anticipated it. Reading templates is not a per-property tool and
+    // nothing else can express it: a layout that already worked here cannot be
+    // fetched through apply_operations.
+    assert_eq!(names.len(), 14, "got {names:?}");
     for expected in [
         "forma_status",
         "list_projects",
         "get_project",
         "get_brand",
         "list_assets",
+        "list_templates",
         "get_design",
         "get_asset_request",
         "create_design",

@@ -17,7 +17,7 @@ reason — Phase 6's acceptance passed with two of its panels missing.
 render pipeline (text, shapes, images), the validator, SQLite persistence with optimistic
 versioning and a snapshot per version, the `application` use cases of §8.2, the `assets`
 ingest of §8.5, the whole REST surface of §31, the React editor, the AssetRequest flow, and
-all thirteen MCP tools, and the agent skill all exist and are tested. The blocking spike of §36 resolved to **Option A**: `<g id="layer-{uuid}">`
+all the MCP tools, and the agent skill all exist and are tested. The blocking spike of §36 resolved to **Option A**: `<g id="layer-{uuid}">`
 wrappers survive usvg normalization, and the editor addresses rendered geometry by layer
 id directly.
 
@@ -259,10 +259,10 @@ from Signal and unrelated to it; do not unify them.
   thing guarding it.
 - Never log tokens, auth headers, or asset binary content.
 
-## MCP surface (13 tools, §48)
+## MCP surface (14 tools, §48 plus templates)
 
 Read: `forma_status`, `list_projects`, `get_project`, `get_brand`, `list_assets`,
-`get_design`, `get_asset_request`. Write: `create_design`, `apply_operations`,
+`list_templates`, `get_design`, `get_asset_request`. Write: `create_design`, `apply_operations`,
 `request_asset`. Output: `validate_design`, `render_preview`, `export_design`.
 
 Keep the tool set small and composable — per-property tools (`add_text`, `move_layer`,
@@ -271,8 +271,15 @@ Keep the tool set small and composable — per-property tools (`add_text`, `move
 block, so multimodal hosts can actually look at the piece; the base64 is deliberately
 stripped from the structured half, since repeating it would double the tokens.
 
-There is no `create_project` and no brand-editing tool: an agent works inside a workspace
-the user owns. Read tools carry `readOnlyHint`. The actor recorded on every mutation is
+`list_templates` is the fourteenth, added against a §48 surface fixed at thirteen because
+§51.7's own V2 flow reads `get_brand → list_templates → suitable template?`. It is not a
+per-property tool and nothing else can express it: "a layout that already worked here"
+cannot be fetched through `apply_operations`. That number is now the bar — the next tool
+needs the same kind of argument.
+
+There is no `create_project`, no brand-editing tool, and no way to *save* a template: an
+agent works inside a workspace the user owns, and deciding which design is worth keeping
+is theirs. Read tools carry `readOnlyHint`. The actor recorded on every mutation is
 derived from the host's own `clientInfo.name` at initialize, so §61's history reads
 `agent:claude-code` rather than a generic label. Tool descriptions are the agent's only
 documentation — a one-liner is not enough, and a stdio test asserts they are substantial.

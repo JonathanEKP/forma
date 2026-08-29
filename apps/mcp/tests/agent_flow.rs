@@ -478,3 +478,114 @@ fn base64_decode(encoded: &str) -> Vec<u8> {
         .decode(encoded)
         .expect("valid base64")
 }
+
+/// Plan section 85, over the wire the agent actually uses.
+///
+/// A person keeps a layout that worked; the agent finds it, reads the brief out
+/// of it, and starts from it instead of an empty canvas. `list_templates` is the
+/// fourteenth tool, and this is the reason it earns the place: nothing else in
+/// the surface can express "a layout that already worked here", and the flow of
+/// section 51.7 reads `get_brand -> list_templates -> suitable template?`.
+#[tokio::test]
+async fn an_agent_starts_from_a_layout_a_person_kept() {
+    let dir = tempfile::tempdir().unwrap();
+    let base_url = start_server(dir.path());
+    let fonts = FontRegistry::from_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/../../data/fonts"))
+        .expect("fonts");
+    let font = fonts.families().first().expect("a font").clone();
+    let project_id = seed(&base_url, &font).await;
+    let http = reqwest::Client::new();
+
+    // The person builds a cover and keeps it. There is deliberately no tool for
+    // this: deciding which design is worth keeping is theirs.
+    let design: Value = http
+        .post(format!("{base_url}/api/v1/projects/{project_id}/designs"))
+        .json(&json!({ "name": "Issue 07" }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let design_id = design["id"].as_str().unwrap();
+    let page_id = design["document"]["pages"][0]["id"].as_str().unwrap();
+
+    let updated: Value = http
+        .post(format!("{base_url}/api/v1/designs/{design_id}/operations"))
+        .json(&json!({
+            "base_version": design["version"],
+            "operations": [{
+                "op": "add_layer",
+                "page_id": page_id,
+                "layer": {
+                    "type": "text",
+                    "id": uuid::Uuid::new_v4().to_string(),
+                    "name": "Headline",
+                    "role": "headline",
+                    "transform": { "x": 96.0, "y": 900.0, "width": 888.0, "height": 200.0 },
+                    "text": "llueve y la ciudad",
+                    "font_family": font,
+                    "font_size": 72.0,
+                    "font_weight": 700,
+                    "color": "$brand.text"
+                }
+            }]
+        }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(updated["version"], 2);
+
+    let template: Value = http
+        .post(format!("{base_url}/api/v1/designs/{design_id}/template"))
+        .json(&json!({ "name": "Portada de número" }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+
+    let mut host = Host::connect(&base_url).await;
+
+    let listed = host
+        .call("list_templates", json!({ "project_id": project_id }))
+        .await;
+    let templates = listed["structuredContent"]["templates"].as_array().unwrap();
+    assert_eq!(templates.len(), 1);
+
+    // The brief, not just the document: the agent is told what the slot is for
+    // and how much text the layout really held.
+    let role = &templates[0]["roles"][0];
+    assert_eq!(role["role"], "headline");
+    assert_eq!(role["page_index"], 0);
+    assert_eq!(role["max_chars"], 18);
+    assert_eq!(role["sample_text"], "llueve y la ciudad");
+
+    let made = host
+        .call(
+            "create_design",
+            json!({
+                "project_id": project_id,
+                "name": "Issue 08",
+                "template_id": template["id"].as_str().unwrap()
+            }),
+        )
+        .await;
+    let record = &made["structuredContent"];
+
+    assert_eq!(record["version"], 1);
+    assert_eq!(record["project_id"], project_id.as_str());
+    assert_eq!(
+        record["document"]["pages"][0]["layers"][0]["text"], "llueve y la ciudad",
+        "the copy should carry the template's words for the agent to replace"
+    );
+    assert_ne!(
+        record["document"]["pages"][0]["layers"][0]["id"],
+        updated["document"]["pages"][0]["layers"][0]["id"],
+        "a design from a template must not share the template's layer ids"
+    );
+}
