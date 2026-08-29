@@ -24,7 +24,8 @@ say "staging to $HOST:$STAGE"
 ssh "${SSH_ARGS[@]}" "$HOST" "rm -rf $STAGE && mkdir -p $STAGE"
 scp "${SSH_ARGS[@]}" -q -r \
     "$OUT/forma-server" "$OUT/forma-mcp" "$OUT/web" "$OUT/fonts" \
-    deploy/install.sh deploy/forma.env.example deploy/domain.env.example \
+    deploy/install.sh deploy/backup.sh \
+    deploy/forma.env.example deploy/domain.env.example \
     deploy/caddy deploy/systemd \
     "$HOST:$STAGE/"
 

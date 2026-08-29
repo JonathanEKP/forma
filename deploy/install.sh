@@ -90,6 +90,7 @@ fi
 say "installing binaries and the editor into /opt/forma"
 install -d -o root -g root -m 755 /opt/forma
 install -o root -g root -m 755 "$STAGE/forma-server" "$STAGE/forma-mcp" /opt/forma/
+install -o root -g root -m 755 "$STAGE/backup.sh" /opt/forma/backup.sh
 rm -rf /opt/forma/web
 cp -r "$STAGE/web" /opt/forma/web
 chown -R root:root /opt/forma/web
@@ -106,7 +107,8 @@ chown -R forma:forma /var/lib/forma/fonts
 # --- units ----------------------------------------------------------------
 say "installing systemd units"
 install -o root -g root -m 644 "$STAGE/systemd/forma-server.service" \
-    "$STAGE/systemd/forma-mcp.service" /etc/systemd/system/
+    "$STAGE/systemd/forma-mcp.service" "$STAGE/systemd/forma-backup.service" \
+    "$STAGE/systemd/forma-backup.timer" /etc/systemd/system/
 install -d -o root -g root -m 755 /etc/systemd/system/caddy.service.d
 install -o root -g root -m 644 "$STAGE/systemd/caddy.service.d/forma-domain.conf" \
     /etc/systemd/system/caddy.service.d/
@@ -137,6 +139,7 @@ fi
 say "starting"
 systemctl enable --now forma-server.service
 systemctl enable --now forma-mcp.service
+systemctl enable --now forma-backup.timer
 systemctl restart caddy.service
 
 sleep 2

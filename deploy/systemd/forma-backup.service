@@ -1,0 +1,21 @@
+[Unit]
+Description=Forma backup
+Documentation=file:///opt/forma/docs/backup.md
+# Not Requires=: a backup of a stopped server is still a good backup, and
+# `VACUUM INTO` is safe against a running one. This only orders them when both
+# are starting.
+After=forma-server.service
+
+[Service]
+Type=oneshot
+User=forma
+Group=forma
+EnvironmentFile=/etc/forma/forma.env
+ExecStart=/opt/forma/backup.sh
+
+# It writes only under the data directory.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/forma

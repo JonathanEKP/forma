@@ -1,0 +1,13 @@
+[Unit]
+Description=Forma backup, daily
+
+[Timer]
+OnCalendar=daily
+# A machine that was off at 00:00 still gets its backup when it comes back,
+# rather than skipping the day silently.
+Persistent=true
+# Daily at exactly midnight is when everything else on the machine also runs.
+RandomizedDelaySec=15m
+
+[Install]
+WantedBy=timers.target

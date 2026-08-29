@@ -28,8 +28,8 @@ design and rendering it.
 | HTTPS, and the whole origin behind the credential | smoke ✅ |
 | 4765 and 4766 unreachable from outside | smoke ✅ |
 | Phase 11 acceptance: create and render, remotely | smoke ✅ |
-| Backups on the VM | not configured ❌ |
-| Host firewall survives a reboot | **still unconfirmed** ⚠ |
+| Backups on the VM | units written and tested here, not yet installed |
+| Host firewall survives a reboot | reported, tested on the VM ✅ |
 
 The MCP endpoint is `https://forma.hintly.online/mcp`, bearer-authenticated. The
 hostname is temporary; see the decision note in `plan-status.md`.
@@ -67,15 +67,12 @@ and rules were added before the final REJECT. Oracle's `169.254.0.0/16` and
 `InstanceServices` rules were left alone; `iptables -F` would remove them and
 break instance metadata.
 
-> **Still open, and now the largest single risk to a working deployment.**
-> Persistence across reboot was never confirmed. The deploy succeeded, so the
-> rules are in place *now*; nothing says they come back. If they do not, the
-> first reboot takes out HTTP and HTTPS together — and with them Caddy's
-> certificate renewal, silently, until a certificate expires weeks later.
->
-> `netfilter-persistent save`, reboot, then `curl -I https://forma.hintly.online`
-> from outside. It is ten minutes and it is the difference between a deployment
-> that survives a restart and one that appears to.
+**Persistence across reboot was tested and holds.** The rules were saved with
+`netfilter-persistent`, the VM was rebooted, and `iptables -L INPUT` came back
+with 22, 80 and 443 accepted before the final REJECT, Oracle's
+`InstanceServices` rules intact, Caddy started by systemd on its own, and
+`curl -I http://forma.hintly.online` answering from outside. This was the largest
+open risk to a deployment that otherwise only looked finished, and it is closed.
 
 ### Users and directories, as reported
 
@@ -203,13 +200,13 @@ asserts the handshake, and a second test asserts loopback still works.
 **[runbook.md](runbook.md)** covers all of it: redeploying (idempotent, one
 command), rolling back, and the backup timer.
 
-1. **The reboot question above.** First, and it is not a formality.
-2. **Backups.** `forma-server backup` on a timer, per [backup.md](../backup.md).
-   Right now a deployment holding real work has no copy of it. An Oracle
-   block-volume snapshot is not a substitute: it copies a live SQLite with a
-   write-ahead log, which `VACUUM INTO` exists to avoid.
+2. **Backups.** The timer, unit and script exist and are installed by the next
+   deploy; see [runbook.md](runbook.md) §3 for what they do and how to restore.
+   Until that deploy runs, a machine holding real work has no copy of it. An
+   Oracle block-volume snapshot is not a substitute: it copies a live SQLite with
+   a write-ahead log, which `VACUUM INTO` exists to avoid.
 3. **Getting the backups off the machine.** A backup on the same volume as the
-   database survives a mistake, not a lost instance.
+   database survives a mistake, not a lost instance. No destination chosen yet.
 4. **The domain.** `forma.hintly.online` is borrowed. Migrating is a new A
    record, `FORMA_DOMAIN` in `/etc/forma/domain.env` — which both Caddy and
    `forma-mcp` read — a restart, and repointing whatever MCP clients exist.

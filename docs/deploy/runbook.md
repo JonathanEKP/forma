@@ -159,42 +159,90 @@ printing it. Do not paste the value anywhere.
 
 ## 3. Backups
 
-Not optional once this is a machine rather than a laptop. On a laptop a backup is
-something you run; here it has to happen without you.
+Installed by the deploy — `forma-backup.timer` is enabled with everything else,
+so there is nothing to do by hand. What follows is what it does and how to get
+your data back, because a backup nobody has restored is a hope rather than a
+backup.
 
-```bash
-sudo tee /etc/systemd/system/forma-backup.service >/dev/null <<'UNIT'
-[Unit]
-Description=Forma backup
-[Service]
-Type=oneshot
-User=forma
-EnvironmentFile=/etc/forma/forma.env
-ExecStart=/opt/forma/forma-server backup /var/lib/forma/backups/%%i
-UNIT
+### What runs
 
-sudo tee /etc/systemd/system/forma-backup.timer >/dev/null <<'UNIT'
-[Unit]
-Description=Forma backup, daily
-[Timer]
-OnCalendar=daily
-Persistent=true
-[Install]
-WantedBy=timers.target
-UNIT
-
-sudo systemctl enable --now forma-backup.timer
+```
+forma-backup.timer     daily, Persistent=true, up to 15 minutes of jitter
+  └── forma-backup.service   oneshot, as the forma user
+        └── /opt/forma/backup.sh
+              ├── forma-server backup      → /var/lib/forma/backups/<UTC>
+              └── retention
 ```
 
-Read [backup.md](../backup.md) before relying on it; in particular, `forma-server
-backup` refuses a non-empty destination, so the destination has to vary — a date
-in the path. And an Oracle block-volume snapshot is **not** a substitute: it
-copies a live SQLite with a write-ahead log, which `VACUUM INTO` is specifically
-there to avoid.
+**The destination is not passed, on purpose.** `forma-server backup` with no
+argument writes to `DATA_DIR/backups/<UTC timestamp>`, unique per run by
+construction. An earlier draft of this document had systemd compute the path with
+`%i` — an instance specifier, which means nothing in a unit that is not a
+template. Every run would have targeted the same directory, and the command
+refuses a non-empty destination, so every run after the first would have failed.
+It was caught in review rather than in production; it is written down because the
+next person to reach for `%i` should meet this first.
 
-Getting the backups off the machine is a separate question and still open.
+`Persistent=true` means a machine that was off at the appointed time takes its
+backup when it comes back, instead of skipping the day quietly.
 
----
+### Retention, and how a half-written backup is told apart
+
+`manifest.json` is written **last**, after the database and the assets. Its
+presence is therefore the difference between a backup and an interrupted attempt,
+and the script uses exactly that: a directory without one is removed rather than
+counted. Counting it would let retention discard a real backup to keep a broken
+one.
+
+Fourteen are kept, oldest pruned first; `FORMA_BACKUP_KEEP` in
+`/etc/forma/forma.env` changes that.
+
+Retention only runs when the backup succeeded — the script exits first otherwise,
+so a failed run leaves its partial directory on disk for whoever reads
+`journalctl -u forma-backup`, and the next successful run clears it.
+
+### Checking it works
+
+```bash
+sudo systemctl start forma-backup.service     # don't wait for midnight
+systemctl status forma-backup.service
+sudo ls -la /var/lib/forma/backups
+systemctl list-timers forma-backup.timer
+```
+
+A finished backup holds `forma.db`, `assets/`, and `manifest.json`. Read the
+manifest: it records how many projects, designs, versions and assets it contains,
+which is the cheapest way to notice a backup of an empty database.
+
+### Restoring
+
+[backup.md](../backup.md) is the procedure and it does not change here; only the
+paths and the service names do.
+
+```bash
+sudo systemctl stop forma-mcp forma-server
+sudo mv /var/lib/forma/forma.db /var/lib/forma/forma.db.aside   # aside, not away
+sudo -u forma cp /var/lib/forma/backups/<stamp>/forma.db /var/lib/forma/forma.db
+sudo -u forma cp -r /var/lib/forma/backups/<stamp>/assets/. /var/lib/forma/assets/
+sudo systemctl start forma-server forma-mcp
+```
+
+Move the current database aside rather than deleting it: if the backup turns out
+to be the wrong one, you still have what you had. The fonts are not in a backup —
+they arrive with the deploy — and `previews/` and `exports/` are excluded on
+purpose, since both regenerate.
+
+There is deliberately no restore command. It would overwrite the user's current
+work on a mistyped argument, which is exactly the operation that should be slow
+and deliberate.
+
+### Still open: getting them off the machine
+
+**A backup on the same volume as the database survives a mistake, not a lost
+instance.** Nothing here addresses that yet, and no destination has been chosen.
+Whatever it turns out to be, it should pull rather than be pushed to — a machine
+that can delete its own off-site copies has not got off-site copies — and it
+should copy only finished backups, which `manifest.json` identifies.
 
 ## What will not work, and is not a bug
 
