@@ -23,7 +23,8 @@ pub use asset_request::{AssetRequest, AssetRequestStatus};
 pub use brand::{BrandColors, BrandKit, BrandRules, BrandTypography, COLOR_TOKENS, FONT_TOKENS};
 pub use color::{Color, DesignColor};
 pub use document::{
-    DesignDocument, DesignFormat, DesignRecord, DesignSummary, FormatPreset, SCHEMA_VERSION,
+    forbidden_in_xml, DesignDocument, DesignFormat, DesignRecord, DesignSummary, FormatPreset,
+    SCHEMA_VERSION,
 };
 pub use error::DomainError;
 pub use export::{Export, ExportScope};

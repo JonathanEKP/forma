@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::error::DomainError;
+use crate::layer::Layer;
 use crate::page::Page;
 
 pub const SCHEMA_VERSION: u32 = 1;
@@ -160,6 +161,15 @@ impl DesignDocument {
                 if !layer_ids.insert(layer.id()) {
                     return Err(DomainError::DuplicateLayerId(layer.id()));
                 }
+                if let Layer::Text(text) = layer {
+                    if let Some(bad) = text.text.chars().find(|c| forbidden_in_xml(*c)) {
+                        return Err(DomainError::InvalidDocument(format!(
+                            "layer {} contains U+{:04X}, which the renderer's SVG cannot carry",
+                            layer.id(),
+                            bad as u32
+                        )));
+                    }
+                }
             }
         }
         Ok(())
@@ -212,5 +222,73 @@ mod tests {
             DesignDocument::migrate(doc),
             Err(DomainError::UnsupportedSchemaVersion(99))
         ));
+    }
+}
+
+/// Characters XML 1.0 cannot represent **at all** — not escaped, not as a
+/// numeric reference. The render path is `DesignDocument -> SVG -> PNG`, so a
+/// string carrying one produces a document that validates, refuses to render and
+/// cannot be exported. Tab, newline and carriage return are legal and stay:
+/// line breaks in a `TextLayer` are explicit newlines (plan section 18).
+pub fn forbidden_in_xml(character: char) -> bool {
+    matches!(character,
+        '\u{0}'..='\u{8}' | '\u{B}' | '\u{C}' | '\u{E}'..='\u{1F}' | '\u{FFFE}' | '\u{FFFF}')
+}
+
+#[cfg(test)]
+mod xml_safety {
+    use super::*;
+    use crate::page::Page;
+    use crate::{
+        DesignColor, DesignFormat, FormatPreset, LayerCommon, LayerId, TextAlign, TextLayer,
+        Transform,
+    };
+
+    fn document_saying(text: &str) -> DesignDocument {
+        let mut document = DesignDocument::new(DesignFormat::from_preset(FormatPreset::Square));
+        let mut page = Page::new("Page");
+        page.layers.push(Layer::Text(TextLayer {
+            common: LayerCommon {
+                id: LayerId::new(),
+                name: "T".to_string(),
+                role: None,
+                visible: true,
+                locked: false,
+                opacity: 1.0,
+                transform: Transform::new(0.0, 0.0, 100.0, 100.0),
+            },
+            text: text.to_string(),
+            font_family: "Geist".to_string(),
+            font_size: 24.0,
+            font_weight: 400,
+            line_height: 1.2,
+            letter_spacing: 0.0,
+            align: TextAlign::Left,
+            color: DesignColor::token("brand.text"),
+        }));
+        document.pages.push(page);
+        document
+    }
+
+    /// A control character reached a real design through `apply_operations`,
+    /// which accepted it, and `validate_design` then called that design valid
+    /// while `preview.png` answered 500 SVG_PARSE_FAILED. The design could not be
+    /// rendered, exported, or deleted -- there is no delete for designs.
+    #[test]
+    fn a_character_xml_cannot_carry_is_rejected_before_it_is_persisted() {
+        let error = document_saying("hola\u{0}mundo")
+            .validate_structure()
+            .expect_err("a NUL must not enter a document");
+        assert_eq!(error.code(), "INVALID_DOCUMENT");
+        assert!(format!("{error}").contains("U+0000"), "{error}");
+    }
+
+    /// Line breaks are explicit newlines in V1 (plan section 18), so the legal
+    /// XML whitespace has to keep working.
+    #[test]
+    fn tabs_and_newlines_are_still_allowed() {
+        document_saying("dos\nlíneas\ty tabulador\r\n")
+            .validate_structure()
+            .expect("legal whitespace must pass");
     }
 }

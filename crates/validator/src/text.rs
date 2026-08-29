@@ -5,7 +5,7 @@
 //! rather than approximated, because a wrong overflow report would send an
 //! agent into pointless edits.
 
-use design_core::{DesignColor, Layer};
+use design_core::{forbidden_in_xml, DesignColor, Layer};
 
 use crate::context::ValidationContext;
 use crate::report::ValidationIssue;
@@ -69,6 +69,29 @@ pub fn check(ctx: &ValidationContext, issues: &mut Vec<ValidationIssue>) {
                     );
                 }
                 _ => {}
+            }
+
+            // A character XML cannot carry makes the whole page fail to render,
+            // so the document is unusable rather than merely ugly. New documents
+            // cannot acquire one -- `validate_structure` rejects them -- but a
+            // design written before that check exists still needs to be told
+            // what is wrong with it, rather than meeting a 500 at render time.
+            if let Some(bad) = text.text.chars().find(|c| forbidden_in_xml(*c)) {
+                issues.push(
+                    ValidationIssue::error(
+                        "TEXT_INVALID_CHARACTER",
+                        format!(
+                            "\"{}\" contains U+{:04X}, which the renderer cannot draw",
+                            common.name, bad as u32
+                        ),
+                    )
+                    .at_layer(page.id, common.id)
+                    .with_details(serde_json::json!({
+                        "codepoint": format!("U+{:04X}", bad as u32),
+                        "hint": "Remove the control character from the text; only tab, \
+                                 newline and carriage return are legal.",
+                    })),
+                );
             }
 
             if let Some(minimum) = minimum_font_size {

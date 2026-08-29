@@ -153,6 +153,14 @@ from Signal and unrelated to it; do not unify them.
   vanished passed every check. `BrandKit::font_families` sits beside `color_palette`
   so a caller cannot build one and forget the other, and an unresolvable font token
   is fatal in the renderer exactly like an unresolvable colour.
+- **Whatever the renderer can fail on, something must check first.** `validate` skips a
+  page that fails to render, so a render failure with no matching check is swallowed and
+  the design is reported valid. Auditing `RenderError` against the validator's codes found
+  one hole: a text string carrying a control character passed `apply_operations`, validated
+  clean, and answered 500 `SVG_PARSE_FAILED` at render — XML 1.0 cannot represent those
+  characters at all, escaped or not. `validate_structure` now rejects them at the write
+  gate and `TEXT_INVALID_CHARACTER` reports the documents written before it existed. Repeat
+  that audit whenever a render failure mode is added.
 - **The validator measures nothing.** Text bounds come from the renderer and are handed in
   as `MeasuredLayer`; without them the overflow checks are *skipped*, never approximated.
   A second typographic implementation would drift from the render authority. The validator
