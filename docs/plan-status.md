@@ -28,7 +28,7 @@ passes" is not enough — Phase 6's acceptance passed with two panels missing.
 | 8 — MCP | 7 | Complete — the thirteen tools of §48. |
 | 9 — Agent skill | 15 | Complete. |
 | 10 — Hardening | 9 | Complete. |
-| 11 — Remote deploy | 9 | Not started. Gated on Oracle capacity (§90). |
+| 11 — Remote deploy | 9 | Complete. Deployed and accepted: `smoke-remote.py` reports 15/15 against `https://forma.hintly.online`. See item 9 below and [deploy/status.md](deploy/status.md). |
 | 12 — Supabase adapter | 5 | Not started. The plan marks it optional and only after 11. |
 
 ## Open, with the section that asks for it
@@ -41,7 +41,9 @@ passes" is not enough — Phase 6's acceptance passed with two panels missing.
 [data/fonts/README.md](../data/fonts/README.md): Geist for text, Geist Mono for
 code, DejaVu kept as the per-glyph fallback.
 
-What remains is Phase 11 and, behind it, the optional Phase 12.
+Every phase of the V1 plan is closed, Phase 11 included. What remains from the
+plan itself is only the optional Phase 12 — and the items below that came out of
+using the product rather than from the plan.
 
 ## What the three-model experiment settled
 
