@@ -25,7 +25,7 @@ passes" is not enough — Phase 6's acceptance passed with two panels missing.
 | 5 — REST server | 7 | Complete. |
 | 6 — React editor | 14 | Complete. `Brand panel` closed the last task. |
 | 7 — AssetRequest UX | 7 | Complete. Also delivered Phase 6's `assets panel`. |
-| 8 — MCP | 7 | Complete — the thirteen tools of §48. |
+| 8 — MCP | 7 | Complete. §48's thirteen tools, plus `list_templates` — see item 8 for why fourteen. |
 | 9 — Agent skill | 15 | Complete. |
 | 10 — Hardening | 9 | Complete. |
 | 11 — Remote deploy | 9 | Complete. Deployed and accepted: `smoke-remote.py` reports 15/15 against `https://forma.hintly.online`. See item 9 below and [deploy/status.md](deploy/status.md). |
@@ -144,10 +144,18 @@ that lets it in. Nothing enters this list because it would be interesting.
    any JSON-RPC was read; the deployment now names itself through `FORMA_DOMAIN`,
    with the loopback entries kept.
 
-   [docs/deploy/status.md](deploy/status.md) is the live state.
-   **Still open there:** whether the host firewall survives a reboot (never
-   confirmed, and the largest single risk to a working deployment), backups on
-   the machine, and getting them off it.
+   [docs/deploy/status.md](deploy/status.md) is the live state. Two of the
+   three things this item once listed as open are closed. **The firewall
+   survives a reboot** — the rules were saved with `netfilter-persistent`, the
+   VM was rebooted, and 22/80/443 came back ahead of the final REJECT with
+   Oracle's `InstanceServices` rules intact and Caddy started on its own. That
+   was the largest single risk to a deployment that otherwise only looked
+   finished. **Backups run on the machine** — `forma-backup.timer` is enabled
+   and active, and its last run was its own rather than a person's.
+
+   **Still open: getting backups off the machine.** No destination is chosen.
+   What exists covers an accidental delete and does not cover losing the VM,
+   which is the failure that would actually end the workspace.
 
    **Known limitation, deliberate:** the browser editor is not usable remotely.
    Every path except `/api/v1/health` requires the bearer, so the domain answers
@@ -193,4 +201,7 @@ reasoning for each is an invariant in [CLAUDE.md](../CLAUDE.md).
 | Font tokens resolve in the renderer, not only in the validator | The renderer wrote `$brand.display` into the SVG as a family name and usvg drew nothing, while the validator resolved it and passed the design. Found by an agent reading the code, not by a test. |
 | `TEXT_INVALID_CHARACTER`, and the write gate that makes it rare | Found by auditing every `RenderError` against the validator's codes after the font-token bug. One hole: a control character in a string validated clean and answered 500 at render, on a design that also cannot be deleted. |
 | `forma.hintly.online` as the deploy name, for now | Forma has no domain of its own and the deploy needs a name before it can have a certificate. A subdomain of one that exists, so nothing at that apex is touched. Held in `FORMA_DOMAIN` rather than written into the Caddyfile, because a temporary value hard-coded is a temporary value forever. |
+| Every MCP payload is sent as text *and* as `structuredContent` | The spec says a tool returning structured content SHOULD also serialize it into a text block, and a host that reads only text is not hypothetical: opencode answered `list_projects` with "1 project(s)" and nothing else, which makes every id-taking tool after it unusable — ids are the only handles there are. Duplicated tokens on hosts that read both is the smaller problem. |
+| No boolean subschema in any tool schema | `apply_operations` emitted one, and a host converting the tool list for its model failed on the whole list rather than on that tool. A schema is read by software nobody here wrote, so the conservative shape wins over the expressive one. |
+| The deployment names itself to rmcp, rather than trusting any `Host` | rmcp validates the inbound `Host` against a loopback-only allowlist, so everything arriving through Caddy was 403 before any JSON-RPC was read. The allowlist is DNS-rebinding protection and worth keeping: `FORMA_DOMAIN` is *added* to the loopback entries, never `disable_allowed_hosts()`, whose empty list means allow everything. |
 | The skill is symlinked into `.claude/skills/` and `.agents/skills/` | §51.2 puts it at `skills/forma/SKILL.md`, which no agent host scans: Claude Code looks in `.claude/skills`, Codex in `.agents/skills`, opencode in both. It was invisible to every host that was not told to open it by path. Symlinks rather than moving it, so the plan's path, the test and every existing link stay put. |

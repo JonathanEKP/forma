@@ -28,7 +28,7 @@ design and rendering it.
 | HTTPS, and the whole origin behind the credential | smoke ✅ |
 | 4765 and 4766 unreachable from outside | smoke ✅ |
 | Phase 11 acceptance: create and render, remotely | smoke ✅ |
-| Backups on the VM | units written and tested here, not yet installed |
+| Backups on the VM | verified here ✅ — timer enabled and active, last run its own |
 | Host firewall survives a reboot | reported, tested on the VM ✅ |
 
 The MCP endpoint is `https://forma.hintly.online/mcp`, bearer-authenticated. The
@@ -200,14 +200,9 @@ asserts the handshake, and a second test asserts loopback still works.
 **[runbook.md](runbook.md)** covers all of it: redeploying (idempotent, one
 command), rolling back, and the backup timer.
 
-2. **Backups.** The timer, unit and script exist and are installed by the next
-   deploy; see [runbook.md](runbook.md) §3 for what they do and how to restore.
-   Until that deploy runs, a machine holding real work has no copy of it. An
-   Oracle block-volume snapshot is not a substitute: it copies a live SQLite with
-   a write-ahead log, which `VACUUM INTO` exists to avoid.
-3. **Getting the backups off the machine.** A backup on the same volume as the
+1. **Getting the backups off the machine.** A backup on the same volume as the
    database survives a mistake, not a lost instance. No destination chosen yet.
-4. **The domain.** `forma.hintly.online` is borrowed. Migrating is a new A
+2. **The domain.** `forma.hintly.online` is borrowed. Migrating is a new A
    record, `FORMA_DOMAIN` in `/etc/forma/domain.env` — which both Caddy and
    `forma-mcp` read — a restart, and repointing whatever MCP clients exist.
 

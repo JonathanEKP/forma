@@ -39,13 +39,14 @@ which keeps *reported* and *verified here* apart, because a status document that
 blurs those is how one starts lying.
 
 **What comes next is in [docs/plan-status.md](docs/plan-status.md) under *Agreed order*,
-and it is ordered.** Items 5 to 8 came out of using the product against a real brief
-rather than from the plan, and each carries the §100 criterion that admitted it: a delete
-for designs (§31 has one for projects and assets but not designs, so nothing an agent
-makes can be taken back), the orphan rule in the skill, an overlay on `ImageLayer`, and
-the templates of §85. Then the remote deploy of Phases 11 and 12. Editorial style modes
-are on that page too, listed as deliberately excluded, with the measurement that decided
-it — read the reason before proposing them again.
+and it is ordered.** Items 1 to 9 are done, item 6 struck on the evidence rather than
+built. Items 5 to 8 came out of using the product against a real brief rather than from
+the plan, and each carries the §100 criterion that admitted it: a delete for designs (§31
+has one for projects and assets but not designs, so nothing an agent makes can be taken
+back), the orphan rule in the skill, an overlay on `ImageLayer`, and the templates of §85.
+What remains from the plan itself is only the optional Phase 12. Editorial style modes are
+on that page too, listed as deliberately excluded, with the measurement that decided it —
+read the reason before proposing them again.
 
 ## What the product is
 
