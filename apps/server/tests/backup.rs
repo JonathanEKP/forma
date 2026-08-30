@@ -5,6 +5,7 @@
 use std::path::{Path, PathBuf};
 
 use forma_server::{backup, Config};
+use design_core::AccountId;
 use persistence::{
     AssetRepository, ProjectRepository, SqliteAssetRepository, SqliteProjectRepository,
 };
@@ -33,7 +34,7 @@ async fn live(data_dir: &Path) -> SqlitePool {
 
     let projects = SqliteProjectRepository::new(pool.clone());
     for name in ["One", "Two", "Three"] {
-        projects.create(name).await.unwrap();
+        projects.create(account(), name).await.unwrap();
     }
     pool
 }
@@ -147,7 +148,7 @@ async fn the_manifest_counts_what_was_copied() {
     // One asset row, so the manifest can be checked against the database.
     let assets = SqliteAssetRepository::new(pool.clone());
     let projects = SqliteProjectRepository::new(pool.clone())
-        .list()
+        .list(account())
         .await
         .unwrap();
     assets
@@ -206,4 +207,9 @@ async fn it_refuses_to_write_over_an_existing_backup() {
     assert!(error.to_string().contains("already exists"), "{error}");
 
     pool.close().await;
+}
+
+/// The account the migration creates; these tests are the local case.
+fn account() -> AccountId {
+    AccountId(uuid::Uuid::parse_str(design_core::BOOTSTRAP_ACCOUNT).expect("a constant uuid"))
 }

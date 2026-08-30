@@ -1,10 +1,11 @@
 //! Transport-level parsing shared by the handlers.
 
 use actix_web::HttpRequest;
-use design_core::{Actor, ActorType, DesignId, ProjectId};
+use design_core::{Actor, ActorType, AuthContext, DesignId, ProjectId};
 use uuid::Uuid;
 
 use crate::error::ApiError;
+use crate::state::AppState;
 use crate::telemetry;
 
 /// Parses a UUID from a path segment into the caller's own error shape.
@@ -72,6 +73,17 @@ fn actor_header(request: &HttpRequest) -> Actor {
             actor_id: Some(other.to_string()),
         },
     }
+}
+
+/// The identity behind this request (plan section 108).
+///
+/// One function, so the account is resolved in a single place and a handler
+/// cannot invent one. Slice one always answers `Local`: there is no credential
+/// to read, the process boundary is the security boundary, and every request
+/// belongs to the one account this process serves. The hosted slice replaces the
+/// body of this function and nothing else.
+pub fn auth(state: &AppState) -> AuthContext {
+    AuthContext::local(state.account)
 }
 
 #[cfg(test)]

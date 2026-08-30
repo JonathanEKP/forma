@@ -53,7 +53,12 @@ async fn create(
         });
 
     let record = application::designs::get(&*state.designs, design).await?;
-    let brand = application::projects::get_brand(&*state.projects, record.project_id).await?;
+    let brand = application::projects::get_brand(
+        &*state.projects,
+        crate::routes::auth(&state).account_id,
+        record.project_id,
+    )
+    .await?;
 
     let (export, files) = application::exports::create(
         &*state.exports,

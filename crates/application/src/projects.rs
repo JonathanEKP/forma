@@ -1,7 +1,7 @@
 //! Project and Brand Kit use cases.
 
 use design_core::{
-    AssetId, BrandColors, BrandId, BrandKit, BrandRules, BrandTypography, Project, ProjectId,
+    AccountId, AssetId, BrandColors, BrandId, BrandKit, BrandRules, BrandTypography, Project, ProjectId,
     Version,
 };
 use persistence::ProjectRepository;
@@ -40,37 +40,51 @@ fn check_name(name: &str) -> Result<()> {
     Ok(())
 }
 
-pub async fn create(projects: &dyn ProjectRepository, name: &str) -> Result<Project> {
+pub async fn create(
+    projects: &dyn ProjectRepository,
+    account: AccountId,
+    name: &str,
+) -> Result<Project> {
     check_name(name)?;
-    Ok(projects.create(name).await?)
+    Ok(projects.create(account, name).await?)
 }
 
-pub async fn get(projects: &dyn ProjectRepository, id: ProjectId) -> Result<Project> {
-    Ok(projects.get(id).await?)
+pub async fn get(
+    projects: &dyn ProjectRepository,
+    account: AccountId,
+    id: ProjectId,
+) -> Result<Project> {
+    Ok(projects.get(account, id).await?)
 }
 
-pub async fn list(projects: &dyn ProjectRepository) -> Result<Vec<Project>> {
-    Ok(projects.list().await?)
+pub async fn list(projects: &dyn ProjectRepository, account: AccountId) -> Result<Vec<Project>> {
+    Ok(projects.list(account).await?)
 }
 
 pub async fn rename(
     projects: &dyn ProjectRepository,
+    account: AccountId,
     id: ProjectId,
     name: &str,
 ) -> Result<Project> {
     check_name(name)?;
-    Ok(projects.rename(id, name).await?)
+    Ok(projects.rename(account, id, name).await?)
 }
 
-pub async fn delete(projects: &dyn ProjectRepository, id: ProjectId) -> Result<()> {
-    Ok(projects.delete(id).await?)
+pub async fn delete(
+    projects: &dyn ProjectRepository,
+    account: AccountId,
+    id: ProjectId,
+) -> Result<()> {
+    Ok(projects.delete(account, id).await?)
 }
 
 pub async fn get_brand(
     projects: &dyn ProjectRepository,
+    account: AccountId,
     id: ProjectId,
 ) -> Result<Option<BrandKit>> {
-    Ok(projects.get_brand(id).await?)
+    Ok(projects.get_brand(account, id).await?)
 }
 
 /// Stores the project's Brand Kit (plan section 12: one active kit per project).
@@ -80,13 +94,15 @@ pub async fn get_brand(
 /// that had already been used, would otherwise make the history meaningless.
 pub async fn put_brand(
     projects: &dyn ProjectRepository,
+    account: AccountId,
     project_id: ProjectId,
     draft: BrandKitDraft,
 ) -> Result<BrandKit> {
-    // Fails with PROJECT_NOT_FOUND rather than writing an orphan kit.
-    projects.get(project_id).await?;
+    // Fails with PROJECT_NOT_FOUND rather than writing an orphan kit — and for a
+    // project in another account, with the same error as one that never existed.
+    projects.get(account, project_id).await?;
 
-    let existing = projects.get_brand(project_id).await?;
+    let existing = projects.get_brand(account, project_id).await?;
     let (id, version) = match &existing {
         // Keeping the id stable means the project's brand_id does not churn on
         // every save, and anything pointing at the kit keeps pointing at it.
@@ -106,5 +122,5 @@ pub async fn put_brand(
         version,
     };
 
-    Ok(projects.put_brand(&brand).await?)
+    Ok(projects.put_brand(account, &brand).await?)
 }

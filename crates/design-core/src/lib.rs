@@ -3,6 +3,7 @@
 //! Per plan section 8.1 this crate depends on no infrastructure: no Actix, no
 //! SQLx, no MCP, no filesystem, no HTTP. It holds only the domain.
 
+pub mod account;
 pub mod asset;
 pub mod asset_request;
 pub mod brand;
@@ -19,6 +20,10 @@ pub mod project;
 pub mod template;
 mod version;
 
+pub use account::{
+    Account, AccountInvite, AccountMembership, AccountRole, AuthContext, AuthKind,
+    BOOTSTRAP_ACCOUNT,
+};
 pub use asset::{Asset, AssetKind, AssetOrigin};
 pub use asset_request::{AssetRequest, AssetRequestStatus};
 pub use brand::{BrandColors, BrandKit, BrandRules, BrandTypography, COLOR_TOKENS, FONT_TOKENS};
@@ -31,7 +36,7 @@ pub use error::DomainError;
 pub use export::{Export, ExportScope};
 pub use geometry::{Rect, Transform};
 pub use ids::{
-    AssetId, AssetRequestId, BrandId, DesignId, ExportId, LayerId, PageId, ProjectId, TemplateId,
+    AccountId, ApiKeyId, AssetId, AuthUserId, AssetRequestId, BrandId, DesignId, ExportId, LayerId, PageId, ProjectId, TemplateId,
 };
 pub use layer::{
     FocalPoint, ImageFit, ImageLayer, ImageOverlay, Layer, LayerCommon, LayerRole, OverlayEdge,

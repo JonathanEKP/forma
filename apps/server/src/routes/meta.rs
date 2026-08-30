@@ -49,7 +49,7 @@ pub struct Status {
 async fn status(state: web::Data<AppState>) -> Result<HttpResponse, ApiError> {
     let projects = state
         .projects
-        .list()
+        .list(crate::routes::auth(&state).account_id)
         .await
         .map_err(|e| ApiError::internal("STORAGE_ERROR", e.to_string()))?
         .len() as i64;

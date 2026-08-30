@@ -61,6 +61,7 @@ async fn create(
         &*state.projects,
         &*state.designs,
         &*state.asset_requests,
+        crate::routes::auth(&state).account_id,
         application::asset_requests::NewAssetRequest {
             project_id: project,
             design_id: body.design_id,

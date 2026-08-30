@@ -2,7 +2,7 @@
 //! temporary SQLite rather than a mock.
 
 use design_core::{
-    Actor, ActorType, Asset, AssetKind, AssetOrigin, AssetRequest, AssetRequestId,
+    AccountId, Actor, ActorType, Asset, AssetKind, AssetOrigin, AssetRequest, AssetRequestId,
     AssetRequestStatus, BrandColors, BrandId, BrandKit, BrandRules, BrandTypography, Color,
     DesignColor, DesignDocument, DesignFormat, DesignId, Export, ExportId, ExportScope,
     FormatPreset, Page, Project, ProjectId, Version,
@@ -13,6 +13,12 @@ use persistence::{
     SqliteExportRepository, SqliteProjectRepository,
 };
 use sqlx::SqlitePool;
+
+/// The account the migration creates. Every project in these tests belongs to
+/// it, which is the local case of plan 117.8.
+fn account() -> AccountId {
+    AccountId(uuid::Uuid::parse_str(design_core::BOOTSTRAP_ACCOUNT).expect("a constant uuid"))
+}
 
 struct Harness {
     _dir: tempfile::TempDir,
@@ -50,7 +56,10 @@ impl Harness {
     }
 
     async fn project(&self) -> Project {
-        self.projects().create("Test project").await.unwrap()
+        self.projects()
+            .create(account(), "Test project")
+            .await
+            .unwrap()
     }
 }
 
@@ -362,17 +371,17 @@ async fn a_project_keeps_one_active_brand_kit() {
     let projects = harness.projects();
     let project = harness.project().await;
 
-    assert!(projects.get_brand(project.id).await.unwrap().is_none());
+    assert!(projects.get_brand(account(), project.id).await.unwrap().is_none());
 
     let mut brand = brand_kit(project.id);
-    projects.put_brand(&brand).await.unwrap();
+    projects.put_brand(account(), &brand).await.unwrap();
 
     // Saving again replaces it rather than accumulating kits.
     brand.name = "Rebrand".to_string();
     brand.colors.primary = Color::rgb(0x00, 0xFF, 0x00);
-    projects.put_brand(&brand).await.unwrap();
+    projects.put_brand(account(), &brand).await.unwrap();
 
-    let stored = projects.get_brand(project.id).await.unwrap().unwrap();
+    let stored = projects.get_brand(account(), project.id).await.unwrap().unwrap();
     assert_eq!(stored.name, "Rebrand");
     assert_eq!(stored.colors.primary, Color::rgb(0x00, 0xFF, 0x00));
     assert_eq!(
@@ -382,7 +391,7 @@ async fn a_project_keeps_one_active_brand_kit() {
 
     // And the project points at it.
     assert_eq!(
-        projects.get(project.id).await.unwrap().brand_id,
+        projects.get(account(), project.id).await.unwrap().brand_id,
         Some(brand.id)
     );
 }
@@ -398,7 +407,7 @@ async fn deleting_a_project_takes_its_designs_with_it() {
         .await
         .unwrap();
 
-    harness.projects().delete(project.id).await.unwrap();
+    harness.projects().delete(account(), project.id).await.unwrap();
     assert!(designs.get(created.id).await.is_err());
 }
 
@@ -674,7 +683,7 @@ async fn checkpointing_empties_the_log_synchronously() {
 
     let projects = SqliteProjectRepository::new(pool.clone());
     for name in ["One", "Two", "Three"] {
-        projects.create(name).await.unwrap();
+        projects.create(account(), name).await.unwrap();
     }
 
     let wal = dir.path().join("forma.db-wal");
@@ -718,7 +727,7 @@ async fn closing_the_pool_leaves_everything_in_the_database_file() {
 
     let projects = SqliteProjectRepository::new(pool.clone());
     for name in ["One", "Two", "Three"] {
-        projects.create(name).await.unwrap();
+        projects.create(account(), name).await.unwrap();
     }
 
     // While it is open, the writes are out in the log rather than the file.

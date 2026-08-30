@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use design_core::{BrandKit, Project, ProjectId};
+use design_core::{AccountId, BrandKit, Project, ProjectId};
 use sqlx::{Row, SqlitePool};
 
 use crate::error::{PersistenceError, Result};
@@ -19,7 +19,7 @@ impl SqliteProjectRepository {
 
 #[async_trait]
 impl ProjectRepository for SqliteProjectRepository {
-    async fn create(&self, name: &str) -> Result<Project> {
+    async fn create(&self, account: AccountId, name: &str) -> Result<Project> {
         let project = Project {
             id: ProjectId::new(),
             name: name.to_string(),
@@ -29,10 +29,11 @@ impl ProjectRepository for SqliteProjectRepository {
         };
 
         sqlx::query(
-            "INSERT INTO projects (id, name, brand_id, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO projects (id, account_id, name, brand_id, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?)",
         )
         .bind(project.id.to_string())
+        .bind(account.to_string())
         .bind(&project.name)
         .bind(Option::<String>::None)
         .bind(&project.created_at)
@@ -43,11 +44,13 @@ impl ProjectRepository for SqliteProjectRepository {
         Ok(project)
     }
 
-    async fn get(&self, id: ProjectId) -> Result<Project> {
+    async fn get(&self, account: AccountId, id: ProjectId) -> Result<Project> {
         let row = sqlx::query(
-            "SELECT id, name, brand_id, created_at, updated_at FROM projects WHERE id = ?",
+            "SELECT id, name, brand_id, created_at, updated_at
+             FROM projects WHERE id = ? AND account_id = ?",
         )
         .bind(id.to_string())
+        .bind(account.to_string())
         .fetch_optional(&self.pool)
         .await?
         .ok_or(PersistenceError::ProjectNotFound(id))?;
@@ -65,11 +68,12 @@ impl ProjectRepository for SqliteProjectRepository {
         })
     }
 
-    async fn list(&self) -> Result<Vec<Project>> {
+    async fn list(&self, account: AccountId) -> Result<Vec<Project>> {
         let rows = sqlx::query(
             "SELECT id, name, brand_id, created_at, updated_at
-             FROM projects ORDER BY updated_at DESC",
+             FROM projects WHERE account_id = ? ORDER BY updated_at DESC",
         )
+        .bind(account.to_string())
         .fetch_all(&self.pool)
         .await?;
 
@@ -90,23 +94,27 @@ impl ProjectRepository for SqliteProjectRepository {
             .collect()
     }
 
-    async fn rename(&self, id: ProjectId, name: &str) -> Result<Project> {
-        let updated = sqlx::query("UPDATE projects SET name = ?, updated_at = ? WHERE id = ?")
-            .bind(name)
-            .bind(now())
-            .bind(id.to_string())
-            .execute(&self.pool)
-            .await?;
+    async fn rename(&self, account: AccountId, id: ProjectId, name: &str) -> Result<Project> {
+        let updated = sqlx::query(
+            "UPDATE projects SET name = ?, updated_at = ? WHERE id = ? AND account_id = ?",
+        )
+        .bind(name)
+        .bind(now())
+        .bind(id.to_string())
+        .bind(account.to_string())
+        .execute(&self.pool)
+        .await?;
 
         if updated.rows_affected() == 0 {
             return Err(PersistenceError::ProjectNotFound(id));
         }
-        self.get(id).await
+        self.get(account, id).await
     }
 
-    async fn delete(&self, id: ProjectId) -> Result<()> {
-        let deleted = sqlx::query("DELETE FROM projects WHERE id = ?")
+    async fn delete(&self, account: AccountId, id: ProjectId) -> Result<()> {
+        let deleted = sqlx::query("DELETE FROM projects WHERE id = ? AND account_id = ?")
             .bind(id.to_string())
+            .bind(account.to_string())
             .execute(&self.pool)
             .await?;
 
@@ -116,12 +124,18 @@ impl ProjectRepository for SqliteProjectRepository {
         Ok(())
     }
 
-    async fn get_brand(&self, id: ProjectId) -> Result<Option<BrandKit>> {
-        let json: Option<String> =
-            sqlx::query_scalar("SELECT brand_json FROM brand_kits WHERE project_id = ?")
-                .bind(id.to_string())
-                .fetch_optional(&self.pool)
-                .await?;
+    async fn get_brand(&self, account: AccountId, id: ProjectId) -> Result<Option<BrandKit>> {
+        // The scope travels through the project, because that is where ownership
+        // is recorded. A brand kit carries no account of its own by design.
+        let json: Option<String> = sqlx::query_scalar(
+            "SELECT brand_json FROM brand_kits
+             WHERE project_id = ?
+               AND project_id IN (SELECT id FROM projects WHERE account_id = ?)",
+        )
+        .bind(id.to_string())
+        .bind(account.to_string())
+        .fetch_optional(&self.pool)
+        .await?;
 
         json.map(|json| {
             serde_json::from_str(&json)
@@ -130,7 +144,12 @@ impl ProjectRepository for SqliteProjectRepository {
         .transpose()
     }
 
-    async fn put_brand(&self, brand: &BrandKit) -> Result<BrandKit> {
+    async fn put_brand(&self, account: AccountId, brand: &BrandKit) -> Result<BrandKit> {
+        // Prove the project belongs to this account before writing anything.
+        // A guard on the INSERT alone would silently write nothing on a miss,
+        // and report success.
+        self.get(account, brand.project_id).await?;
+
         let json = serde_json::to_string(brand)
             .map_err(|e| PersistenceError::CorruptDocument(e.to_string()))?;
         let timestamp = now();

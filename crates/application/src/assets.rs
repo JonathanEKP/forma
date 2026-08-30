@@ -1,7 +1,7 @@
 //! Asset use cases (plan sections 21, 44 and 73).
 
 use assets::{AssetError, Ingested};
-use design_core::{Asset, AssetId, AssetOrigin, ProjectId};
+use design_core::{AccountId, Asset, AssetId, AssetOrigin, ProjectId};
 use persistence::{AssetRepository, ObjectStore, ProjectRepository};
 
 use crate::error::{ApplicationError, Result};
@@ -20,17 +20,20 @@ impl From<AssetError> for ApplicationError {
 /// happens after ingest rather than before, because the hash is taken over the
 /// canonical bytes — two SVG exports that differ only in a comment normalize to
 /// the same picture and should collapse into one asset.
+#[allow(clippy::too_many_arguments)]
 pub async fn upload(
     projects: &dyn ProjectRepository,
     assets: &dyn AssetRepository,
     store: &dyn ObjectStore,
+    account: AccountId,
     project_id: ProjectId,
     bytes: Vec<u8>,
     original_filename: Option<String>,
     max_bytes: usize,
 ) -> Result<(Asset, bool)> {
-    // Fail before touching the bytes if the project is not real.
-    projects.get(project_id).await?;
+    // Fail before touching the bytes if the project is not real — or not this
+    // account's, which must be indistinguishable from not real.
+    projects.get(account, project_id).await?;
 
     let ingested: Ingested = assets::ingest(bytes, max_bytes)?;
 

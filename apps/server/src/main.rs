@@ -67,6 +67,15 @@ async fn main() -> anyhow::Result<()> {
     let store = Arc::new(persistence::LocalObjectStore::new(&config.data_dir));
     let state = AppState::new(pool, fonts, cache, store);
 
+    // Read the account this process serves, once, rather than trusting the
+    // constant the migration writes. A database whose migrations never ran fails
+    // here, with a message, instead of on somebody's first request.
+    let account = persistence::AccountRepository::bootstrap(&*state.accounts)
+        .await
+        .map_err(|e| std::io::Error::other(format!("no account to serve: {e}")))?;
+    tracing::info!(account = %account.id, claimed = account.claimed_at.is_some(), "serving one account");
+    let state = state.with_account(account.id);
+
     // Renders of designs that no longer exist (plan section 74). Doing it at
     // startup rather than on every delete path means a path added later cannot
     // forget, and anything a crash left behind is collected too.

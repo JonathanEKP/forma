@@ -5,7 +5,7 @@
 //! never generates the image — that is out of scope for V1 — so the suggested
 //! prompt is text for a human to take elsewhere.
 
-use design_core::{AssetId, AssetRequest, AssetRequestId, AssetRequestStatus, DesignId, ProjectId};
+use design_core::{AccountId, AssetId, AssetRequest, AssetRequestId, AssetRequestStatus, DesignId, ProjectId};
 use persistence::{AssetRepository, AssetRequestRepository, DesignRepository, ProjectRepository};
 
 use crate::error::{ApplicationError, Result};
@@ -26,9 +26,10 @@ pub async fn create(
     projects: &dyn ProjectRepository,
     designs: &dyn DesignRepository,
     requests: &dyn AssetRequestRepository,
+    account: AccountId,
     new: NewAssetRequest,
 ) -> Result<AssetRequest> {
-    projects.get(new.project_id).await?;
+    projects.get(account, new.project_id).await?;
 
     // A request pinned to a design that does not exist would show up in no
     // editor and be resolvable by nobody.

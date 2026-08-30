@@ -81,6 +81,7 @@ async fn upload(
         &*state.projects,
         &*state.assets,
         &*state.store,
+        crate::routes::auth(&state).account_id,
         project,
         bytes,
         filename,

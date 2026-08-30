@@ -18,7 +18,7 @@ pub mod templates;
 
 mod helpers;
 
-pub use helpers::{actor_from, design_id, parse_id, project_id};
+pub use helpers::{actor_from, auth, design_id, parse_id, project_id};
 pub use meta::Status;
 
 /// Malformed request bodies must answer in the shape of plan section 32 too.

@@ -40,3 +40,11 @@ typed_id!(BrandId);
 typed_id!(AssetRequestId);
 typed_id!(ExportId);
 typed_id!(TemplateId);
+
+// Plan section 107. `AuthUserId` is the identity provider's subject rather than
+// anything Forma mints, but it is still an id and must not be an interchangeable
+// string: confusing it with an `AccountId` is how a tenancy check reads the
+// wrong column and passes.
+typed_id!(AccountId);
+typed_id!(AuthUserId);
+typed_id!(ApiKeyId);
