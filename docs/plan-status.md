@@ -29,6 +29,7 @@ passes" is not enough — Phase 6's acceptance passed with two panels missing.
 | 9 — Agent skill | 15 | Complete. |
 | 10 — Hardening | 9 | Complete. |
 | 11 — Remote deploy | 9 | Complete. Deployed and accepted: `smoke-remote.py` reports 15/15 against `https://forma.hintly.online`. See item 9 below and [deploy/status.md](deploy/status.md). |
+| 11.5 — Hosted identity | — | Not started. Specified in plan §105–§117, added after Phase 11 by amendment. Two slices; the account boundary needs no provider. |
 | 12 — Supabase adapter | 5 | Not started. The plan marks it optional and only after 11. |
 
 ## Open, with the section that asks for it
@@ -162,7 +163,40 @@ that lets it in. Nothing enters this list because it would be interesting.
    401 to a visitor rather than serving an app whose every call then fails. The
    SPA has nowhere to hold a token. §57 calls this "first remote testing" and the
    phase's acceptance is the agent half, which is what this delivers.
-10. **Phase 12, Supabase** — optional, and only after 9 works.
+10. **Phase 11.5, hosted identity and agent distribution** — specified in
+    **plan §105 to §117**, the first amendment the plan has taken. It moves the
+    boundary from a deployment-wide secret to hosted identity plus account
+    scoping, which is what Phase 11 deliberately stopped short of.
+
+    §2.2 excluded OAuth; §105 records the change with the §100 criterion that
+    admits it — *(5) it enables a concrete integration* — and the measurement
+    behind it: **ChatGPT accepts OAuth or nothing**, with no manual bearer
+    header, so for that host OAuth is not preferred but required. Supabase stays
+    excluded as a *mandatory* dependency and is introduced for identity only,
+    behind `FORMA_AUTH_MODE`.
+
+    **It ships in two slices, and the order is the point.** The account boundary
+    — accounts, `AccountId` on every scoped repository method, the table rebuild,
+    the isolation tests — needs no Supabase, no JWT and no OAuth, and runs under
+    `FORMA_AUTH_MODE=local`. That is also where all the security risk is: 36
+    repository methods and the question of whether one person's work can reach
+    another's. Everything the identity half rests on was in beta or formally
+    deprecated on the reference date. Build the boundary first; plug identity
+    into a boundary that is already proven.
+
+    Written against the code rather than the plan, in
+    [phase-11.5-review.md](phase-11.5-review.md), which is the working paper
+    behind §105–§117 and keeps the reasoning that the plan states as decisions.
+    Three findings sit *below* identity and land in slice 1: the bind guard stops
+    meaning anything once `FORMA_REMOTE_TOKEN` is retired (§109.1), `forma-mcp`
+    holds one credential for its whole lifetime (§109.2), and the error envelope
+    has no 403 at all (§109.3). A fourth was measured rather than reasoned:
+    `/login`, `/oauth/consent` and `/agents` all **404 today**, so the OAuth flow
+    would fail at the moment the provider hands the person back (§110.3).
+
+11. **Phase 12, Supabase** — optional. Behind 10 rather than ahead of it: it
+    unblocks nothing currently blocked, and is a persistence adapter for a scale
+    problem this deployment does not have.
 
 **Deliberately not on this list: editorial style modes in the skill.** It is the
 intervention type with the worst measured record here — the scrim rule was

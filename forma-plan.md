@@ -89,7 +89,7 @@ V1 will **not** include:
 - publishing to Instagram;
 - social calendar;
 - real-time multi-user collaboration;
-- OAuth;
+- OAuth — **amended by §105**: in scope from Phase 11.5, for hosted deployments only;
 - payments;
 - WASM;
 - Yew;
@@ -101,7 +101,9 @@ V1 will **not** include:
 - pixel editing;
 - 3D composition;
 - automatic template generation;
-- mandatory integration with Supabase.
+- mandatory integration with Supabase — this exclusion **stands**. Phase 11.5
+  introduces Supabase for hosted identity only, behind `FORMA_AUTH_MODE`, and
+  local Forma must never require it.
 
 These exclusions are intentional, to keep V1 finishable and to leave clean extension points.
 
@@ -4242,3 +4244,1118 @@ It must be creating a **Phase 0 implementation brief** and executing the blockin
 ```
 
 When those nine points work together, the main architecture stops being hypothetical and product implementation can begin.
+
+---
+
+# 105. Amendment: OAuth enters scope for hosted deployments
+
+**Technical reference date:** August 30, 2026.
+
+§2.2 excluded OAuth from V1. That exclusion was correct for a runtime one person
+runs on their own machine, and it stops being correct the moment the deployment
+is meant to be reached by an agent belonging to a named person.
+
+The §100 criterion admitting it is **(5) it enables a concrete integration**:
+Claude custom connectors, and ChatGPT MCP apps, complete a standards-based OAuth
+flow against a remote MCP URL. Verified on the reference date: ChatGPT's
+documented MCP authentication options are **OAuth or none** — it accepts no
+manual bearer header — so for that host OAuth is not the preferred route, it is
+the only one.
+
+Criterion **(1) it unblocks the main workflow** applies as well. Phase 11 left
+the browser editor unusable remotely, deliberately and with the reason recorded:
+the deployment-wide bearer protected the whole origin and the SPA had nowhere to
+hold a credential.
+
+What this amendment does **not** change:
+
+- Supabase remains excluded as a mandatory dependency. It is introduced for
+  identity only, behind `FORMA_AUTH_MODE`, and local Forma must run without it.
+- Phase 12 remains the optional persistence adapter phase. Application data stays
+  in SQLite and the local filesystem.
+- Forma still integrates no LLM provider.
+
+Sections 106 to 117 specify the phase. They are an addition; no earlier section
+is rewritten.
+
+---
+
+# 106. Phase 11.5 — hosted identity and agent distribution
+
+## 106.1 Purpose
+
+The boundary moves from **deployment-wide secret** to **hosted user identity plus
+account-scoped authorization**.
+
+A person must be able to:
+
+```text
+1. open the hosted Forma editor
+2. sign in
+3. see only their own projects, assets and designs
+4. connect a supported agent with the public MCP URL and that
+   provider's normal OAuth flow
+5. use a manual token only where the host cannot do OAuth
+6. revoke one agent without rotating credentials for the rest
+7. and local Forma keeps working with no Supabase at all
+```
+
+```text
+person
+  |
+  v
+https://forma.hintly.online
+  |
+  | sign in
+  v
+Forma account
+  |
+  +---------------------------+
+  |                           |
+  | Connect Claude            | Developer / CLI
+  | URL only, OAuth           | API key, bearer PAT
+  v                           v
+Claude / remote host      Codex CLI / Claude Code / Gemini CLI
+          \                   /
+           +--------+--------+
+                    |
+                    v
+         https://forma.hintly.online/mcp
+                    |
+                    v
+             account-scoped Forma
+```
+
+## 106.2 Decisions frozen here
+
+**Identity provider.** Supabase Auth, for human identity and as the upstream
+OAuth 2.1 Authorization Server. Forma implements no password database, no
+password reset, no authorization-code issuer, no refresh-token issuer, no client
+registry, no OIDC discovery and no JWKS signing.
+
+**Application data.** Unchanged: SQLite plus the local filesystem. This phase
+moves no design, asset or brand data anywhere.
+
+**Browser authentication.** The normal Supabase browser session. React obtains a
+Supabase access token and sends `Authorization: Bearer <token>` to
+`/api/v1/*`; Forma validates the JWT locally through JWKS. There is no Forma
+password, no deployment token in the SPA, and **no second Forma session cookie
+layered on top of the Supabase session**.
+
+**Remote MCP authentication.** Two credential types: a Supabase OAuth access
+token, or a Forma personal access token. OAuth is the consumer path; the PAT is
+for CLI and automation hosts.
+
+**Deployment mode.**
+
+```text
+FORMA_AUTH_MODE=local      local-first, no Internet identity
+FORMA_AUTH_MODE=supabase   hosted accounts, browser auth, OAuth MCP, PATs
+```
+
+## 106.3 Provider maturity, recorded
+
+Supabase's OAuth 2.1 server was **in beta** on the reference date, and free to
+use during the beta period across all plans. The resource-server boundary
+specified below is standard OAuth and survives a provider change, but the phase
+rests on a beta feature with undefined future pricing and that is a known,
+accepted risk rather than an oversight.
+
+MCP `2026-07-28` deprecates Dynamic Client Registration in favour of Client ID
+Metadata Documents — "DCR continues to work for backward compatibility, but will
+be removed in a future version" — and its stateless protocol core removes the
+`initialize`/`initialized` handshake and the `Mcp-Session-Id` header that
+`forma-mcp` uses today. Forma implements no client-registration endpoint of its
+own; DCR is enabled in Supabase for present interoperability and that assumption
+stays isolated to auth configuration. **The transport migration and the CIMD
+migration age together**; whoever does one should expect the other on the same
+trip. Neither blocks this phase.
+
+---
+
+# 107. Account model
+
+## 107.1 Types and tables
+
+```rust
+AccountId(Uuid)
+AuthUserId(Uuid)
+ApiKeyId(Uuid)
+```
+
+```text
+Account
+  |
+  +-- AccountMembership
+  |      user_id
+  |      email
+  |      role
+  |
+  +-- Project
+         |
+         +-- Brand
+         +-- Assets
+         +-- Designs
+         +-- Templates
+         +-- AssetRequests
+```
+
+```sql
+accounts
+--------
+id
+name
+legacy              -- the pre-accounts deployment, claimable once
+claimed_at
+created_at
+updated_at
+
+account_memberships
+-------------------
+account_id
+user_id             -- authoritative: the Supabase subject
+email               -- descriptive only, never used to authorize
+role
+created_at
+
+account_invites
+---------------
+email               PRIMARY KEY
+created_at
+claimed_at
+claimed_by_user_id
+
+api_keys
+--------
+id
+account_id
+created_by_user_id
+name
+token_prefix
+token_hash
+created_at
+last_used_at
+revoked_at
+```
+
+`projects.account_id` becomes `NOT NULL`.
+
+`account_id` is **not** duplicated onto assets, designs, templates, brand kits or
+asset requests. Each already carries `project_id ... REFERENCES projects (id) ON
+DELETE CASCADE`, so ownership is one hop away and is recorded in exactly one
+place. A second copy is a second thing that can disagree, and disagreement about
+who owns a row is the failure this phase exists to prevent.
+
+The cost is a JOIN on scoped reads. That is the right price.
+
+`email` on a membership exists so a human reading the table after the identity
+provider is gone can tell whose row is whose, and so §113.3's recovery command
+can rebind an account to a fresh subject. It authorizes nothing.
+
+## 107.2 One user, one account
+
+For this phase: one authenticated user resolves to one active account. No account
+switcher, no invitations UI, no organization management, no team membership.
+
+`account_memberships` exists rather than an `owner_user_id` column on `accounts`
+so team membership can arrive later without changing how a Project is owned.
+
+## 107.3 Who is allowed in
+
+**Signing in is not the gate. Owning an account is.**
+
+A stranger who completes Supabase sign-up holds an identity and reaches nothing:
+no project, no asset, no render, no tool. Open registration at the identity
+provider is therefore not a data risk, and Supabase's signup setting is not where
+this is decided.
+
+The gate is account creation, and it requires an unclaimed invite matching the
+authenticated user's verified email. Invites are minted on the machine:
+
+```text
+forma-server invite <email>
+```
+
+Everyone else receives `ACCOUNT_REQUIRED`, worded as a state and not a failure:
+*this Forma is invite-only*.
+
+**The gate lives in Forma, not in the provider**, because Forma owns membership
+and a client never mints server-owned identity — the same reason
+`PUT /projects/:id/brand` takes a `BrandKitDraft`. Supabase's own documentation
+warns that Dynamic Client Registration allows unrestricted registration; the
+invite gate is what makes that acceptable.
+
+**Per-account quotas are deliberately out of this phase.** With an invite gate,
+everyone who can consume the disk was invited by name. `DEFAULT_MAX_UPLOAD_BYTES`
+still caps a single upload. §100 says a quota system waits for evidence it is
+needed; revisit when an account exists that the operator did not personally
+invite.
+
+---
+
+# 108. The client never chooses its account
+
+`account_id` is a security boundary, not an input field. It must never be
+accepted from a REST body, a query parameter, an MCP tool schema or an agent
+prompt.
+
+Every authenticated request resolves:
+
+```rust
+AuthContext {
+    account_id: AccountId,
+    user_id: Option<AuthUserId>,
+    auth_kind: AuthKind,
+    client_id: Option<String>,
+    api_key_id: Option<ApiKeyId>,
+}
+```
+
+```rust
+enum AuthKind {
+    Local,
+    BrowserUser,
+    McpOAuth,
+    McpPat,
+}
+```
+
+`get_project(project_id)` means:
+
+```sql
+SELECT ... FROM projects WHERE id = ? AND account_id = current_account;
+```
+
+It never means `get_project(account_id_from_client, project_id)`.
+
+MCP tool schemas do not gain `account_id`. Existing project, design and asset ids
+remain the handles exposed to agents.
+
+## 108.1 The scope is carried by the type system
+
+Auditing 36 repository methods across 7 traits is not a mechanism; it is hoping.
+
+> Every repository method that reads or writes project-owned state takes an
+> `AccountId` as a parameter — not an `Option<AccountId>`, not a field on a
+> context struct a caller may forget to populate.
+
+A method that omits the scope does not compile. This is the same device as
+*repositories stamp their own `created_at`*: the type carries the invariant so no
+call site can be careless. It is also what satisfies the requirement that the
+scope live below the HTTP handler — after this there is no unscoped method left
+to call from anywhere.
+
+The object store is the one exception. It addresses bytes by hash, knows nothing
+about projects, and is reachable only through an asset row that is already
+scoped.
+
+## 108.2 Cross-account access is not found — unconditionally
+
+Every scoped read filters by `account_id`, and a miss returns
+`PROJECT_NOT_FOUND` / `DESIGN_NOT_FOUND` — the identical code, message and status
+as an id that was never issued. There is no branch that can tell them apart,
+because after §108.1 there is no unscoped read to compare against.
+
+**Never `403` for an object in another account.** A `403` is an admission that
+the id exists. `403` appears exactly once in this phase, for `ACCOUNT_REQUIRED`:
+a valid identity with no membership at all, which leaks nothing about any object.
+
+Do not rely on UUID secrecy as a substitute for the filter.
+
+---
+
+# 109. Prerequisites that sit below identity
+
+These three are consequences of the existing code. They are not identity work,
+they belong to the first execution slice of §117, and each is a way the phase
+fails silently if it is skipped.
+
+## 109.1 The bind guard stops meaning anything
+
+`Config::binding_is_safe` refuses to start when the bind address is not loopback
+and no `FORMA_REMOTE_TOKEN` is set. It rests on a premise: *loopback means only
+this machine can reach it.*
+
+The deployment binds `127.0.0.1:4765` with Caddy in front. **That premise has
+been false since Caddy went in front of it** — the internet reaches loopback
+through the proxy. It is masked only because a token happens to be set, so the
+guard returns on its first line and its reasoning is never reached.
+
+§113.3 retires that token. At that moment the guard sees loopback and approves,
+`require_bearer` treats *no token configured* as its **pass-through** case — which
+is correct today, because no token means local — and a hosted deployment with
+`FORMA_AUTH_MODE` unset or `FORMA_SUPABASE_JWKS_URL` missing starts cleanly and
+serves the whole API unauthenticated, with nothing in any log saying so.
+
+Both halves change together:
+
+1. `binding_is_safe` becomes a function of the auth mode. In `supabase` mode it
+   requires the Supabase issuer and JWKS configuration and refuses without them.
+   The existing check stays for `local`.
+2. `require_bearer`'s open case is gated on `FORMA_AUTH_MODE=local`, not on the
+   absence of a token. **"No credential configured" must stop being a synonym for
+   "no credential required."**
+
+This is the same class of failure §70 exists to prevent, arriving by the opposite
+route: not a public bind with no token, but a loopback bind the world can reach.
+
+## 109.2 `forma-mcp` holds one credential for its lifetime
+
+`ServerClient::new(base_url).with_token(token)` is constructed once from the
+process environment, and the HTTP session factory clones the same constant for
+every session. That is right for one deployment with one credential.
+
+After this phase every inbound MCP request carries a **different person's**
+identity. A process-wide credential cannot express that. From the outside
+`forma-mcp` is a resource server; internally it is also a client, and both halves
+change:
+
+- inbound: validate the OAuth JWT or the PAT and resolve an `AuthContext`;
+- outbound: forward that identity **per request**, so `forma-server` scopes on the
+  caller and not on the proxy.
+
+The form that preserves *`forma-mcp` must never open SQLite; a single mutation
+path keeps versioning and validation in one authority* is for `forma-mcp` to pass
+the caller's credential through and for `forma-server` to verify it once for both
+entry points. Two verifiers can disagree about who someone is.
+
+## 109.3 The error envelope has no 403
+
+`ApiError` offers `bad_request`, `unauthorized`, `payload_too_large` and
+`internal`, and the code-to-status map contains no `FORBIDDEN` at all.
+`403 ACCOUNT_REQUIRED` is the one status this phase genuinely needs and the
+codebase has never had. Add the constructor and the mapping.
+
+Without it an implementer reaches for `unauthorized`, and a caller cannot tell
+*your credential is bad* from *your credential is fine and you have no
+workspace*. Those require different actions from the person reading them.
+
+---
+
+# 110. The hosted browser
+
+## 110.1 The security boundary
+
+The React bundle is public. The data is not.
+
+```text
+PUBLIC
+GET /
+GET /assets/*
+GET /favicon*
+GET /login
+GET /oauth/consent
+GET /agents
+GET /skill
+
+PROTECTED HUMAN API
+/api/v1/*
+
+PROTECTED AGENT API
+/mcp
+```
+
+Serving `index.html`, JavaScript, CSS and public brand assets without
+authentication is intentional; the shell is what a visitor with no credential is
+*for*. No secret may be embedded in those files.
+
+This replaces Phase 11's assertion that the origin refuses without a credential:
+
+```text
+GET /                      -> 200
+GET /assets/<bundle>.js    -> 200
+GET /api/v1/projects       -> 401 without user auth
+POST /api/v1/designs       -> 401 without user auth
+POST /mcp                  -> 401 without MCP auth
+```
+
+The frontend may contain the Supabase project URL and the publishable key. It
+must never contain a `service_role` key, `FORMA_REMOTE_TOKEN`, a PAT, an OAuth
+client secret, or database credentials.
+
+## 110.2 Sign-in
+
+The minimum hosted method is Supabase email magic-link / OTP. Additional
+providers may be enabled without changing this architecture and are not required
+to close the phase. Configure a real mail provider before treating email auth as
+production-ready.
+
+```text
+no session      -> render login / onboarding
+valid session   -> Authorization: Bearer <token> on /api/v1/*
+401 from REST   -> refresh the Supabase session;
+                   if none remains, return to login
+```
+
+## 110.3 Routing — three required routes that 404 today
+
+The phase requires `/login`, `/oauth/consent` and `/agents`. Supabase redirects
+the user to `https://<domain>/oauth/consent?authorization_id=<id>`.
+
+`App.tsx` states it plainly — *"Two views, no router"* — and the static service is
+mounted with `index_file` and **no `default_handler`**. `index_file` answers a
+directory request only. Measured against the built app:
+
+```text
+GET /                -> 200
+GET /oauth/consent   -> 404
+GET /login           -> 404
+GET /agents          -> 404
+```
+
+So the OAuth flow does not fail at the token exchange or a signature check. It
+fails when Supabase hands the person back and Forma answers 404 — a step that
+only appears when a real provider drives a real browser, which is the most
+expensive place in this phase to discover anything.
+
+Two changes, neither optional:
+
+- a `default_handler` on the static service returning `index.html` for any
+  non-`/api/` path that is not a file;
+- a router in the SPA. V1 deliberately went without one and `App.tsx` anticipated
+  this exact moment: *"it becomes worth adding when a URL has to be shareable,
+  which is a Phase 11 concern."*
+
+## 110.4 Content Security Policy
+
+Browser bearer tokens make XSS credential theft, so the hosted editor carries a
+strict CSP. It is nearly free: the editor's fonts are self-hosted woff2, there is
+no CDN and no Google Fonts link, and there is no `fetch` to any absolute URL
+anywhere in the frontend. Supabase adds exactly one origin, to `connect-src`.
+
+```text
+default-src    'self';
+script-src     'self';
+style-src      'self';
+style-src-attr 'unsafe-inline';
+img-src        'self' data: blob:;
+font-src       'self';
+connect-src    'self' https://<project-ref>.supabase.co;
+frame-ancestors 'none';
+base-uri       'none';
+object-src     'none';
+```
+
+`style-src-attr 'unsafe-inline'` is required and is not a loophole: React writes
+inline `style` attributes and attribute styles cannot execute script.
+`img-src data:` is required because the renderer embeds asset bytes as data URIs.
+
+**Set it in `forma-server`, not in Caddy.** A header present only in the hosted
+deployment is a header no test ever sees; one served by the binary is exercised
+by the Playwright walkthrough on every run.
+
+**The one injection point, named.** The editor writes the renderer's SVG with
+`dangerouslySetInnerHTML`. That SVG is produced by our own renderer from the
+document, and uploaded SVG assets are sanitized by re-serializing through usvg —
+a whitelist by construction, which drops scripts and handlers because usvg never
+understood them rather than because a filter matched them. The CSP here is
+defence in depth over a boundary that is already sound. It stays required: after
+this phase, what sits behind that boundary is a credential.
+
+---
+
+# 111. Forma as an OAuth resource server
+
+## 111.1 Supabase configuration
+
+Enable the OAuth 2.1 Authorization Server with an **asymmetric** signing key
+(RS256 or ES256). This is required, not preferred: asymmetric signing is
+mandatory whenever the `openid` scope is requested, which the consent flow does.
+
+```text
+Site URL:            https://forma.hintly.online
+Authorization Path:  /oauth/consent
+```
+
+Supabase provides `/oauth/authorize`, `/oauth/token`, authorization-server and
+OIDC discovery, JWKS, authorization-code with PKCE, and refresh tokens. Enable
+Dynamic Client Registration for current MCP-client compatibility, subject to
+§107.3.
+
+## 111.2 Protected Resource Metadata
+
+Canonical protected resource:
+
+```text
+https://forma.hintly.online/mcp
+```
+
+```text
+GET /.well-known/oauth-protected-resource/mcp
+```
+
+```json
+{
+  "resource": "https://forma.hintly.online/mcp",
+  "authorization_servers": [
+    "https://<project-ref>.supabase.co/auth/v1"
+  ],
+  "bearer_methods_supported": ["header"]
+}
+```
+
+A root alias at `/.well-known/oauth-protected-resource` is permitted for client
+interoperability; the canonical resource identifier stays `/mcp`.
+
+An unauthenticated `/mcp` request answers HTTP `401` — **not** an MCP tool-level
+error, because provider discovery depends on that distinction — with:
+
+```http
+WWW-Authenticate: Bearer resource_metadata="https://forma.hintly.online/.well-known/oauth-protected-resource/mcp"
+```
+
+```text
+POST /mcp -> 401 + WWW-Authenticate
+   -> Protected Resource Metadata
+   -> Supabase authorization-server metadata
+   -> client registration / metadata
+   -> PKCE authorization
+   -> Forma consent UI
+   -> Supabase token exchange
+   -> POST /mcp with Bearer <oauth-token>
+```
+
+## 111.3 The consent screen
+
+Supabase redirects to `/oauth/consent?authorization_id=<id>`. The page preserves
+the id, requires a valid session, returns to the same URL after login if needed,
+calls `supabase.auth.oauth.getAuthorizationDetails(authorization_id)`, shows the
+requesting client and the requested scopes, offers Allow and Deny, calls
+`approveAuthorization` or `denyAuthorization`, and redirects to the exact
+`redirect_url` Supabase returns.
+
+**The consent screen must not imply that Supabase's scopes are Forma
+permissions.** Supabase supports `openid`, `email`, `profile` and `phone` for
+this flow; those govern identity data, not access to Forma projects.
+Forma-specific authorization is the account boundary. An authorized connection
+receives the existing MCP tool surface for that account, and the screen says so
+plainly:
+
+```text
+Claude wants to use Forma.
+
+This connection can use Forma's agent tools on projects in your account,
+including reading branding and assets and creating or editing designs,
+previews and exports.
+
+It cannot access projects belonging to another Forma account.
+
+[ Deny ]  [ Allow ]
+```
+
+Do not present fine-grained read/write scope control until Forma implements it.
+
+## 111.4 Token validation
+
+Forma validates Supabase JWTs **locally** through JWKS. Do not call Supabase per
+request to ask whether a token is valid. Verification covers: signature against
+JWKS, an approved asymmetric algorithm, issuer, expiry, not-before when present,
+subject, and audience. Keys are cached and refreshed on normal JWKS semantics.
+
+For an MCP access token, require the `client_id` claim — Supabase populates it for
+OAuth clients and leaves it null for direct user sessions, which is exactly the
+distinction §112 rests on — and map:
+
+```text
+sub        -> AuthUserId
+client_id  -> external agent client identity
+```
+
+then resolve `AuthUserId -> AccountMembership -> AccountId`. No membership means a
+valid Supabase user who is not an authorized Forma account: reject.
+
+**Audience.** Configure a Custom Access Token Hook so MCP tokens carry an
+audience for the Forma MCP resource, following Supabase's own MCP example of a
+per-client audience:
+
+```text
+https://forma.hintly.online/mcp/{client_id}
+```
+
+Validate the prefix and accept the client suffix. The per-client form gives finer
+revocation and carries the approved-agent gate in the hook itself. Browser
+sessions keep Supabase's normal authenticated-user audience.
+
+**Do not accept an arbitrary Supabase access token at `/mcp` because its
+signature is valid.** Without the audience check, any user's browser token from
+the same project would be a universal MCP credential.
+
+---
+
+# 112. Credentials, and what each one opens
+
+```text
+/api/v1/*
+    accepts: Supabase browser user session JWT
+    rejects: a Forma PAT
+
+/mcp
+    accepts: Supabase OAuth MCP JWT, or a Forma PAT
+    rejects: unauthenticated calls
+```
+
+A browser's Supabase token does not become an MCP credential merely because it
+exists in the same browser. `/mcp` requires its own OAuth client identity or a
+PAT. This keeps browser authorization, agent authorization and revocation
+separate.
+
+## 112.1 Personal access tokens
+
+OAuth is preferred where the host supports it. It does not everywhere, and the
+PAT is the compatibility path for CLI and automation hosts — Codex CLI, Claude
+Code, Gemini CLI.
+
+**It is not a fallback for ChatGPT.** ChatGPT accepts OAuth or nothing, so there
+is no manual-header path there at all.
+
+```text
+forma_pat_<random-high-entropy-secret>
+```
+
+At least 32 random bytes before encoding. Stored: id, account, creator, name,
+safe prefix, hash, timestamps, revocation state — never the token. Shown exactly
+once. Because the secret is high entropy a SHA-256 hash is sufficient; compare
+safely and never log a presented token.
+
+A revoked PAT fails on the next MCP request. Revoking one PAT must not disconnect
+browser sessions, OAuth-connected agents, or other PATs.
+
+## 112.2 OAuth grants
+
+The Agents page lists the OAuth applications the current user has authorized, via
+`supabase.auth.oauth.getUserGrants()`, showing client name, a safe identifier and
+timestamps. Revocation uses `supabase.auth.oauth.revokeGrant(clientId)`.
+
+**Revocation is immediate**, not eventual: Supabase marks the consent revoked,
+deletes active sessions for that client and invalidates its refresh tokens at
+once. Re-use requires a new authorization.
+
+Do not invent a second grant database in Forma, and do not confuse grant
+revocation with PAT revocation. They are separate credential systems.
+
+---
+
+# 113. Migration of the existing deployment
+
+## 113.1 The legacy account
+
+The deployed database holds projects created before accounts existed. **They must
+not be assigned to the first person who signs up.**
+
+```text
+1. create one account row marked legacy
+2. assign every existing Project to it
+3. create no membership for it automatically
+4. keep FORMA_REMOTE_TOKEN as a one-time bootstrap claim credential
+5. a signed-in user claims it through POST /api/v1/bootstrap/claim,
+   which requires a valid Supabase session AND that token
+6. on success: create the owner membership, mark it claimed,
+   reject every later claim, and stop accepting FORMA_REMOTE_TOKEN
+   as general REST or MCP authentication
+```
+
+The old token becomes a migration secret, not the new long-term credential.
+
+A user who owns no account may create a personal one instead, subject to the
+invite gate of §107.3. The onboarding UI states the difference, and offers the
+claim only while an unclaimed legacy account exists:
+
+```text
+No Forma account yet
+[ Create my account ]
+
+Existing deployment?
+[ Claim existing workspace ]
+```
+
+## 113.2 The schema migration is a table rebuild
+
+SQLite has no `ALTER COLUMN`. `projects` is populated on the deployed machine, so
+adding a `NOT NULL` column is the documented create-copy-drop-rename procedure,
+in this order, in one migration file:
+
+```text
+1. create accounts, account_memberships, account_invites, api_keys
+2. insert the legacy account row
+3. ALTER TABLE projects ADD COLUMN account_id TEXT REFERENCES accounts (id)
+   -- nullable
+4. backfill every existing project to the legacy account
+5. rebuild projects with account_id TEXT NOT NULL, keeping the table name
+   so existing ON DELETE CASCADE references from templates, designs and
+   assets continue to resolve
+6. recreate idx_projects_updated_at
+```
+
+A `NOT NULL` constraint never meets a row that has not been backfilled.
+
+## 113.3 Losing the identity provider must not lose the workspace
+
+`account_memberships.user_id` points at a subject living in another system. The
+claim is one-time and then the old token stops being accepted. If the Supabase
+project is deleted, rotated to a new ref, or migrated, every membership points at
+a subject that no longer resolves and **there is no way back into data that is
+sitting intact in `forma.db` on a disk the operator owns**.
+
+The hardening that makes the claim safe is also what makes that failure
+permanent. So:
+
+```text
+forma-server grant-owner <email>
+```
+
+attaches an owner membership on the machine. Shell access is the security
+boundary, exactly as it is for `forma-server backup` — a procedure that already
+exists in this shape and needs no new trust. With the `email` column of §107.1 it
+rebinds an account to a fresh subject from a new Supabase project.
+
+Recovery is: point `FORMA_SUPABASE_*` at the new project, sign in, run
+`grant-owner`.
+
+---
+
+# 114. Configuration and routing
+
+## 114.1 Configuration
+
+```text
+FORMA_AUTH_MODE=supabase
+
+FORMA_SUPABASE_URL=https://<project-ref>.supabase.co
+FORMA_SUPABASE_ISSUER=https://<project-ref>.supabase.co/auth/v1
+FORMA_SUPABASE_JWKS_URL=https://<project-ref>.supabase.co/auth/v1/.well-known/jwks.json
+
+FORMA_MCP_RESOURCE_URL=https://forma.hintly.online/mcp
+
+VITE_SUPABASE_URL=https://<project-ref>.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=<publishable-key>
+```
+
+The publishable key belongs in the browser. No `service_role` key is required to
+validate user JWTs or to use the user-facing OAuth consent APIs; if a future
+server-side admin operation needs one, add it for that operation alone and never
+expose it to the SPA.
+
+`FORMA_REMOTE_TOKEN` is retained only long enough to claim the legacy account,
+then removed as a general authentication mechanism — subject to §109.1, which
+must land first or its removal opens the deployment.
+
+## 114.2 Caddy
+
+```text
+https://forma.hintly.online/                                  -> forma-server :4765
+https://forma.hintly.online/api/v1/*                          -> forma-server :4765
+https://forma.hintly.online/mcp                               -> forma-mcp    :4766
+https://forma.hintly.online/.well-known/oauth-protected-resource*
+                                                              -> forma-mcp    :4766
+```
+
+**The well-known path needs its own `handle` block, without `strip_prefix`.** The
+existing MCP block matches `/mcp*` and strips that prefix;
+`/.well-known/oauth-protected-resource/mcp` does not match it, falls through to
+`forma-server`, and 404s exactly as §110.3 measures. Discovery would fail with no
+error anyone reads.
+
+rmcp's allowed-host validation stays enabled. Adding Supabase must never lead to
+`disable_allowed_hosts()` or an allow-all policy — an empty list means allow
+everything. TLS remains mandatory.
+
+---
+
+# 115. Error semantics
+
+```text
+AUTH_REQUIRED  -- do not add; UNAUTHORIZED already means this
+INVALID_TOKEN
+ACCOUNT_REQUIRED
+LEGACY_ACCOUNT_ALREADY_CLAIMED
+INVALID_BOOTSTRAP_TOKEN
+API_KEY_REVOKED
+```
+
+```text
+missing or invalid credential       -> 401
+valid identity, no Forma account    -> 403 ACCOUNT_REQUIRED
+object outside the current account  -> the same not-found as an unknown id
+```
+
+Two codes for one condition is how a stable contract rots; `UNAUTHORIZED` already
+covers a missing or bad credential and `AUTH_REQUIRED` must not be added beside
+it. The rest slot into the existing envelope of §32 with no structural change,
+plus the `FORBIDDEN` mapping of §109.3.
+
+For `/mcp`, a missing or invalid credential is an HTTP authorization failure and
+never an MCP tool result.
+
+---
+
+# 116. Tests
+
+## 116.1 Unit
+
+JWT verification: valid, expired, not-yet-valid, wrong issuer, wrong audience,
+wrong algorithm, missing subject, missing `client_id` on the MCP OAuth path, JWKS
+rotation and cache behaviour.
+
+PAT: create, hash-only storage, authenticate, `last_used` update, revoke, revoked
+rejected, two keys independent.
+
+Account resolution: user with membership, user without, PAT account, legacy claim,
+second claim rejected, invite required, invite consumed once.
+
+## 116.2 Tenant isolation — mandatory
+
+Two accounts, each with a project, brand, asset, design, template and asset
+request. For **every** externally reachable read and write:
+
+```text
+A can access A
+B can access B
+A cannot read B by known id
+A cannot mutate B by known id
+B cannot read A by known id
+B cannot mutate A by known id
+```
+
+Do not rely on random UUID secrecy.
+
+## 116.3 Browser end-to-end
+
+Playwright, against a real server: open `/` unauthenticated, log in, resolve the
+account, create a project, configure a Brand Kit, upload an asset, create and
+open a design, edit, export, log out, and confirm the protected API is no longer
+usable. A second user must not see the first user's projects. The consent page's
+own behaviour — details rendered, approve, deny, redirect to the exact
+`redirect_url` — belongs here too: it is our page.
+
+## 116.4 The OAuth protocol flow is a script, not a CI test
+
+Every test in this repository runs against a temporary SQLite and a locally built
+binary. CI has no deployment, no domain and no certificate. Calling the OAuth
+flow a CI test would produce a test skipped on every run, which is worse than a
+script someone executes.
+
+Its home is `scripts/smoke-remote.py`, or beside it: run from off the machine
+against the real domain, reporting pass and fail counts, with the result recorded
+in `docs/deploy/status.md` under *verified here*. It must observe the
+unauthenticated `401`, the `WWW-Authenticate` challenge, Protected Resource
+Metadata, authorization-server discovery, registration, PKCE, the code exchange,
+`tools/list`, a tool call reaching only that account, refresh, and a revoked grant
+failing to reconnect. An in-process MCP client cannot prove the `401 -> discovery`
+path.
+
+The magic link is avoided with a Supabase test user holding a password. That is a
+fixture, not a weakening of production auth.
+
+## 116.5 The provider smoke tests are manual, by rule
+
+From a normal Claude custom connector UI: add the MCP URL, complete OAuth, list
+projects, create and render a test design, **with no manual bearer configured**.
+Then the same for ChatGPT where the account surface exposes it; if it does not,
+record a provider availability limitation and do not fabricate a workaround that
+changes Forma's auth model.
+
+**These are not automated, and not for pragmatic reasons: §2.2 forbids driving
+external AI services with Playwright, and §67 confines it to testing our own
+app.** They are written procedures, executed by a person, recorded in
+`docs/deploy/status.md`.
+
+## 116.6 PAT live smoke
+
+Create one PAT in the browser, use it from an external CLI host against the real
+`/mcp`, revoke it, and confirm that host fails afterwards while the browser
+session and the OAuth connector keep working.
+
+---
+
+# 117. Execution, acceptance and non-goals
+
+## 117.1 Two slices, in this order
+
+**The account boundary requires no Supabase at all.** Sections 107, 108, 109 and
+113.2 can be built and shipped under `FORMA_AUTH_MODE=local` against a singleton
+account, with no provider, no JWT and no OAuth.
+
+That is also where all the security risk lives: 36 repository methods, 8 use-case
+modules, and the question of whether one person's work can reach another's.
+Everything the identity half depends on was, on the reference date, in beta or
+formally deprecated or both.
+
+```text
+Slice 1 — the boundary, no provider
+  accounts, memberships, invites
+  AccountId on every scoped repository method
+  the projects table rebuild and the legacy account
+  the bind guard and require_bearer gated on auth mode   (109.1)
+  per-request identity in forma-mcp                      (109.2)
+  403 in the error envelope                              (109.3)
+  actor derived from AuthContext                         (117.2)
+  tenant isolation tests                                 (116.2)
+
+Slice 2 — identity and distribution
+  Supabase Auth, JWKS validation, the audience hook
+  the SPA router, default_handler and CSP
+  /login, /oauth/consent, /agents
+  Protected Resource Metadata, the 401 challenge, Caddy
+  PATs, grants, revocation
+  GET /skill
+  the remote OAuth script and the manual provider smokes
+```
+
+Build the boundary first, with its tests. Plug identity into a boundary that is
+already proven.
+
+## 117.2 Actor metadata
+
+Keep the `Human | Agent | System` history of §61, and populate it from
+authenticated context.
+
+```text
+REST browser mutation   actor_type = Human
+                        actor_id   = user:<supabase-sub>
+
+OAuth MCP mutation      actor_type = Agent
+                        actor_id   = oauth:<client_id>:<supabase-sub>
+
+PAT MCP mutation        actor_type = Agent
+                        actor_id   = pat:<api-key-id>
+```
+
+Today the actor comes from an `x-forma-actor` header that any caller can write,
+and `forma-mcp` fills it from the host's own `clientInfo.name`. That is not a
+vulnerability with one credential and one person; with accounts it is a forgeable
+audit trail. The change is small because the helper is already the single choke
+point — no handler reads the header itself. It takes the `AuthContext` and derives
+the actor from it. The host-supplied name may survive as descriptive client
+metadata beside the derived actor, never as its source.
+
+Never log raw JWTs, refresh tokens or PATs.
+
+## 117.3 The hosted skill
+
+```text
+GET /skill
+```
+
+returns the canonical `skills/forma/SKILL.md`, public, containing no account data
+and no credentials. It is a manual fallback for hosts that cannot install a
+package, a canonical URL a person can hand an agent, and one source of truth
+rather than copies drifting per host.
+
+**Compile it in with `include_str!`**, exactly as the existing skill test already
+does. Read from disk it becomes a deploy artifact that can go missing, go stale
+against the binary, or 404 after a partial deploy. Served by `forma-server`, which
+already owns the web origin, so Caddy needs no new route. The existing skill test
+gains one assertion: the bytes the route serves are the bytes it checks. The
+repository symlinks for local discovery are unaffected.
+
+## 117.4 Agent connection UX
+
+```text
+Use Forma with your favourite AI
+
+Claude
+  Connect Forma as a remote connector.
+  MCP URL: https://forma.hintly.online/mcp
+  [ Copy URL ]  [ Instructions ]
+
+ChatGPT / Codex
+  Connect through the provider's MCP app flow.   [ Instructions ]
+
+Developer agents
+  Codex CLI · Claude Code · Gemini CLI
+  [ Create API key ]  [ Manual setup ]
+
+Connected applications      <OAuth grants, with revoke>
+API keys                    <PATs, with revoke>
+```
+
+For an OAuth-capable provider the person needs only the public URL and that
+provider's own "add connector" action. **Do not ask anyone to copy an OAuth access
+token.** For PAT clients, generate host-specific snippets where they are reliable
+and always show the protocol-neutral fallback:
+
+```text
+MCP URL: https://forma.hintly.online/mcp
+Header:  Authorization: Bearer ${FORMA_MCP_TOKEN}
+```
+
+Snippets prefer an environment variable over a secret written into a committed
+config file.
+
+Provider UIs change independently of Forma, so provider-specific setup is a thin
+distribution layer over the stable MCP URL and the resource-server contract. A
+provider's plan limitation or directory approval must never determine Forma's
+internal auth architecture.
+
+## 117.5 Acceptance
+
+```text
+[ ] The hosted SPA loads without a deployment bearer.
+[ ] Unauthenticated REST data access is rejected.
+[ ] Unauthenticated /mcp returns a standards-usable 401 challenge.
+[ ] Supabase Auth login works in the hosted editor.
+[ ] /login, /oauth/consent and /agents resolve rather than 404.
+[ ] Every hosted Project belongs to an Account.
+[ ] Existing deployed Projects are migrated to a claimable legacy Account.
+[ ] The legacy Account is claimable exactly once with the old token.
+[ ] Account creation requires an invite.
+[ ] forma-server grant-owner recovers an account without the provider.
+[ ] A second user cannot reach the first user's data with known ids.
+[ ] The browser can create, edit and export after login.
+[ ] Supabase OAuth 2.1 is enabled with asymmetric signing.
+[ ] /oauth/consent handles authorization_id, approve and deny.
+[ ] Forma publishes Protected Resource Metadata, routed to forma-mcp.
+[ ] OAuth tokens are verified locally through JWKS.
+[ ] MCP tokens are restricted to the Forma MCP resource audience.
+[ ] A real OAuth flow reaches tools/list and tools/call.
+[ ] Refresh-token reconnection works.
+[ ] Grant revocation works, and is immediate.
+[ ] Claude's custom connector succeeds on URL plus OAuth alone.
+[ ] The ChatGPT flow is tested, or its unavailability is documented.
+[ ] PAT creation, one-time display, use and revocation work.
+[ ] Revoking one PAT revokes nothing else.
+[ ] /skill serves the canonical skill.
+[ ] The Agents page offers OAuth before manual token setup.
+[ ] Hosted auth breaks neither local mode nor stdio MCP.
+[ ] binding_is_safe and require_bearer are gated on FORMA_AUTH_MODE.
+[ ] The remote smoke suite tests the public-shell / private-data boundary.
+```
+
+The criterion is not "OAuth works". It is:
+
+> A person can use the hosted editor, connect a mainstream agent through that
+> provider's normal connection flow, let the agent work only inside that person's
+> Forma account, see the result in the editor, and revoke the connection without
+> affecting anyone else.
+
+## 117.6 Security checks before acceptance
+
+No secret in the Vite bundle; no `service_role` key in frontend code; no token or
+auth-header logging; strict same-origin REST; the CSP of §110.4; HTTPS-only hosted
+auth; asymmetric signing; issuer validation; MCP audience validation; account
+scope enforced below the HTTP handlers; constant-time comparison for the bootstrap
+token and PAT hashes; high-entropy PAT generation; PATs shown once; explicit
+consent; revocable grants; rmcp host validation still enabled; cross-account ids
+leaking nothing.
+
+## 117.7 Non-goals
+
+Not in this phase: Supabase PostgreSQL or Storage migration; billing;
+subscriptions; teams; invitations UI; account switching; RBAC beyond the owner
+model; a custom Forma OAuth server; custom OAuth scopes; per-account quotas;
+social publishing; provider marketplace approval as a hard dependency; automatic
+image generation; replacing local stdio MCP; requiring Supabase for local
+installations.
+
+Each requires separate evidence and a separate phase.
+
+## 117.8 Local mode is unchanged
+
+Under `FORMA_AUTH_MODE=local`, Forma uses a singleton Account bootstrapped at
+startup; existing local projects belong to it. Local React and stdio MCP keep the
+trusted-local behaviour they have now. There is no OAuth header on stdio: its
+boundary remains the process that launched it. Hosted-only tables may exist in
+SQLite as long as local startup bootstraps the singleton account automatically.
+
+No local user is ever required to create a Supabase account to run Forma on their
+own machine.
