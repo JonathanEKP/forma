@@ -163,6 +163,7 @@ fn a_public_bind_without_a_token_refuses_to_start() {
         web_dir: "apps/web/dist".into(),
         remote_token: token.map(str::to_string),
         auth_mode: Ok(forma_server::config::AuthMode::Local),
+        supabase_url: None,
         supabase_issuer: None,
         supabase_jwks_url: None,
     };
@@ -200,6 +201,7 @@ fn hosted(issuer: Option<&str>, jwks: Option<&str>) -> Config {
         web_dir: "apps/web/dist".into(),
         remote_token: None,
         auth_mode: Ok(forma_server::config::AuthMode::Supabase),
+        supabase_url: None,
         supabase_issuer: issuer.map(str::to_string),
         supabase_jwks_url: jwks.map(str::to_string),
     }

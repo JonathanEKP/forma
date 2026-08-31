@@ -17,8 +17,36 @@ import { fileURLToPath } from "node:url";
  */
 
 const HERO = fileURLToPath(new URL("../../fixtures/assets/hero.png", import.meta.url));
+const LOCAL_CSP = [
+  "default-src 'self';",
+  "script-src 'self';",
+  "style-src 'self';",
+  "style-src-attr 'unsafe-inline';",
+  "img-src 'self' data: blob:;",
+  "font-src 'self';",
+  "connect-src 'self';",
+  "frame-ancestors 'none';",
+  "base-uri 'none';",
+  "object-src 'none';",
+].join(" ");
+
+function watchForCspViolations(page: Page): string[] {
+  const violations: string[] = [];
+  page.on("console", (message) => {
+    if (
+      message.type() === "error" &&
+      /content security policy|violates the following content security policy directive/i.test(
+        message.text(),
+      )
+    ) {
+      violations.push(message.text());
+    }
+  });
+  return violations;
+}
 
 test("every hosted SPA entry point reaches the application shell", async ({ page }) => {
+  const cspViolations = watchForCspViolations(page);
   for (const [path, heading] of [
     ["/", "Give visual ideas a form."],
     ["/login", "Sign in to Forma"],
@@ -27,8 +55,10 @@ test("every hosted SPA entry point reaches the application shell", async ({ page
   ]) {
     const response = await page.goto(path);
     expect(response?.status(), `${path} did not serve the SPA`).toBe(200);
+    expect(response?.headers()["content-security-policy"]).toBe(LOCAL_CSP);
     await expect(page.getByRole("heading", { name: heading })).toBeVisible();
   }
+  expect(cspViolations, "the application emitted a CSP violation").toEqual([]);
 });
 
 /** Section 79 steps 3 and 4: a project, and the Brand Kit everything assumes. */
@@ -57,6 +87,7 @@ async function createDesign(page: Page, name: string) {
 }
 
 test("a new user gets from an empty Forma to a PNG on disk", async ({ page }) => {
+  const cspViolations = watchForCspViolations(page);
   await createProjectWithBrand(page, "Launch");
 
   // --- step 5: upload a photo ------------------------------------------------
@@ -121,6 +152,7 @@ test("a new user gets from an empty Forma to a PNG on disk", async ({ page }) =>
 
   expect(bytes.length).toBeGreaterThan(1000);
   expect(bytes.subarray(1, 4).toString()).toBe("PNG");
+  expect(cspViolations, "the editor emitted a CSP violation").toEqual([]);
 });
 
 /**

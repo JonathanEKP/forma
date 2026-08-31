@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use actix_web::{dev::fn_service, web, App, HttpServer};
+use actix_web::{dev::fn_service, http::header, middleware::DefaultHeaders, web, App, HttpServer};
 use anyhow::Context;
 use design_core::{AccountRole, AuthUserId};
 use forma_server::{auth, backup, routes, telemetry, AppState, Config};
@@ -219,6 +219,9 @@ async fn main() -> anyhow::Result<()> {
         "forma-server listening"
     );
 
+    let content_security_policy =
+        forma_server::security::content_security_policy(config.supabase_url.as_deref())
+            .map_err(anyhow::Error::msg)?;
     let token = config.remote_token.as_deref().map(auth::RemoteToken::new);
 
     let server = HttpServer::new(move || {
@@ -226,6 +229,10 @@ async fn main() -> anyhow::Result<()> {
             // Auth wraps outside tracing so an unauthorized call is still one
             // logged request, with its own status rather than silence.
             .wrap(actix_web::middleware::from_fn(auth::require_bearer))
+            .wrap(DefaultHeaders::new().add((
+                header::CONTENT_SECURITY_POLICY,
+                content_security_policy.clone(),
+            )))
             .wrap(actix_web::middleware::from_fn(telemetry::trace_request))
             .app_data(web::Data::new(state.clone()));
 

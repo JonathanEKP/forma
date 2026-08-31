@@ -45,6 +45,7 @@ pub struct Config {
     /// the behaviour it has until it opts in.
     pub auth_mode: Result<AuthMode, String>,
     /// Where hosted identity is verified. Required in `supabase` mode.
+    pub supabase_url: Option<String>,
     pub supabase_issuer: Option<String>,
     pub supabase_jwks_url: Option<String>,
 }
@@ -77,6 +78,7 @@ impl Config {
             auth_mode: optional("FORMA_AUTH_MODE")
                 .map(|raw| AuthMode::parse(&raw))
                 .unwrap_or(Ok(AuthMode::Local)),
+            supabase_url: optional("FORMA_SUPABASE_URL"),
             supabase_issuer: optional("FORMA_SUPABASE_ISSUER"),
             supabase_jwks_url: optional("FORMA_SUPABASE_JWKS_URL"),
             remote_token: std::env::var("FORMA_REMOTE_TOKEN")

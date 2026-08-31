@@ -6,6 +6,7 @@ pub mod backup;
 pub mod config;
 pub mod error;
 pub mod routes;
+pub mod security;
 pub mod state;
 pub mod telemetry;
 pub mod test_card;
