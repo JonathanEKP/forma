@@ -20,6 +20,10 @@ use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, Stream
 use crate::client::{BearerCredential, ServerClient};
 use crate::server::FormaMcp;
 
+fn handler(base_url: String, public_host: Option<String>) -> FormaMcp {
+    FormaMcp::for_http(ServerClient::new(base_url)).on_deployment(public_host)
+}
+
 /// The bearer every remote caller must present (plan section 57).
 ///
 /// Kept as a hash so a comparison cannot be walked one byte at a time, the same
@@ -104,7 +108,7 @@ fn router(base_url: String, guard: Guard, public_host: Option<String>) -> axum::
 
     let named = public_host;
     let mcp = StreamableHttpService::new(
-        move || Ok(FormaMcp::new(ServerClient::new(base_url.clone())).on_deployment(named.clone())),
+        move || Ok(handler(base_url.clone(), named.clone())),
         Arc::new(LocalSessionManager::default()),
         StreamableHttpServerConfig::default().with_allowed_hosts(allowed),
     );
@@ -157,6 +161,15 @@ mod tests {
     use tokio::sync::mpsc::{self, UnboundedSender};
 
     use super::*;
+
+    #[test]
+    fn the_http_factory_has_no_process_credential_source() {
+        let service = handler("http://127.0.0.1:4765".to_string(), None);
+        assert!(
+            !service.has_process_credential_source(),
+            "an HTTP handler must not contain a process credential to fall back to"
+        );
+    }
 
     async fn record_credential(
         State(seen): State<UnboundedSender<u8>>,

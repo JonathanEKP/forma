@@ -67,8 +67,7 @@ async fn main() -> anyhow::Result<()> {
 
     match transport.as_str() {
         "stdio" => {
-            let service = FormaMcp::new(ServerClient::new(base_url))
-                .with_stdio_credential(token)
+            let service = FormaMcp::for_stdio(ServerClient::new(base_url), token)
                 .serve(stdio())
                 .await
                 .context("failed to start the MCP stdio service")?;

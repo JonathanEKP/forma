@@ -149,10 +149,7 @@ pub struct ExportDesignParams {
 
 pub struct FormaMcp {
     client: ServerClient,
-    /// The process credential used when stdio has no inbound HTTP request.
-    ///
-    /// HTTP never sets this: its bearer comes from the current tool call.
-    stdio_credential: Option<String>,
+    credential_source: CredentialSource,
     /// The public name this deployment answers on, when it has one.
     ///
     /// `forma_status` is the "where am I" tool, and without this it could only
@@ -163,19 +160,30 @@ pub struct FormaMcp {
     tool_router: ToolRouter<Self>,
 }
 
+/// Where this transport is allowed to obtain an outbound identity.
+///
+/// Deliberately has no `Debug`: the stdio variant can contain a credential.
+enum CredentialSource {
+    CurrentRequest,
+    StdioProcess(Option<String>),
+}
+
 impl FormaMcp {
-    pub fn new(client: ServerClient) -> Self {
+    fn new(client: ServerClient, credential_source: CredentialSource) -> Self {
         Self {
             client,
-            stdio_credential: None,
+            credential_source,
             deployment: None,
             tool_router: Self::tool_router(),
         }
     }
 
-    pub fn with_stdio_credential(mut self, credential: Option<String>) -> Self {
-        self.stdio_credential = credential;
-        self
+    pub fn for_stdio(client: ServerClient, credential: Option<String>) -> Self {
+        Self::new(client, CredentialSource::StdioProcess(credential))
+    }
+
+    pub fn for_http(client: ServerClient) -> Self {
+        Self::new(client, CredentialSource::CurrentRequest)
     }
 
     pub fn on_deployment(mut self, deployment: Option<String>) -> Self {
@@ -185,14 +193,21 @@ impl FormaMcp {
 
     /// The bearer belongs to this tool call, not to the process or its session.
     ///
-    /// rmcp carries the current HTTP request parts in protocol extensions. Stdio
-    /// has no such request, so and only so does it use the process credential.
+    /// The transport mode decides which source exists. An HTTP handler contains
+    /// no process credential to fall back to when the request extension is absent.
     fn credential(&self, extensions: &Extensions) -> Option<String> {
-        extensions
-            .get::<axum::http::request::Parts>()
-            .and_then(|parts| parts.extensions.get::<BearerCredential>())
-            .map(|credential| credential.as_str().to_string())
-            .or_else(|| self.stdio_credential.clone())
+        match &self.credential_source {
+            CredentialSource::CurrentRequest => extensions
+                .get::<axum::http::request::Parts>()
+                .and_then(|parts| parts.extensions.get::<BearerCredential>())
+                .map(|credential| credential.as_str().to_string()),
+            CredentialSource::StdioProcess(credential) => credential.clone(),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn has_process_credential_source(&self) -> bool {
+        matches!(&self.credential_source, CredentialSource::StdioProcess(_))
     }
 
     async fn get<T: DeserializeOwned>(
