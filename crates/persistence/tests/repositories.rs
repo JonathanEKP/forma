@@ -82,7 +82,13 @@ async fn the_second_write_on_the_same_base_version_conflicts() {
     let designs = harness.designs();
 
     let created = designs
-        .create(account(), project.id, "Carousel", &document("Cover"), &Actor::human())
+        .create(
+            account(),
+            project.id,
+            "Carousel",
+            &document("Cover"),
+            &Actor::human(),
+        )
         .await
         .unwrap();
     assert_eq!(created.version, Version::INITIAL);
@@ -92,7 +98,8 @@ async fn the_second_write_on_the_same_base_version_conflicts() {
 
     let first = designs
         .save(
-            account(),            created.id,
+            account(),
+            created.id,
             base,
             &document("Edited by the human"),
             &Actor::human(),
@@ -103,7 +110,8 @@ async fn the_second_write_on_the_same_base_version_conflicts() {
 
     let error = designs
         .save(
-            account(),            created.id,
+            account(),
+            created.id,
             base,
             &document("Edited by the agent"),
             &Actor::agent("agent:claude"),
@@ -130,13 +138,20 @@ async fn the_loser_succeeds_after_refetching() {
     let designs = harness.designs();
 
     let created = designs
-        .create(account(), project.id, "Carousel", &document("v1"), &Actor::human())
+        .create(
+            account(),
+            project.id,
+            "Carousel",
+            &document("v1"),
+            &Actor::human(),
+        )
         .await
         .unwrap();
 
     designs
         .save(
-            account(),            created.id,
+            account(),
+            created.id,
             created.version,
             &document("v2"),
             &Actor::human(),
@@ -147,7 +162,8 @@ async fn the_loser_succeeds_after_refetching() {
     let current = designs.get(account(), created.id).await.unwrap();
     let rebased = designs
         .save(
-            account(),            created.id,
+            account(),
+            created.id,
             current.version,
             &document("v3"),
             &Actor::agent("agent:codex"),
@@ -168,15 +184,33 @@ async fn every_version_keeps_a_readable_snapshot() {
     let designs = harness.designs();
 
     let created = designs
-        .create(account(), project.id, "Carousel", &document("first"), &Actor::human())
+        .create(
+            account(),
+            project.id,
+            "Carousel",
+            &document("first"),
+            &Actor::human(),
+        )
         .await
         .unwrap();
     designs
-        .save(account(), created.id, Version(1), &document("second"), &Actor::human())
+        .save(
+            account(),
+            created.id,
+            Version(1),
+            &document("second"),
+            &Actor::human(),
+        )
         .await
         .unwrap();
     designs
-        .save(account(), created.id, Version(2), &document("third"), &Actor::human())
+        .save(
+            account(),
+            created.id,
+            Version(2),
+            &document("third"),
+            &Actor::human(),
+        )
         .await
         .unwrap();
 
@@ -212,7 +246,8 @@ async fn undo_moves_history_forward_rather_than_backward() {
 
     let created = designs
         .create(
-            account(),            project.id,
+            account(),
+            project.id,
             "Carousel",
             &document("original"),
             &Actor::human(),
@@ -221,7 +256,8 @@ async fn undo_moves_history_forward_rather_than_backward() {
         .unwrap();
     designs
         .save(
-            account(),            created.id,
+            account(),
+            created.id,
             Version(1),
             &document("mistake"),
             &Actor::human(),
@@ -229,15 +265,27 @@ async fn undo_moves_history_forward_rather_than_backward() {
         .await
         .unwrap();
 
-    let restored = designs.snapshot(account(), created.id, Version(1)).await.unwrap();
+    let restored = designs
+        .snapshot(account(), created.id, Version(1))
+        .await
+        .unwrap();
     let undone = designs
-        .save(account(), created.id, Version(2), &restored, &Actor::system())
+        .save(
+            account(),
+            created.id,
+            Version(2),
+            &restored,
+            &Actor::system(),
+        )
         .await
         .unwrap();
 
     assert_eq!(undone.version, Version(3), "the version must not decrement");
     assert_eq!(undone.document.pages[0].name, "original");
-    assert_eq!(designs.history(account(), created.id).await.unwrap().len(), 3);
+    assert_eq!(
+        designs.history(account(), created.id).await.unwrap().len(),
+        3
+    );
 }
 
 #[tokio::test]
@@ -247,12 +295,19 @@ async fn history_records_who_made_each_version() {
     let designs = harness.designs();
 
     let created = designs
-        .create(account(), project.id, "Carousel", &document("v1"), &Actor::human())
+        .create(
+            account(),
+            project.id,
+            "Carousel",
+            &document("v1"),
+            &Actor::human(),
+        )
         .await
         .unwrap();
     designs
         .save(
-            account(),            created.id,
+            account(),
+            created.id,
             Version(1),
             &document("v2"),
             &Actor::agent("agent:claude"),
@@ -276,7 +331,13 @@ async fn a_missing_design_is_not_a_conflict() {
     let designs = harness.designs();
 
     let error = designs
-        .save(account(), DesignId::new(), Version(1), &document("x"), &Actor::human())
+        .save(
+            account(),
+            DesignId::new(),
+            Version(1),
+            &document("x"),
+            &Actor::human(),
+        )
         .await
         .unwrap_err();
 
@@ -289,7 +350,13 @@ async fn a_design_cannot_be_created_in_a_project_that_does_not_exist() {
     let harness = Harness::start().await;
     let error = harness
         .designs()
-        .create(account(), ProjectId::new(), "Orphan", &document("x"), &Actor::human())
+        .create(
+            account(),
+            ProjectId::new(),
+            "Orphan",
+            &document("x"),
+            &Actor::human(),
+        )
         .await
         .unwrap_err();
 
@@ -324,7 +391,13 @@ async fn deleting_a_design_takes_its_versions_with_it() {
     let designs = harness.designs();
 
     let created = designs
-        .create(account(), project.id, "Doomed", &document("v1"), &Actor::human())
+        .create(
+            account(),
+            project.id,
+            "Doomed",
+            &document("v1"),
+            &Actor::human(),
+        )
         .await
         .unwrap();
     designs.delete(account(), created.id).await.unwrap();
@@ -333,7 +406,11 @@ async fn deleting_a_design_takes_its_versions_with_it() {
         designs.get(account(), created.id).await,
         Err(PersistenceError::DesignNotFound(_))
     ));
-    assert!(designs.history(account(), created.id).await.unwrap().is_empty());
+    assert!(designs
+        .history(account(), created.id)
+        .await
+        .unwrap()
+        .is_empty());
 }
 
 // --- Projects and brand ---------------------------------------------------
@@ -371,7 +448,11 @@ async fn a_project_keeps_one_active_brand_kit() {
     let projects = harness.projects();
     let project = harness.project().await;
 
-    assert!(projects.get_brand(account(), project.id).await.unwrap().is_none());
+    assert!(projects
+        .get_brand(account(), project.id)
+        .await
+        .unwrap()
+        .is_none());
 
     let mut brand = brand_kit(project.id);
     projects.put_brand(account(), &brand).await.unwrap();
@@ -381,7 +462,11 @@ async fn a_project_keeps_one_active_brand_kit() {
     brand.colors.primary = Color::rgb(0x00, 0xFF, 0x00);
     projects.put_brand(account(), &brand).await.unwrap();
 
-    let stored = projects.get_brand(account(), project.id).await.unwrap().unwrap();
+    let stored = projects
+        .get_brand(account(), project.id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(stored.name, "Rebrand");
     assert_eq!(stored.colors.primary, Color::rgb(0x00, 0xFF, 0x00));
     assert_eq!(
@@ -403,11 +488,21 @@ async fn deleting_a_project_takes_its_designs_with_it() {
     let designs = harness.designs();
 
     let created = designs
-        .create(account(), project.id, "Doomed", &document("v1"), &Actor::human())
+        .create(
+            account(),
+            project.id,
+            "Doomed",
+            &document("v1"),
+            &Actor::human(),
+        )
         .await
         .unwrap();
 
-    harness.projects().delete(account(), project.id).await.unwrap();
+    harness
+        .projects()
+        .delete(account(), project.id)
+        .await
+        .unwrap();
     assert!(designs.get(account(), created.id).await.is_err());
 }
 
@@ -512,7 +607,8 @@ async fn an_asset_request_goes_from_pending_to_resolved() {
     let design = harness
         .designs()
         .create(
-            account(),            project.id,
+            account(),
+            project.id,
             "Ad",
             &document("v1"),
             &Actor::agent("agent:claude"),
@@ -533,7 +629,10 @@ async fn an_asset_request_goes_from_pending_to_resolved() {
         .await
         .unwrap();
 
-    let resolved = requests.resolve(account(), created.id, uploaded.id).await.unwrap();
+    let resolved = requests
+        .resolve(account(), created.id, uploaded.id)
+        .await
+        .unwrap();
     assert_eq!(resolved.status, AssetRequestStatus::Resolved);
     assert_eq!(resolved.resolved_asset_id, Some(uploaded.id));
     assert!(resolved.resolved_at.is_some());
@@ -547,7 +646,13 @@ async fn a_request_cannot_be_resolved_twice() {
     let project = harness.project().await;
     let design = harness
         .designs()
-        .create(account(), project.id, "Ad", &document("v1"), &Actor::human())
+        .create(
+            account(),
+            project.id,
+            "Ad",
+            &document("v1"),
+            &Actor::human(),
+        )
         .await
         .unwrap();
 
@@ -568,11 +673,21 @@ async fn a_request_cannot_be_resolved_twice() {
         .await
         .unwrap();
 
-    requests.resolve(account(), created.id, first.id).await.unwrap();
-    assert!(requests.resolve(account(), created.id, second.id).await.is_err());
+    requests
+        .resolve(account(), created.id, first.id)
+        .await
+        .unwrap();
+    assert!(requests
+        .resolve(account(), created.id, second.id)
+        .await
+        .is_err());
 
     assert_eq!(
-        requests.get(account(), created.id).await.unwrap().resolved_asset_id,
+        requests
+            .get(account(), created.id)
+            .await
+            .unwrap()
+            .resolved_asset_id,
         Some(first.id)
     );
 }
@@ -583,7 +698,13 @@ async fn a_cancelled_request_stays_cancelled() {
     let project = harness.project().await;
     let design = harness
         .designs()
-        .create(account(), project.id, "Ad", &document("v1"), &Actor::human())
+        .create(
+            account(),
+            project.id,
+            "Ad",
+            &document("v1"),
+            &Actor::human(),
+        )
         .await
         .unwrap();
 
@@ -601,7 +722,10 @@ async fn a_cancelled_request_stays_cancelled() {
         .create(account(), &asset(project.id, "late"))
         .await
         .unwrap();
-    assert!(requests.resolve(account(), created.id, uploaded.id).await.is_err());
+    assert!(requests
+        .resolve(account(), created.id, uploaded.id)
+        .await
+        .is_err());
 }
 
 // --- Exports --------------------------------------------------------------
@@ -612,7 +736,13 @@ async fn an_export_pins_the_version_it_came_from() {
     let project = harness.project().await;
     let designs = harness.designs();
     let design = designs
-        .create(account(), project.id, "Carousel", &document("v1"), &Actor::human())
+        .create(
+            account(),
+            project.id,
+            "Carousel",
+            &document("v1"),
+            &Actor::human(),
+        )
         .await
         .unwrap();
 
@@ -646,7 +776,13 @@ async fn an_export_pins_the_version_it_came_from() {
 
     // The design moves on; the export still records what it actually contains.
     designs
-        .save(account(), design.id, design.version, &document("v2"), &Actor::human())
+        .save(
+            account(),
+            design.id,
+            design.version,
+            &document("v2"),
+            &Actor::human(),
+        )
         .await
         .unwrap();
 

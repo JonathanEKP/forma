@@ -125,7 +125,14 @@ async fn create(
         (None, None) => blank(DesignFormat::from_preset(FormatPreset::Square)),
     };
 
-    let record = application::designs::create(&*state.designs, crate::routes::auth(&state).account_id, project, &body.name, &document, &actor_from(&request, &crate::routes::auth(&state)))
+    let record = application::designs::create(
+        &*state.designs,
+        crate::routes::auth(&state).account_id,
+        project,
+        &body.name,
+        &document,
+        &actor_from(&request, &crate::routes::auth(&state)),
+    )
     .await?;
 
     // The version the design ended at, so one log line says what this call did.
@@ -138,7 +145,12 @@ async fn get(
     state: web::Data<AppState>,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
-    let record = application::designs::get(&*state.designs, crate::routes::auth(&state).account_id, design_id(&path)?).await?;
+    let record = application::designs::get(
+        &*state.designs,
+        crate::routes::auth(&state).account_id,
+        design_id(&path)?,
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(record))
 }
 
@@ -154,7 +166,14 @@ async fn operations(
     path: web::Path<String>,
     body: web::Json<ApplyOperationsRequest>,
 ) -> Result<HttpResponse, ApiError> {
-    let record = application::designs::apply(&*state.designs, crate::routes::auth(&state).account_id, design_id(&path)?, body.base_version, &body.operations, &actor_from(&request, &crate::routes::auth(&state)))
+    let record = application::designs::apply(
+        &*state.designs,
+        crate::routes::auth(&state).account_id,
+        design_id(&path)?,
+        body.base_version,
+        &body.operations,
+        &actor_from(&request, &crate::routes::auth(&state)),
+    )
     .await?;
 
     telemetry::record_design(record.id, Some(record.version));
@@ -170,7 +189,13 @@ async fn undo(
     path: web::Path<String>,
     body: web::Json<UndoRequest>,
 ) -> Result<HttpResponse, ApiError> {
-    let record = application::designs::undo(&*state.designs, crate::routes::auth(&state).account_id, design_id(&path)?, body.base_version, &actor_from(&request, &crate::routes::auth(&state)))
+    let record = application::designs::undo(
+        &*state.designs,
+        crate::routes::auth(&state).account_id,
+        design_id(&path)?,
+        body.base_version,
+        &actor_from(&request, &crate::routes::auth(&state)),
+    )
     .await?;
 
     telemetry::record_design(record.id, Some(record.version));
@@ -183,7 +208,12 @@ async fn history(
     state: web::Data<AppState>,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
-    let history = application::designs::history(&*state.designs, crate::routes::auth(&state).account_id, design_id(&path)?).await?;
+    let history = application::designs::history(
+        &*state.designs,
+        crate::routes::auth(&state).account_id,
+        design_id(&path)?,
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(history))
 }
 
@@ -203,7 +233,14 @@ async fn remove(
     state: web::Data<AppState>,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
-    application::designs::delete(&*state.designs, &*state.exports, &*state.store, &state.cache, crate::routes::auth(&state).account_id, design_id(&path)?)
+    application::designs::delete(
+        &*state.designs,
+        &*state.exports,
+        &*state.store,
+        &state.cache,
+        crate::routes::auth(&state).account_id,
+        design_id(&path)?,
+    )
     .await?;
     Ok(HttpResponse::NoContent().finish())
 }

@@ -37,7 +37,10 @@ pub async fn upload(
 
     let ingested: Ingested = assets::ingest(bytes, max_bytes)?;
 
-    if let Some(existing) = assets.find_by_hash(account, project_id, &ingested.hash).await? {
+    if let Some(existing) = assets
+        .find_by_hash(account, project_id, &ingested.hash)
+        .await?
+    {
         return Ok((existing, false));
     }
 
@@ -75,11 +78,7 @@ pub async fn list(
     Ok(assets.list_for_project(account, project_id).await?)
 }
 
-pub async fn get(
-    assets: &dyn AssetRepository,
-    account: AccountId,
-    id: AssetId,
-) -> Result<Asset> {
+pub async fn get(assets: &dyn AssetRepository, account: AccountId, id: AssetId) -> Result<Asset> {
     Ok(assets.get(account, id).await?)
 }
 
@@ -97,10 +96,6 @@ pub async fn bytes(
 
 /// A soft delete. Historical design versions may still reference the asset, so
 /// the bytes stay put and real collection is deferred (plan section 74).
-pub async fn delete(
-    assets: &dyn AssetRepository,
-    account: AccountId,
-    id: AssetId,
-) -> Result<()> {
+pub async fn delete(assets: &dyn AssetRepository, account: AccountId, id: AssetId) -> Result<()> {
     Ok(assets.soft_delete(account, id).await?)
 }

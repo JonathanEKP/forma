@@ -3,8 +3,9 @@ use std::sync::Arc;
 use design_core::AccountId;
 
 use persistence::{
-    LocalObjectStore, SqliteAccountRepository, SqliteAssetRepository, SqliteAssetRequestRepository, SqliteDesignRepository,
-    SqliteExportRepository, SqliteProjectRepository, SqliteTemplateRepository,
+    LocalObjectStore, SqliteAccountRepository, SqliteAssetRepository, SqliteAssetRequestRepository,
+    SqliteDesignRepository, SqliteExportRepository, SqliteProjectRepository,
+    SqliteTemplateRepository,
 };
 use renderer::{FontRegistry, RenderCache};
 use sqlx::SqlitePool;

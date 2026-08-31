@@ -1,8 +1,8 @@
 //! Project and Brand Kit use cases.
 
 use design_core::{
-    AccountId, AssetId, BrandColors, BrandId, BrandKit, BrandRules, BrandTypography, Project, ProjectId,
-    Version,
+    AccountId, AssetId, BrandColors, BrandId, BrandKit, BrandRules, BrandTypography, Project,
+    ProjectId, Version,
 };
 use persistence::ProjectRepository;
 use serde::Deserialize;

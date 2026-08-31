@@ -89,16 +89,20 @@ impl ExportRepository for SqliteExportRepository {
         let row = sqlx::query(&format!(
             "SELECT {COLUMNS} FROM exports WHERE id = ? AND design_id IN {OWNED_DESIGNS}"
         ))
-            .bind(id.to_string())
-            .bind(account.to_string())
-            .fetch_optional(&self.pool)
-            .await?
-            .ok_or_else(|| PersistenceError::NotFound(format!("export {id}")))?;
+        .bind(id.to_string())
+        .bind(account.to_string())
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or_else(|| PersistenceError::NotFound(format!("export {id}")))?;
 
         row_to_export(&row)
     }
 
-    async fn list_for_design(&self, account: AccountId, design_id: DesignId) -> Result<Vec<Export>> {
+    async fn list_for_design(
+        &self,
+        account: AccountId,
+        design_id: DesignId,
+    ) -> Result<Vec<Export>> {
         let rows = sqlx::query(&format!(
             "SELECT {COLUMNS} FROM exports
              WHERE design_id = ? AND design_id IN {OWNED_DESIGNS} ORDER BY created_at DESC"

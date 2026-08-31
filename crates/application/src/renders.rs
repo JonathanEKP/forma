@@ -6,9 +6,9 @@
 
 use std::collections::HashMap;
 
-use design_core::{AccountId, 
-    AssetId, BrandKit, DesignDocument, DesignId, DesignRecord, DomainError, Layer, LayerId, Page,
-    PageId, Version,
+use design_core::{
+    AccountId, AssetId, BrandKit, DesignDocument, DesignId, DesignRecord, DomainError, Layer,
+    LayerId, Page, PageId, Version,
 };
 use persistence::{AssetRepository, ObjectStore};
 use renderer::{

@@ -5,7 +5,9 @@
 //! looking at; and because a version's document never changes, an export stays
 //! reproducible after the design moves on.
 
-use design_core::{AccountId, BrandKit, DesignId, DesignRecord, Export, ExportId, ExportScope, PageId};
+use design_core::{
+    AccountId, BrandKit, DesignId, DesignRecord, Export, ExportId, ExportScope, PageId,
+};
 use persistence::{export_storage_key, AssetRepository, ExportRepository, ObjectStore};
 use renderer::{FontRegistry, RenderCache};
 

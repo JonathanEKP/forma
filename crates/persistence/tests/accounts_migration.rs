@@ -171,7 +171,10 @@ async fn there_can_only_be_one_bootstrap_account() {
     .execute(&pool)
     .await;
 
-    assert!(second.is_err(), "a second bootstrap account must be refused");
+    assert!(
+        second.is_err(),
+        "a second bootstrap account must be refused"
+    );
 }
 
 /// Foreign keys must be back on when the migration finishes, or the connection

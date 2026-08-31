@@ -5,7 +5,9 @@
 //! never generates the image — that is out of scope for V1 — so the suggested
 //! prompt is text for a human to take elsewhere.
 
-use design_core::{AccountId, AssetId, AssetRequest, AssetRequestId, AssetRequestStatus, DesignId, ProjectId};
+use design_core::{
+    AccountId, AssetId, AssetRequest, AssetRequestId, AssetRequestStatus, DesignId, ProjectId,
+};
 use persistence::{AssetRepository, AssetRequestRepository, DesignRepository, ProjectRepository};
 
 use crate::error::{ApplicationError, Result};

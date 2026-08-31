@@ -150,21 +150,42 @@ async fn an_invite_is_usable_once() {
     let harness = Harness::start().await;
     let accounts = harness.accounts();
 
-    assert!(accounts.open_invite("nobody@example.com").await.unwrap().is_none());
+    assert!(accounts
+        .open_invite("nobody@example.com")
+        .await
+        .unwrap()
+        .is_none());
 
-    accounts.invite("  Someone@Example.com").await.expect("invite");
+    accounts
+        .invite("  Someone@Example.com")
+        .await
+        .expect("invite");
     assert!(
-        accounts.open_invite("someone@example.com").await.unwrap().is_some(),
+        accounts
+            .open_invite("someone@example.com")
+            .await
+            .unwrap()
+            .is_some(),
         "case and spacing must not create a second identity"
     );
 
     let user = AuthUserId::new();
-    assert!(accounts.claim_invite("someone@example.com", user).await.unwrap());
+    assert!(accounts
+        .claim_invite("someone@example.com", user)
+        .await
+        .unwrap());
     assert!(
-        !accounts.claim_invite("someone@example.com", user).await.unwrap(),
+        !accounts
+            .claim_invite("someone@example.com", user)
+            .await
+            .unwrap(),
         "a claimed invite cannot be claimed again"
     );
-    assert!(accounts.open_invite("someone@example.com").await.unwrap().is_none());
+    assert!(accounts
+        .open_invite("someone@example.com")
+        .await
+        .unwrap()
+        .is_none());
 }
 
 // ---------------------------------------------------------------------------
@@ -192,8 +213,14 @@ async fn one_account_cannot_reach_another_by_known_id() {
     // Each sees its own, and only its own.
     assert_eq!(projects.list(a).await.unwrap().len(), 1);
     assert_eq!(projects.list(b).await.unwrap().len(), 1);
-    assert_eq!(projects.get(a, a_project.id).await.unwrap().id, a_project.id);
-    assert_eq!(projects.get(b, b_project.id).await.unwrap().id, b_project.id);
+    assert_eq!(
+        projects.get(a, a_project.id).await.unwrap().id,
+        a_project.id
+    );
+    assert_eq!(
+        projects.get(b, b_project.id).await.unwrap().id,
+        b_project.id
+    );
 
     let not_found = |e: &PersistenceError| matches!(e, PersistenceError::ProjectNotFound(_));
 
@@ -216,9 +243,14 @@ async fn one_account_cannot_reach_another_by_known_id() {
 
     // Mutations across the boundary.
     assert!(not_found(
-        &projects.rename(a, b_project.id, "Stolen").await.unwrap_err()
+        &projects
+            .rename(a, b_project.id, "Stolen")
+            .await
+            .unwrap_err()
     ));
-    assert!(not_found(&projects.delete(a, b_project.id).await.unwrap_err()));
+    assert!(not_found(
+        &projects.delete(a, b_project.id).await.unwrap_err()
+    ));
     assert!(not_found(
         &projects
             .put_brand(a, &brand_kit(b_project.id))
@@ -227,7 +259,10 @@ async fn one_account_cannot_reach_another_by_known_id() {
     ));
 
     // A brand read across the boundary reports "no kit" rather than the kit.
-    projects.put_brand(b, &brand_kit(b_project.id)).await.unwrap();
+    projects
+        .put_brand(b, &brand_kit(b_project.id))
+        .await
+        .unwrap();
     assert!(projects.get_brand(b, b_project.id).await.unwrap().is_some());
     assert!(
         projects.get_brand(a, b_project.id).await.unwrap().is_none(),
@@ -236,7 +271,10 @@ async fn one_account_cannot_reach_another_by_known_id() {
 
     // Nothing above actually touched B's work.
     assert_eq!(projects.list(b).await.unwrap().len(), 1);
-    assert_eq!(projects.get(b, b_project.id).await.unwrap().name, "B's work");
+    assert_eq!(
+        projects.get(b, b_project.id).await.unwrap().name,
+        "B's work"
+    );
 }
 
 /// A project belongs to exactly one account, and it is not the caller's to pick.
@@ -378,20 +416,34 @@ async fn every_object_type_is_scoped_to_its_account() {
     // --- A holds every id, and reaches none of it -------------------------
 
     assert!(designs.get(a, design.id).await.is_err(), "design");
-    assert!(designs.history(a, design.id).await.unwrap().is_empty(), "history");
     assert!(
-        designs.snapshot(a, design.id, design.version).await.is_err(),
+        designs.history(a, design.id).await.unwrap().is_empty(),
+        "history"
+    );
+    assert!(
+        designs
+            .snapshot(a, design.id, design.version)
+            .await
+            .is_err(),
         "snapshot"
     );
     assert!(designs.delete(a, design.id).await.is_err(), "design delete");
     assert!(
-        designs.list_for_project(a, b_project.id).await.unwrap().is_empty(),
+        designs
+            .list_for_project(a, b_project.id)
+            .await
+            .unwrap()
+            .is_empty(),
         "designs of another account's project"
     );
 
     assert!(assets.get(a, asset.id).await.is_err(), "asset");
     assert!(
-        assets.list_for_project(a, b_project.id).await.unwrap().is_empty(),
+        assets
+            .list_for_project(a, b_project.id)
+            .await
+            .unwrap()
+            .is_empty(),
         "assets"
     );
     assert!(
@@ -402,11 +454,18 @@ async fn every_object_type_is_scoped_to_its_account() {
             .is_none(),
         "a known hash must not confirm another account's asset"
     );
-    assert!(assets.soft_delete(a, asset.id).await.is_err(), "asset delete");
+    assert!(
+        assets.soft_delete(a, asset.id).await.is_err(),
+        "asset delete"
+    );
 
     assert!(requests.get(a, request.id).await.is_err(), "asset request");
     assert!(
-        requests.list_for_project(a, b_project.id).await.unwrap().is_empty(),
+        requests
+            .list_for_project(a, b_project.id)
+            .await
+            .unwrap()
+            .is_empty(),
         "asset requests"
     );
     assert!(
@@ -417,14 +476,25 @@ async fn every_object_type_is_scoped_to_its_account() {
 
     assert!(templates.get(a, template.id).await.is_err(), "template");
     assert!(
-        templates.list_for_project(a, b_project.id).await.unwrap().is_empty(),
+        templates
+            .list_for_project(a, b_project.id)
+            .await
+            .unwrap()
+            .is_empty(),
         "templates"
     );
-    assert!(templates.delete(a, template.id).await.is_err(), "template delete");
+    assert!(
+        templates.delete(a, template.id).await.is_err(),
+        "template delete"
+    );
 
     assert!(exports.get(a, export.id).await.is_err(), "export");
     assert!(
-        exports.list_for_design(a, design.id).await.unwrap().is_empty(),
+        exports
+            .list_for_design(a, design.id)
+            .await
+            .unwrap()
+            .is_empty(),
         "exports"
     );
 
@@ -449,7 +519,14 @@ async fn every_object_type_is_scoped_to_its_account() {
     );
     assert_eq!(templates.get(b, template.id).await.unwrap().id, template.id);
     assert_eq!(exports.get(b, export.id).await.unwrap().id, export.id);
-    assert_eq!(designs.list_for_project(b, b_project.id).await.unwrap().len(), 1);
+    assert_eq!(
+        designs
+            .list_for_project(b, b_project.id)
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
 }
 
 /// The guarded UPDATE must not become an oracle.
@@ -459,7 +536,9 @@ async fn every_object_type_is_scoped_to_its_account() {
 /// often somebody else edits it. It has to be not-found instead.
 #[tokio::test]
 async fn a_cross_account_save_is_not_found_rather_than_a_version_conflict() {
-    use design_core::{Actor, DesignColor, DesignDocument, DesignFormat, FormatPreset, Page, Version};
+    use design_core::{
+        Actor, DesignColor, DesignDocument, DesignFormat, FormatPreset, Page, Version,
+    };
     use persistence::{DesignRepository, SqliteDesignRepository};
 
     let harness = Harness::start().await;
@@ -491,5 +570,8 @@ async fn a_cross_account_save_is_not_found_rather_than_a_version_conflict() {
     );
 
     // And B's design did not move.
-    assert_eq!(designs.get(b, design.id).await.unwrap().version, Version::INITIAL);
+    assert_eq!(
+        designs.get(b, design.id).await.unwrap().version,
+        Version::INITIAL
+    );
 }

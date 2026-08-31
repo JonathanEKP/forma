@@ -12,7 +12,11 @@ use crate::error::Result;
 pub trait AssetRepository: Send + Sync {
     async fn create(&self, account: AccountId, asset: &Asset) -> Result<Asset>;
     async fn get(&self, account: AccountId, id: AssetId) -> Result<Asset>;
-    async fn list_for_project(&self, account: AccountId, project_id: ProjectId) -> Result<Vec<Asset>>;
+    async fn list_for_project(
+        &self,
+        account: AccountId,
+        project_id: ProjectId,
+    ) -> Result<Vec<Asset>>;
 
     /// Deduplication (plan section 73): identical bytes reuse one asset.
     async fn find_by_hash(

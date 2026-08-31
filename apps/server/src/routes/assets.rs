@@ -77,7 +77,16 @@ async fn upload(
     let project = project_id(&path)?;
     let (bytes, filename) = read_upload(payload, state.max_upload_bytes).await?;
 
-    let (asset, created) = application::assets::upload(&*state.projects, &*state.assets, &*state.store, crate::routes::auth(&state).account_id, project, bytes, filename, state.max_upload_bytes)
+    let (asset, created) = application::assets::upload(
+        &*state.projects,
+        &*state.assets,
+        &*state.store,
+        crate::routes::auth(&state).account_id,
+        project,
+        bytes,
+        filename,
+        state.max_upload_bytes,
+    )
     .await?;
 
     // 200 rather than 201 when deduplication returned an existing asset: the
@@ -108,7 +117,12 @@ async fn get(
     state: web::Data<AppState>,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
-    let asset = application::assets::get(&*state.assets, crate::routes::auth(&state).account_id, asset_id(&path)?).await?;
+    let asset = application::assets::get(
+        &*state.assets,
+        crate::routes::auth(&state).account_id,
+        asset_id(&path)?,
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(asset))
 }
 
@@ -118,8 +132,13 @@ async fn content(
     state: web::Data<AppState>,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
-    let (asset, bytes) =
-        application::assets::bytes(&*state.assets, &*state.store, crate::routes::auth(&state).account_id, asset_id(&path)?).await?;
+    let (asset, bytes) = application::assets::bytes(
+        &*state.assets,
+        &*state.store,
+        crate::routes::auth(&state).account_id,
+        asset_id(&path)?,
+    )
+    .await?;
 
     Ok(HttpResponse::Ok()
         .content_type(asset.mime_type.as_str())
@@ -136,7 +155,12 @@ async fn remove(
     state: web::Data<AppState>,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
-    application::assets::delete(&*state.assets, crate::routes::auth(&state).account_id, asset_id(&path)?).await?;
+    application::assets::delete(
+        &*state.assets,
+        crate::routes::auth(&state).account_id,
+        asset_id(&path)?,
+    )
+    .await?;
     Ok(HttpResponse::NoContent().finish())
 }
 

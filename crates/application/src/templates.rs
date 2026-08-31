@@ -5,7 +5,9 @@
 //! the agent sees what each slot is for and how much text the layout actually
 //! held, which is a brief rather than a puzzle to reverse-engineer.
 
-use design_core::{AccountId, Actor, DesignId, DesignRecord, ProjectId, Template, TemplateDraft, TemplateId};
+use design_core::{
+    AccountId, Actor, DesignId, DesignRecord, ProjectId, Template, TemplateDraft, TemplateId,
+};
 use persistence::{DesignRepository, TemplateRepository};
 
 use crate::error::Result;

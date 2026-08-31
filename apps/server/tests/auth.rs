@@ -228,16 +228,19 @@ fn hosted_mode_without_identity_configuration_refuses_to_start() {
         .binding_is_safe()
         .is_err());
 
-    assert!(hosted(Some("https://x/auth/v1"), Some("https://x/jwks.json"))
-        .binding_is_safe()
-        .is_ok());
+    assert!(
+        hosted(Some("https://x/auth/v1"), Some("https://x/jwks.json"))
+            .binding_is_safe()
+            .is_ok()
+    );
 }
 
 /// A mode nobody can parse must not quietly become the permissive one.
 #[test]
 fn an_unreadable_auth_mode_refuses_to_start() {
     let mut config = hosted(Some("i"), Some("j"));
-    config.auth_mode = Err("FORMA_AUTH_MODE is \"supabas\"; it must be \"local\" or \"supabase\"".into());
+    config.auth_mode =
+        Err("FORMA_AUTH_MODE is \"supabas\"; it must be \"local\" or \"supabase\"".into());
 
     let refused = config.binding_is_safe();
     assert!(refused.is_err());

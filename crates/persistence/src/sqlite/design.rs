@@ -1,9 +1,9 @@
 //! SQLite design repository, including the optimistic concurrency of section 27.
 
 use async_trait::async_trait;
-use design_core::{AccountId, 
-    Actor, ActorType, DesignDocument, DesignId, DesignRecord, DesignSummary, ProjectId, Version,
-    SCHEMA_VERSION,
+use design_core::{
+    AccountId, Actor, ActorType, DesignDocument, DesignId, DesignRecord, DesignSummary, ProjectId,
+    Version, SCHEMA_VERSION,
 };
 use sqlx::{Row, SqlitePool};
 use uuid::Uuid;
@@ -292,8 +292,8 @@ impl DesignRepository for SqliteDesignRepository {
         ))
         .bind(id.to_string())
         .bind(account.to_string())
-            .execute(&self.pool)
-            .await?;
+        .execute(&self.pool)
+        .await?;
 
         if deleted.rows_affected() == 0 {
             return Err(PersistenceError::DesignNotFound(id));

@@ -4,8 +4,8 @@
 
 use std::path::{Path, PathBuf};
 
-use forma_server::{backup, Config};
 use design_core::AccountId;
+use forma_server::{backup, Config};
 use persistence::{
     AssetRepository, ProjectRepository, SqliteAssetRepository, SqliteProjectRepository,
 };
@@ -155,21 +155,24 @@ async fn the_manifest_counts_what_was_copied() {
         .await
         .unwrap();
     assets
-        .create(account(), &design_core::Asset {
-            id: design_core::AssetId::new(),
-            project_id: projects[0].id,
-            hash: "abcdef0123456789".to_string(),
-            kind: design_core::AssetKind::Raster,
-            mime_type: "image/png".to_string(),
-            width: 10,
-            height: 10,
-            byte_size: 18,
-            storage_key: write_asset(dir.path(), "abcdef0123456789", b"the original bytes"),
-            original_filename: Some("hero.png".to_string()),
-            origin: design_core::AssetOrigin::UserUpload,
-            attribution: None,
-            created_at: "2026-08-28T00:00:00.000Z".to_string(),
-        })
+        .create(
+            account(),
+            &design_core::Asset {
+                id: design_core::AssetId::new(),
+                project_id: projects[0].id,
+                hash: "abcdef0123456789".to_string(),
+                kind: design_core::AssetKind::Raster,
+                mime_type: "image/png".to_string(),
+                width: 10,
+                height: 10,
+                byte_size: 18,
+                storage_key: write_asset(dir.path(), "abcdef0123456789", b"the original bytes"),
+                original_filename: Some("hero.png".to_string()),
+                origin: design_core::AssetOrigin::UserUpload,
+                attribution: None,
+                created_at: "2026-08-28T00:00:00.000Z".to_string(),
+            },
+        )
         .await
         .unwrap();
 

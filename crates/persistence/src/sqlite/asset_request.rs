@@ -1,5 +1,7 @@
 use async_trait::async_trait;
-use design_core::{AccountId, AssetId, AssetRequest, AssetRequestId, AssetRequestStatus, DesignId, ProjectId};
+use design_core::{
+    AccountId, AssetId, AssetRequest, AssetRequestId, AssetRequestStatus, DesignId, ProjectId,
+};
 use sqlx::{Row, SqlitePool};
 
 use crate::error::{PersistenceError, Result};

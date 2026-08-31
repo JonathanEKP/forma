@@ -68,11 +68,11 @@ impl TemplateRepository for SqliteTemplateRepository {
         let row = sqlx::query(&format!(
             "SELECT * FROM templates WHERE id = ? AND project_id IN {OWNED_PROJECTS}"
         ))
-            .bind(id.to_string())
-            .bind(account.to_string())
-            .fetch_optional(&self.pool)
-            .await?
-            .ok_or(PersistenceError::NotFound(format!("template {id}")))?;
+        .bind(id.to_string())
+        .bind(account.to_string())
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or(PersistenceError::NotFound(format!("template {id}")))?;
         row_to_template(&row)
     }
 
@@ -81,12 +81,10 @@ impl TemplateRepository for SqliteTemplateRepository {
         account: AccountId,
         project_id: ProjectId,
     ) -> Result<Vec<Template>> {
-        let rows = sqlx::query(
-            &format!(
-                "SELECT * FROM templates WHERE project_id = ? AND project_id IN {OWNED_PROJECTS}
+        let rows = sqlx::query(&format!(
+            "SELECT * FROM templates WHERE project_id = ? AND project_id IN {OWNED_PROJECTS}
                  ORDER BY created_at DESC, id DESC"
-            ),
-        )
+        ))
         .bind(project_id.to_string())
         .bind(account.to_string())
         .fetch_all(&self.pool)
@@ -99,10 +97,10 @@ impl TemplateRepository for SqliteTemplateRepository {
         let deleted = sqlx::query(&format!(
             "DELETE FROM templates WHERE id = ? AND project_id IN {OWNED_PROJECTS}"
         ))
-            .bind(id.to_string())
-            .bind(account.to_string())
-            .execute(&self.pool)
-            .await?;
+        .bind(id.to_string())
+        .bind(account.to_string())
+        .execute(&self.pool)
+        .await?;
 
         if deleted.rows_affected() == 0 {
             return Err(PersistenceError::NotFound(format!("template {id}")));

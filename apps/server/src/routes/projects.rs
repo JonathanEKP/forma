@@ -18,7 +18,9 @@ pub struct ProjectNameRequest {
 
 #[get("/projects")]
 async fn list(state: web::Data<AppState>) -> Result<HttpResponse, ApiError> {
-    let projects = application::projects::list(&*state.projects, crate::routes::auth(&state).account_id).await?;
+    let projects =
+        application::projects::list(&*state.projects, crate::routes::auth(&state).account_id)
+            .await?;
     Ok(HttpResponse::Ok().json(projects))
 }
 
@@ -27,8 +29,12 @@ async fn create(
     state: web::Data<AppState>,
     body: web::Json<ProjectNameRequest>,
 ) -> Result<HttpResponse, ApiError> {
-    let project =
-        application::projects::create(&*state.projects, crate::routes::auth(&state).account_id, &body.name).await?;
+    let project = application::projects::create(
+        &*state.projects,
+        crate::routes::auth(&state).account_id,
+        &body.name,
+    )
+    .await?;
     Ok(HttpResponse::Created().json(project))
 }
 
@@ -37,9 +43,12 @@ async fn get(
     state: web::Data<AppState>,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
-    let project =
-        application::projects::get(&*state.projects, crate::routes::auth(&state).account_id, project_id(&path)?)
-            .await?;
+    let project = application::projects::get(
+        &*state.projects,
+        crate::routes::auth(&state).account_id,
+        project_id(&path)?,
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(project))
 }
 
@@ -49,7 +58,12 @@ async fn rename(
     path: web::Path<String>,
     body: web::Json<ProjectNameRequest>,
 ) -> Result<HttpResponse, ApiError> {
-    let project = application::projects::rename(&*state.projects, crate::routes::auth(&state).account_id, project_id(&path)?, &body.name)
+    let project = application::projects::rename(
+        &*state.projects,
+        crate::routes::auth(&state).account_id,
+        project_id(&path)?,
+        &body.name,
+    )
     .await?;
     Ok(HttpResponse::Ok().json(project))
 }
@@ -59,8 +73,12 @@ async fn remove(
     state: web::Data<AppState>,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
-    application::projects::delete(&*state.projects, crate::routes::auth(&state).account_id, project_id(&path)?)
-        .await?;
+    application::projects::delete(
+        &*state.projects,
+        crate::routes::auth(&state).account_id,
+        project_id(&path)?,
+    )
+    .await?;
     Ok(HttpResponse::NoContent().finish())
 }
 
@@ -74,9 +92,12 @@ async fn get_brand(
     state: web::Data<AppState>,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
-    let brand =
-        application::projects::get_brand(&*state.projects, crate::routes::auth(&state).account_id, project_id(&path)?)
-            .await?;
+    let brand = application::projects::get_brand(
+        &*state.projects,
+        crate::routes::auth(&state).account_id,
+        project_id(&path)?,
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(brand))
 }
 
@@ -90,7 +111,12 @@ async fn put_brand(
     body: web::Json<BrandKitDraft>,
 ) -> Result<HttpResponse, ApiError> {
     let id = project_id(&path)?;
-    let stored = application::projects::put_brand(&*state.projects, crate::routes::auth(&state).account_id, id, body.into_inner())
+    let stored = application::projects::put_brand(
+        &*state.projects,
+        crate::routes::auth(&state).account_id,
+        id,
+        body.into_inner(),
+    )
     .await?;
     Ok(HttpResponse::Ok().json(stored))
 }

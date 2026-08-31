@@ -161,16 +161,15 @@ impl AssetRepository for SqliteAssetRepository {
 
     async fn soft_delete(&self, account: AccountId, id: AssetId) -> Result<()> {
         // The bytes stay: historical versions may still reference them.
-        let updated =
-            sqlx::query(&format!(
-                "UPDATE assets SET deleted_at = ?
+        let updated = sqlx::query(&format!(
+            "UPDATE assets SET deleted_at = ?
                  WHERE id = ? AND deleted_at IS NULL AND project_id IN {OWNED_PROJECTS}"
-            ))
-            .bind(now())
-            .bind(id.to_string())
-            .bind(account.to_string())
-                .execute(&self.pool)
-                .await?;
+        ))
+        .bind(now())
+        .bind(id.to_string())
+        .bind(account.to_string())
+        .execute(&self.pool)
+        .await?;
 
         if updated.rows_affected() == 0 {
             return Err(PersistenceError::NotFound(format!("asset {id}")));

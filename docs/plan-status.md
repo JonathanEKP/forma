@@ -29,7 +29,7 @@ passes" is not enough — Phase 6's acceptance passed with two panels missing.
 | 9 — Agent skill | 15 | Complete. |
 | 10 — Hardening | 9 | Complete. |
 | 11 — Remote deploy | 9 | Complete. Deployed and accepted: `smoke-remote.py` reports 15/15 against `https://forma.hintly.online`. See item 9 below and [deploy/status.md](deploy/status.md). |
-| 11.5 — Hosted identity | — | Not started. Specified in plan §105–§117, added after Phase 11 by amendment. Two slices; the account boundary needs no provider. |
+| 11.5 — Hosted identity | — | Slice 1 complete: account-scoped persistence and routes, admission/recovery CLI, local auth context, and per-request MCP credentials. Slice 2 is not started. |
 | 12 — Supabase adapter | 5 | Not started. The plan marks it optional and only after 11. |
 
 ## Open, with the section that asks for it
@@ -183,6 +183,13 @@ that lets it in. Nothing enters this list because it would be interesting.
     another's. Everything the identity half rests on was in beta or formally
     deprecated on the reference date. Build the boundary first; plug identity
     into a boundary that is already proven.
+
+    **Slice 1 is complete.** Accounts own every project and every repository
+    method is scoped by `AccountId`; the real HTTP routes prove cross-account
+    objects are indistinguishable from absent ids. Local auth derives the actor
+    from `AuthContext`, machine-local commands control admission and owner
+    recovery, and MCP credentials now travel with each request instead of with
+    the process. Slice 2, including provider identity and OAuth, has not begun.
 
     Written against the code rather than the plan, in
     [phase-11.5-review.md](phase-11.5-review.md), which is the working paper

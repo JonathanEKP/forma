@@ -46,7 +46,8 @@ async fn list(
     let project = ProjectId(parse_id(&path, "project id")?);
     let account = crate::routes::auth(&state).account_id;
     application::projects::get(&*state.projects, account, project).await?;
-    let requests = application::asset_requests::list(&*state.asset_requests, account, project).await?;
+    let requests =
+        application::asset_requests::list(&*state.asset_requests, account, project).await?;
     Ok(HttpResponse::Ok().json(requests))
 }
 
@@ -59,8 +60,21 @@ async fn create(
     let project = ProjectId(parse_id(&path, "project id")?);
     let body = body.into_inner();
 
-    let request = application::asset_requests::create(&*state.projects, &*state.designs, &*state.asset_requests, crate::routes::auth(&state).account_id, application::asset_requests::NewAssetRequest {
-            project_id: project, design_id: body.design_id, purpose: body.purpose, description: body.description, suggested_prompt: body.suggested_prompt, requested_width: body.requested_width, requested_height: body.requested_height, })
+    let request = application::asset_requests::create(
+        &*state.projects,
+        &*state.designs,
+        &*state.asset_requests,
+        crate::routes::auth(&state).account_id,
+        application::asset_requests::NewAssetRequest {
+            project_id: project,
+            design_id: body.design_id,
+            purpose: body.purpose,
+            description: body.description,
+            suggested_prompt: body.suggested_prompt,
+            requested_width: body.requested_width,
+            requested_height: body.requested_height,
+        },
+    )
     .await?;
 
     Ok(HttpResponse::Created().json(request))
@@ -71,8 +85,12 @@ async fn get(
     state: web::Data<AppState>,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
-    let request =
-        application::asset_requests::get(&*state.asset_requests, crate::routes::auth(&state).account_id, request_id(&path)?).await?;
+    let request = application::asset_requests::get(
+        &*state.asset_requests,
+        crate::routes::auth(&state).account_id,
+        request_id(&path)?,
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(request))
 }
 
@@ -83,7 +101,13 @@ async fn resolve(
     path: web::Path<String>,
     body: web::Json<ResolveAssetRequestBody>,
 ) -> Result<HttpResponse, ApiError> {
-    let request = application::asset_requests::resolve(&*state.asset_requests, &*state.assets, crate::routes::auth(&state).account_id, request_id(&path)?, body.asset_id)
+    let request = application::asset_requests::resolve(
+        &*state.asset_requests,
+        &*state.assets,
+        crate::routes::auth(&state).account_id,
+        request_id(&path)?,
+        body.asset_id,
+    )
     .await?;
     Ok(HttpResponse::Ok().json(request))
 }
@@ -93,8 +117,12 @@ async fn cancel(
     state: web::Data<AppState>,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
-    let request =
-        application::asset_requests::cancel(&*state.asset_requests, crate::routes::auth(&state).account_id, request_id(&path)?).await?;
+    let request = application::asset_requests::cancel(
+        &*state.asset_requests,
+        crate::routes::auth(&state).account_id,
+        request_id(&path)?,
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(request))
 }
 

@@ -6,8 +6,7 @@
 //! part every transport would otherwise duplicate.
 
 use design_core::{
-    AccountId,
-    apply_operations, Actor, DesignDocument, DesignId, DesignOperation, DesignRecord,
+    apply_operations, AccountId, Actor, DesignDocument, DesignId, DesignOperation, DesignRecord,
     DesignSummary, ProjectId, Version,
 };
 use persistence::{DesignRepository, ExportRepository, ObjectStore, VersionSummary};
@@ -37,7 +36,9 @@ pub async fn create(
     // document the caller just sent. This surfaces the domain's own error.
     document.validate_structure()?;
 
-    Ok(designs.create(account, project_id, name, document, actor).await?)
+    Ok(designs
+        .create(account, project_id, name, document, actor)
+        .await?)
 }
 
 pub async fn get(
@@ -96,7 +97,9 @@ pub async fn apply(
 ) -> Result<DesignRecord> {
     let current = designs.get(account, id).await?;
     let updated = apply_operations(&current.document, operations)?;
-    Ok(designs.save(account, id, base_version, &updated, actor).await?)
+    Ok(designs
+        .save(account, id, base_version, &updated, actor)
+        .await?)
 }
 
 /// Restores an earlier snapshot as a new version (plan section 29).
@@ -126,7 +129,9 @@ pub async fn undo(
 
     let previous = Version(base_version.0 - 1);
     let snapshot = designs.snapshot(account, id, previous).await?;
-    Ok(designs.save(account, id, base_version, &snapshot, actor).await?)
+    Ok(designs
+        .save(account, id, base_version, &snapshot, actor)
+        .await?)
 }
 
 /// Deletes a design and the derived data that only existed for it.
@@ -149,7 +154,10 @@ pub async fn delete(
     account: AccountId,
     id: DesignId,
 ) -> Result<()> {
-    let exported = exports.list_for_design(account, id).await.unwrap_or_default();
+    let exported = exports
+        .list_for_design(account, id)
+        .await
+        .unwrap_or_default();
 
     designs.delete(account, id).await?;
 

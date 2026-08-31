@@ -141,9 +141,10 @@ async fn a_design_reported_valid_can_actually_be_rendered() {
     let record = record(document_using_tokens());
     let page_id = record.document.pages[0].id;
 
-    let report = application::renders::validate(account(), &record, Some(&brand), &fonts, &assets, &store)
-        .await
-        .unwrap();
+    let report =
+        application::renders::validate(account(), &record, Some(&brand), &fonts, &assets, &store)
+            .await
+            .unwrap();
     assert!(report.valid, "unexpected issues: {:?}", report.issues);
 
     // The promise the report just made has to hold.

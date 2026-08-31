@@ -12,9 +12,18 @@ use crate::error::Result;
 pub trait AssetRequestRepository: Send + Sync {
     async fn create(&self, account: AccountId, request: &AssetRequest) -> Result<AssetRequest>;
     async fn get(&self, account: AccountId, id: AssetRequestId) -> Result<AssetRequest>;
-    async fn list_for_project(&self, account: AccountId, project_id: ProjectId) -> Result<Vec<AssetRequest>>;
+    async fn list_for_project(
+        &self,
+        account: AccountId,
+        project_id: ProjectId,
+    ) -> Result<Vec<AssetRequest>>;
 
     /// The user uploaded the missing image (plan section 23).
-    async fn resolve(&self, account: AccountId, id: AssetRequestId, asset_id: AssetId) -> Result<AssetRequest>;
+    async fn resolve(
+        &self,
+        account: AccountId,
+        id: AssetRequestId,
+        asset_id: AssetId,
+    ) -> Result<AssetRequest>;
     async fn cancel(&self, account: AccountId, id: AssetRequestId) -> Result<AssetRequest>;
 }

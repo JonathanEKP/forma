@@ -211,9 +211,9 @@ impl AccountRepository for SqliteAccountRepository {
 
         // Re-read: inviting an address that already has an open invite must not
         // silently reset the one that exists, and must not report a fresh one.
-        self.open_invite(&invite.email)
-            .await?
-            .ok_or_else(|| PersistenceError::Storage(format!("{} is already claimed", invite.email)))
+        self.open_invite(&invite.email).await?.ok_or_else(|| {
+            PersistenceError::Storage(format!("{} is already claimed", invite.email))
+        })
     }
 
     async fn list_invites(&self) -> Result<Vec<AccountInvite>> {

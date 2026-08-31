@@ -57,10 +57,15 @@ async fn context(
     state: &AppState,
     id: DesignId,
 ) -> Result<(design_core::DesignRecord, Option<design_core::BrandKit>), ApiError> {
-    let record = application::designs::get(&*state.designs, crate::routes::auth(state).account_id, id).await?;
-    let brand =
-        application::projects::get_brand(&*state.projects, crate::routes::auth(state).account_id, record.project_id)
+    let record =
+        application::designs::get(&*state.designs, crate::routes::auth(state).account_id, id)
             .await?;
+    let brand = application::projects::get_brand(
+        &*state.projects,
+        crate::routes::auth(state).account_id,
+        record.project_id,
+    )
+    .await?;
     Ok((record, brand))
 }
 
@@ -104,10 +109,26 @@ async fn render(
     });
     let page_id = resolve_page(&record.document, request.page_id)?;
 
-    let assets = application::renders::load_page_assets(&*state.assets, &*state.store, crate::routes::auth(&state).account_id, &record.document, page_id)
+    let assets = application::renders::load_page_assets(
+        &*state.assets,
+        &*state.store,
+        crate::routes::auth(&state).account_id,
+        &record.document,
+        page_id,
+    )
     .await?;
 
-    let png = application::renders::render_png(&state.cache, id, record.version, &record.document, page_id, brand.as_ref(), &state.fonts, &assets, request.scale)?;
+    let png = application::renders::render_png(
+        &state.cache,
+        id,
+        record.version,
+        &record.document,
+        page_id,
+        brand.as_ref(),
+        &state.fonts,
+        &assets,
+        request.scale,
+    )?;
 
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "design_id": id,
@@ -135,7 +156,13 @@ async fn preview_svg(
     let page_id = PageId(parse_id(&raw_page, "page id")?);
 
     let (record, brand) = context(&state, id).await?;
-    let assets = application::renders::load_page_assets(&*state.assets, &*state.store, crate::routes::auth(&state).account_id, &record.document, page_id)
+    let assets = application::renders::load_page_assets(
+        &*state.assets,
+        &*state.store,
+        crate::routes::auth(&state).account_id,
+        &record.document,
+        page_id,
+    )
     .await?;
 
     let rendered = application::renders::render(
@@ -166,10 +193,26 @@ async fn preview_png(
     let page_id = PageId(parse_id(&raw_page, "page id")?);
 
     let (record, brand) = context(&state, id).await?;
-    let assets = application::renders::load_page_assets(&*state.assets, &*state.store, crate::routes::auth(&state).account_id, &record.document, page_id)
+    let assets = application::renders::load_page_assets(
+        &*state.assets,
+        &*state.store,
+        crate::routes::auth(&state).account_id,
+        &record.document,
+        page_id,
+    )
     .await?;
 
-    let png = application::renders::render_png(&state.cache, id, record.version, &record.document, page_id, brand.as_ref(), &state.fonts, &assets, query.scale)?;
+    let png = application::renders::render_png(
+        &state.cache,
+        id,
+        record.version,
+        &record.document,
+        page_id,
+        brand.as_ref(),
+        &state.fonts,
+        &assets,
+        query.scale,
+    )?;
 
     Ok(HttpResponse::Ok()
         .content_type("image/png")

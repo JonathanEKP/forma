@@ -13,11 +13,10 @@ pub use error::{PersistenceError, Result};
 pub use local_fs::{asset_storage_key, export_storage_key, LocalObjectStore};
 pub use sqlite::{
     checkpoint_and_close, connect, SqliteAccountRepository, SqliteAssetRepository,
-    SqliteAssetRequestRepository,
-    SqliteDesignRepository, SqliteExportRepository, SqliteProjectRepository,
-    SqliteTemplateRepository,
+    SqliteAssetRequestRepository, SqliteDesignRepository, SqliteExportRepository,
+    SqliteProjectRepository, SqliteTemplateRepository,
 };
 pub use traits::{
-    AccountRepository, AssetRepository, AssetRequestRepository, DesignRepository, ExportRepository, ObjectStore,
-    ProjectRepository, TemplateRepository, VersionSummary,
+    AccountRepository, AssetRepository, AssetRequestRepository, DesignRepository, ExportRepository,
+    ObjectStore, ProjectRepository, TemplateRepository, VersionSummary,
 };

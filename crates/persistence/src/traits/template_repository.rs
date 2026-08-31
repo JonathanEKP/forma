@@ -15,6 +15,10 @@ use crate::error::Result;
 pub trait TemplateRepository: Send + Sync {
     async fn create(&self, account: AccountId, template: &Template) -> Result<Template>;
     async fn get(&self, account: AccountId, id: TemplateId) -> Result<Template>;
-    async fn list_for_project(&self, account: AccountId, project_id: ProjectId) -> Result<Vec<Template>>;
+    async fn list_for_project(
+        &self,
+        account: AccountId,
+        project_id: ProjectId,
+    ) -> Result<Vec<Template>>;
     async fn delete(&self, account: AccountId, id: TemplateId) -> Result<()>;
 }

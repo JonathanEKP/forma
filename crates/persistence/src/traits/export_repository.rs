@@ -12,5 +12,6 @@ use crate::error::Result;
 pub trait ExportRepository: Send + Sync {
     async fn create(&self, account: AccountId, export: &Export) -> Result<Export>;
     async fn get(&self, account: AccountId, id: ExportId) -> Result<Export>;
-    async fn list_for_design(&self, account: AccountId, design_id: DesignId) -> Result<Vec<Export>>;
+    async fn list_for_design(&self, account: AccountId, design_id: DesignId)
+        -> Result<Vec<Export>>;
 }
