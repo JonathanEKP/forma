@@ -11,13 +11,15 @@
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{
-    CallToolResult, ContentBlock, Implementation, ProtocolVersion, ServerCapabilities, ServerInfo,
+    CallToolResult, ContentBlock, Extensions, Implementation, ProtocolVersion, ServerCapabilities,
+    ServerInfo,
 };
 use rmcp::{tool, tool_handler, tool_router, ErrorData, Peer, RoleServer, ServerHandler};
-use serde::Deserialize;
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use crate::client::{ServerClient, ServerError};
+use crate::client::{BearerCredential, ServerClient, ServerError};
 
 // --- parameters -----------------------------------------------------------
 //
@@ -147,6 +149,10 @@ pub struct ExportDesignParams {
 
 pub struct FormaMcp {
     client: ServerClient,
+    /// The process credential used when stdio has no inbound HTTP request.
+    ///
+    /// HTTP never sets this: its bearer comes from the current tool call.
+    stdio_credential: Option<String>,
     /// The public name this deployment answers on, when it has one.
     ///
     /// `forma_status` is the "where am I" tool, and without this it could only
@@ -161,14 +167,56 @@ impl FormaMcp {
     pub fn new(client: ServerClient) -> Self {
         Self {
             client,
+            stdio_credential: None,
             deployment: None,
             tool_router: Self::tool_router(),
         }
     }
 
+    pub fn with_stdio_credential(mut self, credential: Option<String>) -> Self {
+        self.stdio_credential = credential;
+        self
+    }
+
     pub fn on_deployment(mut self, deployment: Option<String>) -> Self {
         self.deployment = deployment;
         self
+    }
+
+    /// The bearer belongs to this tool call, not to the process or its session.
+    ///
+    /// rmcp carries the current HTTP request parts in protocol extensions. Stdio
+    /// has no such request, so and only so does it use the process credential.
+    fn credential(&self, extensions: &Extensions) -> Option<String> {
+        extensions
+            .get::<axum::http::request::Parts>()
+            .and_then(|parts| parts.extensions.get::<BearerCredential>())
+            .map(|credential| credential.as_str().to_string())
+            .or_else(|| self.stdio_credential.clone())
+    }
+
+    async fn get<T: DeserializeOwned>(
+        &self,
+        extensions: &Extensions,
+        tool: &str,
+        path: &str,
+    ) -> crate::client::Result<T> {
+        let credential = self.credential(extensions);
+        self.client.get(credential.as_deref(), tool, path).await
+    }
+
+    async fn post<T: DeserializeOwned, B: Serialize>(
+        &self,
+        extensions: &Extensions,
+        tool: &str,
+        path: &str,
+        actor: &str,
+        body: &B,
+    ) -> crate::client::Result<T> {
+        let credential = self.credential(extensions);
+        self.client
+            .post(credential.as_deref(), tool, path, actor, body)
+            .await
     }
 }
 
@@ -274,7 +322,7 @@ impl FormaMcp {
                        actually draw, and the project count. Call this first in a Forma session.",
         annotations(read_only_hint = true)
     )]
-    async fn forma_status(&self) -> Result<CallToolResult, ErrorData> {
+    async fn forma_status(&self, extensions: Extensions) -> Result<CallToolResult, ErrorData> {
         let where_am_i = match &self.deployment {
             Some(deployment) => format!(
                 "forma-server reachable, serving {deployment} (from {} on that host)",
@@ -284,7 +332,7 @@ impl FormaMcp {
         };
         Ok(answer(
             where_am_i,
-            self.client.get("forma_status", "/status").await,
+            self.get(&extensions, "forma_status", "/status").await,
         ))
     }
 
@@ -294,8 +342,11 @@ impl FormaMcp {
                        Kit, assets and designs.",
         annotations(read_only_hint = true)
     )]
-    async fn list_projects(&self) -> Result<CallToolResult, ErrorData> {
-        match self.client.get::<Value>("list_projects", "/projects").await {
+    async fn list_projects(&self, extensions: Extensions) -> Result<CallToolResult, ErrorData> {
+        match self
+            .get::<Value>(&extensions, "list_projects", "/projects")
+            .await
+        {
             Ok(projects) => {
                 let count = projects.as_array().map(Vec::len).unwrap_or(0);
                 Ok(ok(
@@ -316,13 +367,17 @@ impl FormaMcp {
     )]
     async fn get_project(
         &self,
+        extensions: Extensions,
         Parameters(params): Parameters<ProjectParams>,
     ) -> Result<CallToolResult, ErrorData> {
         Ok(answer(
             "project",
-            self.client
-                .get("get_project", &format!("/projects/{}", params.project_id))
-                .await,
+            self.get(
+                &extensions,
+                "get_project",
+                &format!("/projects/{}", params.project_id),
+            )
+            .await,
         ))
     }
 
@@ -336,16 +391,17 @@ impl FormaMcp {
     )]
     async fn get_brand(
         &self,
+        extensions: Extensions,
         Parameters(params): Parameters<ProjectParams>,
     ) -> Result<CallToolResult, ErrorData> {
         let brand = self
-            .client
             .get::<Value>(
+                &extensions,
                 "get_brand",
                 &format!("/projects/{}/brand", params.project_id),
             )
             .await;
-        let status = self.client.get::<Value>("get_brand", "/status").await;
+        let status = self.get::<Value>(&extensions, "get_brand", "/status").await;
 
         match (brand, status) {
             (Ok(brand), Ok(status)) => {
@@ -374,11 +430,12 @@ impl FormaMcp {
     )]
     async fn list_assets(
         &self,
+        extensions: Extensions,
         Parameters(params): Parameters<ProjectParams>,
     ) -> Result<CallToolResult, ErrorData> {
         match self
-            .client
             .get::<Value>(
+                &extensions,
                 "list_assets",
                 &format!("/projects/{}/assets", params.project_id),
             )
@@ -407,11 +464,12 @@ impl FormaMcp {
     )]
     async fn list_templates(
         &self,
+        extensions: Extensions,
         Parameters(params): Parameters<ProjectParams>,
     ) -> Result<CallToolResult, ErrorData> {
         match self
-            .client
             .get::<Value>(
+                &extensions,
                 "list_templates",
                 &format!("/projects/{}/templates", params.project_id),
             )
@@ -437,11 +495,15 @@ impl FormaMcp {
     )]
     async fn get_design(
         &self,
+        extensions: Extensions,
         Parameters(params): Parameters<DesignParams>,
     ) -> Result<CallToolResult, ErrorData> {
         match self
-            .client
-            .get::<Value>("get_design", &format!("/designs/{}", params.design_id))
+            .get::<Value>(
+                &extensions,
+                "get_design",
+                &format!("/designs/{}", params.design_id),
+            )
             .await
         {
             Ok(record) => Ok(ok(outline(&record), record)),
@@ -457,11 +519,12 @@ impl FormaMcp {
     )]
     async fn get_asset_request(
         &self,
+        extensions: Extensions,
         Parameters(params): Parameters<AssetRequestParams>,
     ) -> Result<CallToolResult, ErrorData> {
         match self
-            .client
             .get::<Value>(
+                &extensions,
                 "get_asset_request",
                 &format!("/asset-requests/{}", params.asset_request_id),
             )
@@ -488,13 +551,14 @@ impl FormaMcp {
     )]
     async fn create_design(
         &self,
+        extensions: Extensions,
         peer: Peer<RoleServer>,
         Parameters(params): Parameters<CreateDesignParams>,
     ) -> Result<CallToolResult, ErrorData> {
         if let Some(template_id) = &params.template_id {
             return match self
-                .client
                 .post::<Value, _>(
+                    &extensions,
                     "create_design",
                     &format!("/templates/{template_id}/designs"),
                     &actor_of(&peer),
@@ -518,8 +582,8 @@ impl FormaMcp {
         }
 
         match self
-            .client
             .post::<Value, _>(
+                &extensions,
                 "create_design",
                 &format!("/projects/{}/designs", params.project_id),
                 &actor_of(&peer),
@@ -546,6 +610,7 @@ impl FormaMcp {
     )]
     async fn apply_operations(
         &self,
+        extensions: Extensions,
         peer: Peer<RoleServer>,
         Parameters(params): Parameters<ApplyOperationsParams>,
     ) -> Result<CallToolResult, ErrorData> {
@@ -555,8 +620,8 @@ impl FormaMcp {
         });
 
         match self
-            .client
             .post::<Value, _>(
+                &extensions,
                 "apply_operations",
                 &format!("/designs/{}/operations", params.design_id),
                 &actor_of(&peer),
@@ -579,6 +644,7 @@ impl FormaMcp {
     )]
     async fn request_asset(
         &self,
+        extensions: Extensions,
         peer: Peer<RoleServer>,
         Parameters(params): Parameters<RequestAssetParams>,
     ) -> Result<CallToolResult, ErrorData> {
@@ -592,8 +658,8 @@ impl FormaMcp {
         });
 
         match self
-            .client
             .post::<Value, _>(
+                &extensions,
                 "request_asset",
                 &format!("/projects/{}/asset-requests", params.project_id),
                 &actor_of(&peer),
@@ -621,11 +687,12 @@ impl FormaMcp {
     )]
     async fn validate_design(
         &self,
+        extensions: Extensions,
         Parameters(params): Parameters<DesignParams>,
     ) -> Result<CallToolResult, ErrorData> {
         match self
-            .client
             .post::<Value, _>(
+                &extensions,
                 "validate_design",
                 &format!("/designs/{}/validate", params.design_id),
                 "agent:mcp",
@@ -660,6 +727,7 @@ impl FormaMcp {
     )]
     async fn render_preview(
         &self,
+        extensions: Extensions,
         Parameters(params): Parameters<RenderPreviewParams>,
     ) -> Result<CallToolResult, ErrorData> {
         let body = json!({
@@ -668,8 +736,8 @@ impl FormaMcp {
         });
 
         match self
-            .client
             .post::<Value, _>(
+                &extensions,
                 "render_preview",
                 &format!("/designs/{}/render", params.design_id),
                 "agent:mcp",
@@ -724,6 +792,7 @@ impl FormaMcp {
     )]
     async fn export_design(
         &self,
+        extensions: Extensions,
         peer: Peer<RoleServer>,
         Parameters(params): Parameters<ExportDesignParams>,
     ) -> Result<CallToolResult, ErrorData> {
@@ -734,8 +803,8 @@ impl FormaMcp {
         });
 
         match self
-            .client
             .post::<Value, _>(
+                &extensions,
                 "export_design",
                 &format!("/designs/{}/exports", params.design_id),
                 &actor_of(&peer),

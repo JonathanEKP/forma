@@ -73,13 +73,26 @@ struct ErrorBody {
     details: Option<Value>,
 }
 
+/// A bearer already accepted at Forma's inbound boundary.
+///
+/// Deliberately has no Debug implementation: a derived formatter is an easy way
+/// for an otherwise harmless trace to print a credential.
+#[derive(Clone)]
+pub(crate) struct BearerCredential(String);
+
+impl BearerCredential {
+    pub(crate) fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 pub struct ServerClient {
     base_url: String,
     http: reqwest::Client,
-    /// Presented to `forma-server` when it is running with one (plan section
-    /// 57). The same value the remote host presents to us: for V1 remote
-    /// testing there is one credential for the deployment, not a chain of them.
-    token: Option<String>,
 }
 
 impl ServerClient {
@@ -87,20 +100,21 @@ impl ServerClient {
         Self {
             base_url: base_url.into().trim_end_matches('/').to_string(),
             http: reqwest::Client::new(),
-            token: None,
         }
     }
 
-    pub fn with_token(mut self, token: Option<String>) -> Self {
-        self.token = token;
-        self
-    }
-
-    /// Adds the bearer when there is one, so every call goes through one place
-    /// rather than each caller remembering.
-    fn authorized(&self, request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
-        match &self.token {
-            Some(token) => request.bearer_auth(token),
+    /// Adds this call's bearer when there is one.
+    ///
+    /// The credential is an argument rather than client state because one MCP
+    /// process serves concurrent callers. Holding it here would silently make
+    /// every session use whichever person's credential constructed the client.
+    fn authorized(
+        &self,
+        request: reqwest::RequestBuilder,
+        credential: Option<&str>,
+    ) -> reqwest::RequestBuilder {
+        match credential {
+            Some(credential) => request.bearer_auth(credential),
             None => request,
         }
     }
@@ -160,12 +174,17 @@ impl ServerClient {
     /// The tool name and a request id travel as headers so the server's own log
     /// line names both (plan section 60). Logging it only here would put the
     /// tool name in a process whose stderr the host usually discards.
-    pub async fn get<T: DeserializeOwned>(&self, tool: &str, path: &str) -> Result<T> {
+    pub async fn get<T: DeserializeOwned>(
+        &self,
+        credential: Option<&str>,
+        tool: &str,
+        path: &str,
+    ) -> Result<T> {
         let request_id = Uuid::new_v4().to_string();
         tracing::debug!(tool_name = tool, request_id = %request_id, path, "GET");
 
         let response = self
-            .authorized(self.http.get(self.url(path)))
+            .authorized(self.http.get(self.url(path)), credential)
             .header("x-forma-tool", tool)
             .header("x-request-id", &request_id)
             .send()
@@ -179,6 +198,7 @@ impl ServerClient {
     /// human who was not there.
     pub async fn post<T: DeserializeOwned, B: Serialize>(
         &self,
+        credential: Option<&str>,
         tool: &str,
         path: &str,
         actor: &str,
@@ -188,7 +208,7 @@ impl ServerClient {
         tracing::debug!(tool_name = tool, request_id = %request_id, path, actor, "POST");
 
         let response = self
-            .authorized(self.http.post(self.url(path)))
+            .authorized(self.http.post(self.url(path)), credential)
             .header("x-forma-actor", actor)
             .header("x-forma-tool", tool)
             .header("x-request-id", &request_id)
