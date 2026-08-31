@@ -320,3 +320,66 @@ fn the_envelope_can_say_forbidden() {
     assert_eq!(error.status_code(), StatusCode::FORBIDDEN);
     assert_eq!(error.code(), "ACCOUNT_REQUIRED");
 }
+
+/// The skill is public: an agent that cannot reach the workspace must still be
+/// able to read how to use it (plan §117.3).
+#[actix_web::test]
+async fn the_skill_is_served_without_a_credential() {
+    let (state, _dir) = state().await;
+    let app = guarded!(state);
+
+    let response = test::call_service(&app, TestRequest::get().uri("/skill").to_request()).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response
+            .headers()
+            .get("content-type")
+            .and_then(|value| value.to_str().ok()),
+        Some("text/markdown; charset=utf-8"),
+        "a client asked for the skill, not for a web page"
+    );
+
+    let body = String::from_utf8(test::read_body(response).await.to_vec()).expect("utf-8");
+    assert!(
+        body.starts_with("---"),
+        "the route must serve the skill itself, front matter and all, not the app shell"
+    );
+    assert!(body.contains("apply_operations"));
+}
+
+/// Plan §110.1, stated as a test so it cannot be closed again by accident.
+///
+/// The bundle is public and the data is not. `/login` exists to be reached
+/// before you have a credential, and Supabase sends a person to
+/// `/oauth/consent` holding none at all — if the origin refuses those, the
+/// hosted flow cannot start.
+#[actix_web::test]
+async fn the_bundle_is_public_and_the_workspace_is_not() {
+    let (state, _dir) = state().await;
+    let app = guarded!(state);
+
+    for path in [
+        "/",
+        "/index.html",
+        "/login",
+        "/oauth/consent",
+        "/agents",
+        "/skill",
+    ] {
+        let response = test::call_service(&app, TestRequest::get().uri(path).to_request()).await;
+        assert_ne!(
+            response.status(),
+            StatusCode::UNAUTHORIZED,
+            "{path} is what a visitor with no credential is for"
+        );
+    }
+
+    for path in ["/api/v1/projects", "/api/v1/templates", "/api/v1/api-keys"] {
+        let response = test::call_service(&app, TestRequest::get().uri(path).to_request()).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::UNAUTHORIZED,
+            "{path} is the workspace and stays behind the credential"
+        );
+    }
+}

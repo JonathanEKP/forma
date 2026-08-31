@@ -101,12 +101,15 @@ def tool(name, arguments, request_id):
 
 
 print("TLS and routing")
-# The whole origin is behind the credential, the editor included. Serving the
-# app shell to an anonymous visitor would only let it fail with 401s in the
-# console; refusing the page says the same thing honestly.
-check("the origin requires the credential", 401, status(f"{BASE}/", token=False))
-check("and serves the editor with it", 200, status(f"{BASE}/"))
-check("health answers without one", 200, status(f"{BASE}/api/v1/health", token=False))
+# The bundle is public and the data is not (plan section 110.1). This replaces
+# the Phase 11 assertion that the whole origin refused: `/login` exists to be
+# reached before you have a credential, and a provider sends a person to
+# `/oauth/consent` holding none at all. It is a weaker claim, stated honestly,
+# rather than the same claim quietly kept.
+check("the app shell is public", 200, status(f"{BASE}/", token=False))
+check("and so are its client routes", 200, status(f"{BASE}/login", token=False))
+check("the skill is public", 200, status(f"{BASE}/skill", token=False))
+check("health answers without a token", 200, status(f"{BASE}/api/v1/health", token=False))
 
 print("\nThe credential")
 check("api refuses without a token", 401, status(f"{BASE}/api/v1/projects", token=False))

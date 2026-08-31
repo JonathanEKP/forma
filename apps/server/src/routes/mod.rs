@@ -41,6 +41,16 @@ fn json_config() -> web::JsonConfig {
 }
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
+    // Outside the /api/v1 scope, and registered before the static files service
+    // so the SPA fallback cannot shadow it: everything that is not /api/ now
+    // resolves to index.html, which would have turned this into an HTML page
+    // that looks like it works.
+    cfg.service(
+        web::resource("/skill")
+            .guard(actix_web::guard::Any(actix_web::guard::Get()).or(actix_web::guard::Head()))
+            .to(meta::skill),
+    );
+
     cfg.app_data(json_config()).service(
         web::scope("/api/v1")
             .configure(api_keys::configure)

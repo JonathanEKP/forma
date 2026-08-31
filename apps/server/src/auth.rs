@@ -42,7 +42,27 @@ impl std::fmt::Debug for RemoteToken {
 /// Only liveness. It reports nothing about the workspace, and Caddy and any
 /// monitor need to reach it before anyone has configured a credential.
 fn is_open(path: &str) -> bool {
-    path == "/api/v1/health"
+    // Liveness. It reports nothing about the workspace, and Caddy and any
+    // monitor need it before anyone has configured a credential.
+    if path == "/api/v1/health" {
+        return true;
+    }
+
+    // Everything outside `/api/` is the built SPA or the public skill, and both
+    // are meant to be readable by someone who has no credential yet (plan
+    // §110.1).
+    //
+    // This reverses a Phase 11 decision on purpose. The whole origin was closed
+    // because serving an app shell to a visitor with no credential "would only
+    // let it fail with 401s in the console" — true when the shell had no way to
+    // ask for one. It has one now: `/login` exists precisely to be reached
+    // before you are authenticated, and Supabase redirects a person to
+    // `/oauth/consent` with no Forma credential at all. Closed, both are a 401
+    // and the hosted flow cannot start.
+    //
+    // What this discloses is the bundle: no project, no design, no asset, no
+    // name. Every one of those is still behind `/api/`.
+    !path.starts_with("/api/")
 }
 
 /// Resolves a deployment token or PAT into the request's `AuthContext`.

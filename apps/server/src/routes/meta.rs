@@ -45,6 +45,28 @@ pub struct Status {
     pub max_ops_per_batch: usize,
 }
 
+/// The canonical agent skill, served to anyone (plan section 117.3).
+///
+/// Compiled in rather than read from disk. On disk it would be a deploy
+/// artifact: it could go missing, drift from the binary that serves it, or 404
+/// after a partial deploy — and a skill that disagrees with the code is worse
+/// than none, because an agent follows it confidently and is wrong. This is the
+/// same constant `apps/mcp/tests/skill_matches_the_code.rs` asserts against, so
+/// the document the route serves is the document that test checks.
+///
+/// It carries no account data and no credentials, which is why it sits outside
+/// `/api/v1` and needs no Caddy route of its own.
+pub const SKILL: &str = include_str!("../../../../skills/forma/SKILL.md");
+
+/// GET **and** HEAD. Actix's `#[get]` answers only GET, so a HEAD fell through
+/// to the SPA fallback and reported `text/html` — a monitor probing this route
+/// the cheap way would have concluded the skill is a web page.
+pub async fn skill() -> impl Responder {
+    HttpResponse::Ok()
+        .content_type("text/markdown; charset=utf-8")
+        .body(SKILL)
+}
+
 #[get("/status")]
 async fn status(
     state: web::Data<AppState>,

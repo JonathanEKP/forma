@@ -320,3 +320,17 @@ fn the_skill_is_reachable_from_where_agents_actually_look() {
         );
     }
 }
+
+/// The route and the test read the same document.
+///
+/// Two `include_str!`s of the same path cannot drift, and asserting it here is
+/// what makes that a checked property rather than a coincidence: if either side
+/// is ever pointed somewhere else, this fails.
+#[test]
+fn the_public_route_serves_the_skill_this_test_checks() {
+    assert_eq!(
+        forma_server::routes::meta::SKILL,
+        SKILL,
+        "GET /skill must serve the document these assertions are written against"
+    );
+}
