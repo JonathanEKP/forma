@@ -1,7 +1,7 @@
 //! Transport-level parsing shared by the handlers.
 
 use actix_web::HttpRequest;
-use design_core::{Actor, ActorType, AuthContext, DesignId, ProjectId};
+use design_core::{Actor, ActorType, AuthContext, AuthKind, DesignId, ProjectId};
 use uuid::Uuid;
 
 use crate::error::ApiError;
@@ -41,17 +41,64 @@ pub fn design_id(raw: &str) -> Result<DesignId, ApiError> {
     Ok(id)
 }
 
-/// The `X-Forma-Actor` header, which every mutation records (plan section 61).
+/// Who to record as the author of a mutation (plan sections 61 and 117.2).
 ///
-/// One header rather than a field on each request body: the actor is a property
-/// of who is calling, not of what they are asking for, and duplicating it into
-/// every DTO would let the two disagree. Accepted values are `human`, `system`
-/// and `agent:<id>`; anything absent is a human, because the editor is the
-/// client that will not bother to send it.
-pub fn actor_from(request: &HttpRequest) -> Actor {
-    let actor = actor_header(request);
+/// Derived from the resolved identity wherever there is one, and read from the
+/// `X-Forma-Actor` header only in local mode.
+///
+/// That distinction is the point. The header is written by the caller, so
+/// trusting it means anyone can claim to be anyone in the history. In local mode
+/// that costs nothing: the caller is the process that started Forma, and its
+/// word about itself is exactly as good as everything else it says. Once a
+/// request is authenticated *as someone*, the history has to say who that was,
+/// not who they typed.
+///
+/// One header rather than a field on each request body, for the same reason as
+/// before: the actor is a property of who is calling, not of what they are
+/// asking for, and duplicating it into every DTO would let the two disagree.
+/// Accepted values are `human`, `system` and `agent:<id>`; anything absent is a
+/// human, because the editor is the client that will not bother to send it.
+pub fn actor_from(request: &HttpRequest, auth: &AuthContext) -> Actor {
+    let actor = if auth.trusts_caller_supplied_actor() {
+        actor_header(request)
+    } else {
+        derived(auth)
+    };
     telemetry::record_actor(&actor);
     actor
+}
+
+/// The mapping of plan section 117.2.
+fn derived(auth: &AuthContext) -> Actor {
+    let subject = auth
+        .user_id
+        .map(|id| id.to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+
+    match auth.kind {
+        // Unreachable: `trusts_caller_supplied_actor` took this branch already.
+        AuthKind::Local => Actor::human(),
+        AuthKind::BrowserUser => Actor {
+            actor_type: ActorType::Human,
+            actor_id: Some(format!("user:{subject}")),
+        },
+        AuthKind::McpOAuth => Actor {
+            actor_type: ActorType::Agent,
+            actor_id: Some(format!(
+                "oauth:{}:{subject}",
+                auth.client_id.as_deref().unwrap_or("unknown")
+            )),
+        },
+        AuthKind::McpPat => Actor {
+            actor_type: ActorType::Agent,
+            actor_id: Some(format!(
+                "pat:{}",
+                auth.api_key_id
+                    .map(|id| id.to_string())
+                    .unwrap_or_else(|| "unknown".into())
+            )),
+        },
+    }
 }
 
 fn actor_header(request: &HttpRequest) -> Actor {
@@ -90,11 +137,17 @@ pub fn auth(state: &AppState) -> AuthContext {
 mod tests {
     use super::*;
     use actix_web::test::TestRequest;
+    use design_core::{AccountId, ApiKeyId, AuthUserId};
+
+    /// Local mode: the caller is the process that started Forma.
+    fn local() -> AuthContext {
+        AuthContext::local(AccountId::new())
+    }
 
     #[test]
     fn a_missing_actor_header_is_a_human() {
         let request = TestRequest::default().to_http_request();
-        assert_eq!(actor_from(&request), Actor::human());
+        assert_eq!(actor_from(&request, &local()), Actor::human());
     }
 
     #[test]
@@ -102,7 +155,7 @@ mod tests {
         let request = TestRequest::default()
             .insert_header(("x-forma-actor", "agent:claude"))
             .to_http_request();
-        let actor = actor_from(&request);
+        let actor = actor_from(&request, &local());
         assert_eq!(actor.actor_type, ActorType::Agent);
         assert_eq!(actor.actor_id.as_deref(), Some("agent:claude"));
     }
@@ -112,7 +165,52 @@ mod tests {
         let request = TestRequest::default()
             .insert_header(("x-forma-actor", "   "))
             .to_http_request();
-        assert_eq!(actor_from(&request), Actor::human());
+        assert_eq!(actor_from(&request, &local()), Actor::human());
+    }
+
+    /// Plan 117.2: once a request is authenticated as someone, the history says
+    /// who that was, not who the caller typed.
+    #[test]
+    fn an_authenticated_caller_cannot_choose_its_own_actor() {
+        let request = TestRequest::default()
+            .insert_header(("x-forma-actor", "human"))
+            .to_http_request();
+
+        let user = AuthUserId::new();
+        let browser = AuthContext {
+            account_id: AccountId::new(),
+            user_id: Some(user),
+            kind: AuthKind::BrowserUser,
+            client_id: None,
+            api_key_id: None,
+        };
+        let actor = actor_from(&request, &browser);
+        assert_eq!(actor.actor_type, ActorType::Human);
+        assert_eq!(actor.actor_id.as_deref(), Some(&*format!("user:{user}")));
+
+        // The same header, and an agent's identity: it claims to be a human and
+        // is recorded as the agent it is.
+        let agent = AuthContext {
+            kind: AuthKind::McpOAuth,
+            client_id: Some("claude".into()),
+            ..browser.clone()
+        };
+        let actor = actor_from(&request, &agent);
+        assert_eq!(actor.actor_type, ActorType::Agent);
+        assert_eq!(
+            actor.actor_id.as_deref(),
+            Some(&*format!("oauth:claude:{user}"))
+        );
+
+        let key = ApiKeyId::new();
+        let pat = AuthContext {
+            kind: AuthKind::McpPat,
+            api_key_id: Some(key),
+            ..browser
+        };
+        let actor = actor_from(&request, &pat);
+        assert_eq!(actor.actor_type, ActorType::Agent);
+        assert_eq!(actor.actor_id.as_deref(), Some(&*format!("pat:{key}")));
     }
 
     #[test]

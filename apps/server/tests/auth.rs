@@ -162,6 +162,9 @@ fn a_public_bind_without_a_token_refuses_to_start() {
         log: "info".to_string(),
         web_dir: "apps/web/dist".into(),
         remote_token: token.map(str::to_string),
+        auth_mode: Ok(forma_server::config::AuthMode::Local),
+        supabase_issuer: None,
+        supabase_jwks_url: None,
     };
 
     assert!(config("127.0.0.1:4765", None).binding_is_safe().is_ok());
@@ -181,4 +184,134 @@ fn a_public_bind_without_a_token_refuses_to_start() {
     // A hostname could resolve anywhere, so it is treated as remote rather than
     // guessed in the permissive direction.
     assert!(config("example.com:4765", None).binding_is_safe().is_err());
+}
+
+// ---------------------------------------------------------------------------
+// Auth mode (plan sections 106.2 and 109.1)
+// ---------------------------------------------------------------------------
+
+fn hosted(issuer: Option<&str>, jwks: Option<&str>) -> Config {
+    Config {
+        bind: "127.0.0.1:4765".to_string(),
+        data_dir: "data".into(),
+        database_url: "sqlite://data/forma.db".to_string(),
+        font_dir: "data/fonts".into(),
+        log: "info".to_string(),
+        web_dir: "apps/web/dist".into(),
+        remote_token: None,
+        auth_mode: Ok(forma_server::config::AuthMode::Supabase),
+        supabase_issuer: issuer.map(str::to_string),
+        supabase_jwks_url: jwks.map(str::to_string),
+    }
+}
+
+/// The failure the old guard could no longer catch.
+///
+/// It rested on "loopback means only this machine can reach it", which stopped
+/// being true when Caddy was put in front of loopback. In hosted mode the
+/// question is not where we bind but whether identity is configured at all —
+/// otherwise retiring `FORMA_REMOTE_TOKEN` after the legacy claim would bring
+/// the deployment up serving everything unauthenticated.
+#[test]
+fn hosted_mode_without_identity_configuration_refuses_to_start() {
+    let refused = hosted(None, None).binding_is_safe();
+    assert!(refused.is_err(), "a hosted deployment needs a verifier");
+    let reason = refused.unwrap_err();
+    assert!(reason.contains("FORMA_SUPABASE_ISSUER"));
+    assert!(reason.contains("FORMA_SUPABASE_JWKS_URL"));
+
+    // Half-configured is still refused: one of the two is not enough.
+    assert!(hosted(Some("https://x/auth/v1"), None)
+        .binding_is_safe()
+        .is_err());
+    assert!(hosted(None, Some("https://x/jwks.json"))
+        .binding_is_safe()
+        .is_err());
+
+    assert!(hosted(Some("https://x/auth/v1"), Some("https://x/jwks.json"))
+        .binding_is_safe()
+        .is_ok());
+}
+
+/// A mode nobody can parse must not quietly become the permissive one.
+#[test]
+fn an_unreadable_auth_mode_refuses_to_start() {
+    let mut config = hosted(Some("i"), Some("j"));
+    config.auth_mode = Err("FORMA_AUTH_MODE is \"supabas\"; it must be \"local\" or \"supabase\"".into());
+
+    let refused = config.binding_is_safe();
+    assert!(refused.is_err());
+    assert!(refused.unwrap_err().contains("FORMA_AUTH_MODE"));
+}
+
+/// The second line of the same defence: even if such a process started, it
+/// refuses every request rather than allowing every request.
+#[actix_web::test]
+async fn a_hosted_process_with_no_verifier_refuses_everything() {
+    let (state, _dir) = state().await;
+    let app = test::init_service(
+        App::new()
+            .wrap(actix_web::middleware::from_fn(
+                forma_server::auth::require_bearer,
+            ))
+            // Hosted, and no RemoteToken registered: in local mode this exact
+            // shape is the open case.
+            .app_data(web::Data::new(
+                state.with_mode(forma_server::config::AuthMode::Supabase),
+            ))
+            .configure(routes::configure),
+    )
+    .await;
+
+    let response = test::call_service(
+        &app,
+        TestRequest::get().uri("/api/v1/projects").to_request(),
+    )
+    .await;
+    assert_eq!(
+        response.status(),
+        StatusCode::UNAUTHORIZED,
+        "no credential configured must not mean no credential required"
+    );
+
+    // Liveness still answers, so a monitor and Caddy are not locked out.
+    let health =
+        test::call_service(&app, TestRequest::get().uri("/api/v1/health").to_request()).await;
+    assert_eq!(health.status(), StatusCode::OK);
+}
+
+/// Local mode keeps exactly the behaviour it had: no token, no credential.
+#[actix_web::test]
+async fn local_mode_is_still_open() {
+    let (state, _dir) = state().await;
+    let app = test::init_service(
+        App::new()
+            .wrap(actix_web::middleware::from_fn(
+                forma_server::auth::require_bearer,
+            ))
+            .app_data(web::Data::new(state))
+            .configure(routes::configure),
+    )
+    .await;
+
+    let response = test::call_service(
+        &app,
+        TestRequest::get().uri("/api/v1/projects").to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+/// Plan 109.3: the envelope had no 403 at all before this phase.
+#[test]
+fn the_envelope_can_say_forbidden() {
+    use actix_web::ResponseError;
+
+    let error = forma_server::error::ApiError::forbidden(
+        "ACCOUNT_REQUIRED",
+        "this identity has no Forma account",
+        "Ask the owner of this deployment for an invite.",
+    );
+    assert_eq!(error.status_code(), StatusCode::FORBIDDEN);
+    assert_eq!(error.code(), "ACCOUNT_REQUIRED");
 }

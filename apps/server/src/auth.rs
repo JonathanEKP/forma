@@ -57,20 +57,36 @@ pub async fn require_bearer(
     request: ServiceRequest,
     next: Next<impl MessageBody + 'static>,
 ) -> Result<ServiceResponse<BoxBody>, Error> {
+    // **"No credential configured" is not a synonym for "no credential
+    // required".** It is only the same thing in local mode, where the security
+    // boundary is the process that started Forma. A hosted deployment that
+    // reached this line with nothing to check would serve the whole workspace to
+    // anyone, and the bind guard can no longer catch that: it rests on "loopback
+    // means local", which a reverse proxy in front of loopback makes false.
+    //
+    // So a hosted process with no verifier refuses everything rather than
+    // allowing everything. `Config::binding_is_safe` should have stopped it
+    // starting; this is the second line of that same defence, and the cheap one.
+    let hosted = request
+        .app_data::<web::Data<crate::state::AppState>>()
+        .map(|state| state.mode != crate::config::AuthMode::Local)
+        .unwrap_or(false);
+
     let expected = request.app_data::<web::Data<RemoteToken>>().cloned();
+
+    // `is_open` first: liveness has to answer before anything is configured, or
+    // a monitor and the proxy in front are locked out of a deployment that is
+    // merely misconfigured.
+    if hosted && expected.is_none() && !is_open(request.path()) {
+        return Ok(request.into_response(refusal()));
+    }
 
     if let Some(expected) = expected {
         if !is_open(request.path()) && !presented(&request).is_some_and(|t| expected.accepts(&t)) {
             // No detail about why: a caller learning whether the header was
             // missing, malformed or simply wrong is a caller being helped to
             // guess. The hint is for the operator reading a log, not the client.
-            let refusal = ApiError::unauthorized(
-                "UNAUTHORIZED",
-                "this server requires a bearer token",
-                "Send Authorization: Bearer <token>, with the value of FORMA_REMOTE_TOKEN.",
-            )
-            .error_response();
-            return Ok(request.into_response(refusal));
+            return Ok(request.into_response(refusal()));
         }
     }
 
@@ -92,4 +108,18 @@ fn presented(request: &ServiceRequest) -> Option<String> {
     scheme
         .eq_ignore_ascii_case("bearer")
         .then(|| value.trim().to_string())
+}
+
+/// One refusal, worded once.
+///
+/// No detail about why: a caller learning whether the header was missing,
+/// malformed or simply wrong is a caller being helped to guess. The hint is for
+/// the operator reading a log, not for the client.
+fn refusal() -> actix_web::HttpResponse {
+    ApiError::unauthorized(
+        "UNAUTHORIZED",
+        "this server requires a bearer token",
+        "Send Authorization: Bearer <token>, with the value of FORMA_REMOTE_TOKEN.",
+    )
+    .error_response()
 }

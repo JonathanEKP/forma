@@ -20,6 +20,9 @@ fn config(data_dir: &Path) -> Config {
         log: "error".to_string(),
         web_dir: PathBuf::from("./does-not-exist"),
         remote_token: None,
+        auth_mode: Ok(forma_server::config::AuthMode::Local),
+        supabase_issuer: None,
+        supabase_jwks_url: None,
     }
 }
 

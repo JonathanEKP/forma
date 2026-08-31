@@ -70,7 +70,7 @@ async fn create_design(
     path: web::Path<String>,
     body: web::Json<CreateFromTemplateRequest>,
 ) -> Result<HttpResponse, ApiError> {
-    let record = application::templates::create_design(&*state.designs, &*state.templates, crate::routes::auth(&state).account_id, template_id(&path)?, &body.name, &actor_from(&request))
+    let record = application::templates::create_design(&*state.designs, &*state.templates, crate::routes::auth(&state).account_id, template_id(&path)?, &body.name, &actor_from(&request, &crate::routes::auth(&state)))
     .await?;
 
     telemetry::record_project(record.project_id);

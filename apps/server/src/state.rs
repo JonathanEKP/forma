@@ -39,6 +39,8 @@ pub struct AppState {
     /// is the seam the hosted slice replaces, when the account starts coming
     /// from a credential instead.
     pub account: AccountId,
+    /// How callers prove who they are in this process (plan section 106.2).
+    pub mode: crate::config::AuthMode,
 }
 
 impl AppState {
@@ -59,6 +61,7 @@ impl AppState {
             account: AccountId(
                 uuid::Uuid::parse_str(design_core::BOOTSTRAP_ACCOUNT).expect("a constant uuid"),
             ),
+            mode: crate::config::AuthMode::Local,
             pool,
             fonts,
             cache,
@@ -82,6 +85,11 @@ impl AppState {
     /// there rather than on the first request.
     pub fn with_account(mut self, account: AccountId) -> Self {
         self.account = account;
+        self
+    }
+
+    pub fn with_mode(mut self, mode: crate::config::AuthMode) -> Self {
+        self.mode = mode;
         self
     }
 }

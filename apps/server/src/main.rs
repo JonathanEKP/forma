@@ -74,7 +74,7 @@ async fn main() -> anyhow::Result<()> {
         .await
         .map_err(|e| std::io::Error::other(format!("no account to serve: {e}")))?;
     tracing::info!(account = %account.id, claimed = account.claimed_at.is_some(), "serving one account");
-    let state = state.with_account(account.id);
+    let state = state.with_account(account.id).with_mode(config.mode());
 
     // Renders of designs that no longer exist (plan section 74). Doing it at
     // startup rather than on every delete path means a path added later cannot
@@ -97,6 +97,18 @@ async fn main() -> anyhow::Result<()> {
 
     // The one configuration that must not start: reachable from the network
     // with nothing in front of it.
+    // Hosted mode is specified (plan §110 to §112) and not built: slice one is
+    // the account boundary. Refusing to start says that once, at the moment
+    // somebody configures it, rather than answering 401 to every request and
+    // letting them work out why.
+    if config.mode() == forma_server::config::AuthMode::Supabase {
+        tracing::error!(
+            "FORMA_AUTH_MODE=supabase is not implemented yet: Phase 11.5 slice one builds the \
+             account boundary, and hosted identity is slice two. Unset it to run in local mode."
+        );
+        std::process::exit(1);
+    }
+
     if let Err(reason) = config.binding_is_safe() {
         tracing::error!("{reason}");
         anyhow::bail!(reason);

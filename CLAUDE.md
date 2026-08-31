@@ -426,11 +426,23 @@ FORMA_DATABASE_URL=sqlite://data/forma.db
 FORMA_FONT_DIR=./data/fonts
 FORMA_LOG=info
 
+# Phase 11.5. `local` (default) or `supabase`; the second is specified in plan
+# §110-§112 and not built yet, so the server refuses to start with it.
+FORMA_AUTH_MODE=local
+
 # Remote only (plan §57). Unset locally.
 FORMA_REMOTE_TOKEN=
 FORMA_MCP_BIND=127.0.0.1:4766
 FORMA_SERVER_URL=http://127.0.0.1:4765
 ```
+
+**"No credential configured" is not "no credential required".** It is only the
+same thing in `FORMA_AUTH_MODE=local`, where the boundary is the process that
+started Forma. `require_bearer`'s pass-through is gated on that mode, and
+`binding_is_safe` in hosted mode asks whether identity is configured rather than
+where the process binds — because the old premise, *loopback means only this
+machine can reach it*, stopped being true the day Caddy was put in front of
+loopback. It was masked only because a token happened to be set.
 
 **Reaching the network without a token is the one configuration that refuses to
 start.** `Config::binding_is_safe` rejects a non-loopback `FORMA_BIND` with no

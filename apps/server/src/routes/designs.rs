@@ -122,7 +122,7 @@ async fn create(
         (None, None) => blank(DesignFormat::from_preset(FormatPreset::Square)),
     };
 
-    let record = application::designs::create(&*state.designs, crate::routes::auth(&state).account_id, project, &body.name, &document, &actor_from(&request))
+    let record = application::designs::create(&*state.designs, crate::routes::auth(&state).account_id, project, &body.name, &document, &actor_from(&request, &crate::routes::auth(&state)))
     .await?;
 
     // The version the design ended at, so one log line says what this call did.
@@ -151,7 +151,7 @@ async fn operations(
     path: web::Path<String>,
     body: web::Json<ApplyOperationsRequest>,
 ) -> Result<HttpResponse, ApiError> {
-    let record = application::designs::apply(&*state.designs, crate::routes::auth(&state).account_id, design_id(&path)?, body.base_version, &body.operations, &actor_from(&request))
+    let record = application::designs::apply(&*state.designs, crate::routes::auth(&state).account_id, design_id(&path)?, body.base_version, &body.operations, &actor_from(&request, &crate::routes::auth(&state)))
     .await?;
 
     telemetry::record_design(record.id, Some(record.version));
@@ -167,7 +167,7 @@ async fn undo(
     path: web::Path<String>,
     body: web::Json<UndoRequest>,
 ) -> Result<HttpResponse, ApiError> {
-    let record = application::designs::undo(&*state.designs, crate::routes::auth(&state).account_id, design_id(&path)?, body.base_version, &actor_from(&request))
+    let record = application::designs::undo(&*state.designs, crate::routes::auth(&state).account_id, design_id(&path)?, body.base_version, &actor_from(&request, &crate::routes::auth(&state)))
     .await?;
 
     telemetry::record_design(record.id, Some(record.version));

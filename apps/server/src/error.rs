@@ -80,6 +80,22 @@ impl ApiError {
         }
     }
 
+    /// A caller who is who they say they are, and still may not.
+    ///
+    /// New in Phase 11.5, and the envelope had no 403 at all before it. It is
+    /// used for exactly one condition — a valid identity with no Forma account —
+    /// and never for an object belonging to somebody else: a 403 there would
+    /// confirm the object exists, which is why plan 108.2 makes that case
+    /// indistinguishable from an id that was never issued.
+    pub fn forbidden(code: &'static str, message: impl Into<String>, hint: &'static str) -> Self {
+        Self::Request {
+            code,
+            message: message.into(),
+            hint,
+            status: StatusCode::FORBIDDEN,
+        }
+    }
+
     pub fn internal(code: &'static str, message: impl Into<String>) -> Self {
         Self::Request {
             code,
@@ -144,6 +160,8 @@ fn status_for(code: &str) -> StatusCode {
         | "MALFORMED_ID"
         | "MALFORMED_BODY" => StatusCode::BAD_REQUEST,
 
+        // A valid identity with no account. Deliberately the only 403 here.
+        "ACCOUNT_REQUIRED" => StatusCode::FORBIDDEN,
         "LIMIT_EXCEEDED" => StatusCode::UNPROCESSABLE_ENTITY,
         "PAYLOAD_TOO_LARGE" => StatusCode::PAYLOAD_TOO_LARGE,
 
