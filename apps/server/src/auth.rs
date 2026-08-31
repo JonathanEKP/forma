@@ -1,18 +1,16 @@
-//! Bearer auth for remote mode (plan section 57).
+//! Bearer authentication at the server boundary (plan §§57 and 112.1).
 //!
-//! Deliberately not OAuth: §2.2 puts that out of scope for V1, and §57 says the
-//! first remote testing is a bearer token that can be migrated later if a
-//! specific integration needs it.
-//!
-//! The token is never stored in memory in the clear beyond startup: what is kept
-//! is its hash, and an incoming header is hashed and compared against it. blake3
-//! is already in the tree for asset hashing, and its `Hash` compares in constant
-//! time, so a wrong token cannot be found one byte at a time.
+//! The deployment token and each PAT are stored only as hashes and compared as
+//! BLAKE3 `Hash` values, whose equality is constant-time. OAuth/JWT validation
+//! joins this same choke point in the provider-backed slice; it is deliberately
+//! absent here.
 
 use actix_web::body::{BoxBody, MessageBody};
 use actix_web::dev::{ServiceRequest, ServiceResponse};
 use actix_web::middleware::Next;
-use actix_web::{web, Error, ResponseError};
+use actix_web::{web, Error, HttpMessage, ResponseError};
+use design_core::{AuthContext, AuthKind};
+use persistence::ApiKeyRepository;
 
 use crate::error::ApiError;
 
@@ -47,12 +45,7 @@ fn is_open(path: &str) -> bool {
     path == "/api/v1/health"
 }
 
-/// Requires `Authorization: Bearer <token>` when one is configured.
-///
-/// With no token configured this is a pass-through, which is the local case:
-/// the server is on loopback and the person running it is the only caller.
-/// `main` refuses to bind a non-loopback address without one, so "no token" and
-/// "reachable from the network" cannot both be true.
+/// Resolves a deployment token or PAT into the request's `AuthContext`.
 pub async fn require_bearer(
     request: ServiceRequest,
     next: Next<impl MessageBody + 'static>,
@@ -63,31 +56,90 @@ pub async fn require_bearer(
     // reached this line with nothing to check would serve the whole workspace to
     // anyone, and the bind guard can no longer catch that: it rests on "loopback
     // means local", which a reverse proxy in front of loopback makes false.
-    //
-    // So a hosted process with no verifier refuses everything rather than
-    // allowing everything. `Config::binding_is_safe` should have stopped it
-    // starting; this is the second line of that same defence, and the cheap one.
-    let hosted = request
+    let state = request
         .app_data::<web::Data<crate::state::AppState>>()
+        .cloned();
+    let hosted = state
+        .as_ref()
         .map(|state| state.mode != crate::config::AuthMode::Local)
         .unwrap_or(false);
-
     let expected = request.app_data::<web::Data<RemoteToken>>().cloned();
 
-    // `is_open` first: liveness has to answer before anything is configured, or
-    // a monitor and the proxy in front are locked out of a deployment that is
-    // merely misconfigured.
-    if hosted && expected.is_none() && !is_open(request.path()) {
-        return Ok(request.into_response(refusal()));
+    // Liveness has to answer before anything is configured, or a monitor and
+    // the proxy are locked out of a deployment that is merely misconfigured.
+    if is_open(request.path()) {
+        return Ok(next.call(request).await?.map_into_boxed_body());
     }
 
-    if let Some(expected) = expected {
-        if !is_open(request.path()) && !presented(&request).is_some_and(|t| expected.accepts(&t)) {
-            // No detail about why: a caller learning whether the header was
-            // missing, malformed or simply wrong is a caller being helped to
-            // guess. The hint is for the operator reading a log, not the client.
+    let credential = presented(&request);
+    let remote_matches = expected
+        .as_ref()
+        .zip(credential.as_deref())
+        .is_some_and(|(expected, value)| expected.accepts(value));
+
+    let auth = if remote_matches {
+        state
+            .as_ref()
+            .map(|state| AuthContext::local(state.account))
+    } else if let Some(pat) = credential
+        .as_deref()
+        .filter(|value| value.starts_with(persistence::PAT_PREFIX))
+    {
+        let Some(state) = state.as_ref() else {
             return Ok(request.into_response(refusal()));
+        };
+        let key = match state.api_keys.authenticate(pat).await {
+            Ok(Some(key)) => key,
+            Ok(None) => return Ok(request.into_response(refusal())),
+            Err(_) => {
+                return Ok(request.into_response(
+                    ApiError::internal(
+                        "AUTH_STORAGE_ERROR",
+                        "the personal access token could not be verified",
+                    )
+                    .error_response(),
+                ))
+            }
+        };
+
+        if key.is_revoked() {
+            return Ok(request.into_response(revoked_refusal()));
         }
+
+        if state
+            .api_keys
+            .touch_last_used(key.account_id, key.id)
+            .await
+            .is_err()
+        {
+            return Ok(request.into_response(
+                ApiError::internal(
+                    "AUTH_STORAGE_ERROR",
+                    "the personal access token's last use could not be recorded",
+                )
+                .error_response(),
+            ));
+        }
+
+        Some(AuthContext {
+            account_id: key.account_id,
+            user_id: key.created_by_user_id,
+            kind: AuthKind::McpPat,
+            client_id: None,
+            api_key_id: Some(key.id),
+        })
+    } else if expected.is_some() || hosted {
+        // No detail about why: a caller learning whether the header was
+        // missing, malformed or simply wrong is a caller being helped to guess.
+        return Ok(request.into_response(refusal()));
+    } else {
+        state
+            .as_ref()
+            .map(|state| AuthContext::local(state.account))
+    };
+
+    if let Some(auth) = auth {
+        request.extensions_mut().insert(auth);
     }
 
     Ok(next.call(request).await?.map_into_boxed_body())
@@ -118,8 +170,17 @@ fn presented(request: &ServiceRequest) -> Option<String> {
 fn refusal() -> actix_web::HttpResponse {
     ApiError::unauthorized(
         "UNAUTHORIZED",
-        "this server requires a bearer token",
-        "Send Authorization: Bearer <token>, with the value of FORMA_REMOTE_TOKEN.",
+        "this server requires a valid bearer credential",
+        "Send a valid deployment token or unrevoked Forma personal access token.",
+    )
+    .error_response()
+}
+
+fn revoked_refusal() -> actix_web::HttpResponse {
+    ApiError::unauthorized(
+        "API_KEY_REVOKED",
+        "this personal access token has been revoked",
+        "Create a new personal access token and replace the revoked credential.",
     )
     .error_response()
 }

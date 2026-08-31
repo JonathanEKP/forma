@@ -3,9 +3,9 @@ use std::sync::Arc;
 use design_core::AccountId;
 
 use persistence::{
-    LocalObjectStore, SqliteAccountRepository, SqliteAssetRepository, SqliteAssetRequestRepository,
-    SqliteDesignRepository, SqliteExportRepository, SqliteProjectRepository,
-    SqliteTemplateRepository,
+    LocalObjectStore, SqliteAccountRepository, SqliteApiKeyRepository, SqliteAssetRepository,
+    SqliteAssetRequestRepository, SqliteDesignRepository, SqliteExportRepository,
+    SqliteProjectRepository, SqliteTemplateRepository,
 };
 use renderer::{FontRegistry, RenderCache};
 use sqlx::SqlitePool;
@@ -32,6 +32,7 @@ pub struct AppState {
     pub exports: Arc<SqliteExportRepository>,
     pub templates: Arc<SqliteTemplateRepository>,
     pub accounts: Arc<SqliteAccountRepository>,
+    pub api_keys: Arc<SqliteApiKeyRepository>,
     /// The account every request in this process resolves to.
     ///
     /// Slice one is local mode (plan 117.8): one account, no identity, and the
@@ -59,6 +60,7 @@ impl AppState {
             exports: Arc::new(SqliteExportRepository::new(pool.clone())),
             templates: Arc::new(SqliteTemplateRepository::new(pool.clone())),
             accounts: Arc::new(SqliteAccountRepository::new(pool.clone())),
+            api_keys: Arc::new(SqliteApiKeyRepository::new(pool.clone())),
             account: AccountId(
                 uuid::Uuid::parse_str(design_core::BOOTSTRAP_ACCOUNT).expect("a constant uuid"),
             ),

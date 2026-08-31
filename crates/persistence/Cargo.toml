@@ -10,6 +10,7 @@ design-core.workspace = true
 async-trait.workspace = true
 chrono.workspace = true
 serde.workspace = true
+blake3.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true

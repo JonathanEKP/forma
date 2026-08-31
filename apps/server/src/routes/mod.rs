@@ -8,6 +8,7 @@
 use actix_web::{web, HttpRequest, HttpResponse};
 
 use crate::error::ApiError;
+pub mod api_keys;
 
 pub mod asset_requests;
 pub mod assets;
@@ -42,6 +43,7 @@ fn json_config() -> web::JsonConfig {
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.app_data(json_config()).service(
         web::scope("/api/v1")
+            .configure(api_keys::configure)
             .configure(meta::configure)
             .configure(projects::configure)
             .configure(designs::configure)

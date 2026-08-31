@@ -5,10 +5,13 @@
  * redeclared here: CI fails if the checked-in bindings drift.
  */
 
+import type { ApiKey } from "@forma/bindings/ApiKey";
 import type { Asset } from "@forma/bindings/Asset";
 import type { AssetRequest } from "@forma/bindings/AssetRequest";
 import type { BrandKit } from "@forma/bindings/BrandKit";
 import type { BrandKitDraft } from "@forma/bindings/BrandKitDraft";
+import type { CreateApiKeyRequest } from "@forma/bindings/CreateApiKeyRequest";
+import type { CreatedApiKey } from "@forma/bindings/CreatedApiKey";
 import type { DesignOperation } from "@forma/bindings/DesignOperation";
 import type { DesignRecord } from "@forma/bindings/DesignRecord";
 import type { DesignSummary } from "@forma/bindings/DesignSummary";
@@ -24,6 +27,7 @@ export type { BrandKitDraft } from "@forma/bindings/BrandKitDraft";
 export type { Export, ExportScope };
 
 export type {
+  ApiKey,
   Asset,
   AssetRequest,
   BrandKit,
@@ -135,6 +139,15 @@ async function request<T>(
 
   return (await readJson(response)) as T;
 }
+// --- personal access tokens -----------------------------------------------
+
+export const listApiKeys = () => request<ApiKey[]>("/api-keys");
+
+export const createApiKey = (body: CreateApiKeyRequest) =>
+  request<CreatedApiKey>("/api-keys", { method: "POST", body });
+
+export const revokeApiKey = (id: string) =>
+  request<void>(`/api-keys/${id}`, { method: "DELETE" });
 
 // --- meta -----------------------------------------------------------------
 

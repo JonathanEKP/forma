@@ -1,6 +1,6 @@
 //! Asset requests (plan sections 22, 23 and 31).
 
-use actix_web::{get, post, web, HttpResponse};
+use actix_web::{get, post, web, HttpRequest, HttpResponse};
 use design_core::{AssetId, AssetRequestId, DesignId, ProjectId};
 use serde::Deserialize;
 use ts_rs::TS;
@@ -41,10 +41,11 @@ fn request_id(raw: &str) -> Result<AssetRequestId, ApiError> {
 #[get("/projects/{id}/asset-requests")]
 async fn list(
     state: web::Data<AppState>,
+    request: HttpRequest,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
     let project = ProjectId(parse_id(&path, "project id")?);
-    let account = crate::routes::auth(&state).account_id;
+    let account = crate::routes::auth(&request, &state).account_id;
     application::projects::get(&*state.projects, account, project).await?;
     let requests =
         application::asset_requests::list(&*state.asset_requests, account, project).await?;
@@ -54,6 +55,7 @@ async fn list(
 #[post("/projects/{id}/asset-requests")]
 async fn create(
     state: web::Data<AppState>,
+    request: HttpRequest,
     path: web::Path<String>,
     body: web::Json<CreateAssetRequestBody>,
 ) -> Result<HttpResponse, ApiError> {
@@ -64,7 +66,7 @@ async fn create(
         &*state.projects,
         &*state.designs,
         &*state.asset_requests,
-        crate::routes::auth(&state).account_id,
+        crate::routes::auth(&request, &state).account_id,
         application::asset_requests::NewAssetRequest {
             project_id: project,
             design_id: body.design_id,
@@ -83,11 +85,12 @@ async fn create(
 #[get("/asset-requests/{id}")]
 async fn get(
     state: web::Data<AppState>,
+    request: HttpRequest,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
     let request = application::asset_requests::get(
         &*state.asset_requests,
-        crate::routes::auth(&state).account_id,
+        crate::routes::auth(&request, &state).account_id,
         request_id(&path)?,
     )
     .await?;
@@ -98,13 +101,14 @@ async fn get(
 #[post("/asset-requests/{id}/resolve")]
 async fn resolve(
     state: web::Data<AppState>,
+    request: HttpRequest,
     path: web::Path<String>,
     body: web::Json<ResolveAssetRequestBody>,
 ) -> Result<HttpResponse, ApiError> {
     let request = application::asset_requests::resolve(
         &*state.asset_requests,
         &*state.assets,
-        crate::routes::auth(&state).account_id,
+        crate::routes::auth(&request, &state).account_id,
         request_id(&path)?,
         body.asset_id,
     )
@@ -115,11 +119,12 @@ async fn resolve(
 #[post("/asset-requests/{id}/cancel")]
 async fn cancel(
     state: web::Data<AppState>,
+    request: HttpRequest,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
     let request = application::asset_requests::cancel(
         &*state.asset_requests,
-        crate::routes::auth(&state).account_id,
+        crate::routes::auth(&request, &state).account_id,
         request_id(&path)?,
     )
     .await?;

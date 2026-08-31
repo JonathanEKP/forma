@@ -5,6 +5,7 @@
 //! store, without the domain or the application layer noticing.
 
 pub mod account_repository;
+pub mod api_key_repository;
 pub mod asset_repository;
 pub mod asset_request_repository;
 pub mod design_repository;
@@ -14,6 +15,7 @@ pub mod project_repository;
 pub mod template_repository;
 
 pub use account_repository::AccountRepository;
+pub use api_key_repository::ApiKeyRepository;
 pub use asset_repository::AssetRepository;
 pub use asset_request_repository::AssetRequestRepository;
 pub use design_repository::{DesignRepository, VersionSummary};

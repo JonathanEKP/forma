@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { Agents } from "./Agents";
 import { Editor } from "./editor/Editor";
 import { Projects } from "./Projects";
 
@@ -25,12 +26,7 @@ export function App() {
         />
       );
     case "/agents":
-      return (
-        <Placeholder
-          title="Agent connections"
-          detail="Connect agents and manage their personal access tokens here."
-        />
-      );
+      return <Agents />;
     case "/":
       break;
     default:

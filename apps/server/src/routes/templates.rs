@@ -31,13 +31,14 @@ struct CreateFromTemplateRequest {
 #[post("/designs/{id}/template")]
 async fn save(
     state: web::Data<AppState>,
+    request: HttpRequest,
     path: web::Path<String>,
     body: web::Json<TemplateDraft>,
 ) -> Result<HttpResponse, ApiError> {
     let template = application::templates::save_from_design(
         &*state.templates,
         &*state.designs,
-        crate::routes::auth(&state).account_id,
+        crate::routes::auth(&request, &state).account_id,
         design_id(&path)?,
         &body.into_inner(),
     )
@@ -48,9 +49,10 @@ async fn save(
 #[get("/projects/{id}/templates")]
 async fn list(
     state: web::Data<AppState>,
+    request: HttpRequest,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
-    let account = crate::routes::auth(&state).account_id;
+    let account = crate::routes::auth(&request, &state).account_id;
     let project = project_id(&path)?;
     application::projects::get(&*state.projects, account, project).await?;
     let templates = application::templates::list(&*state.templates, account, project).await?;
@@ -60,11 +62,12 @@ async fn list(
 #[get("/templates/{id}")]
 async fn get(
     state: web::Data<AppState>,
+    request: HttpRequest,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
     let template = application::templates::get(
         &*state.templates,
-        crate::routes::auth(&state).account_id,
+        crate::routes::auth(&request, &state).account_id,
         template_id(&path)?,
     )
     .await?;
@@ -87,10 +90,10 @@ async fn create_design(
     let record = application::templates::create_design(
         &*state.designs,
         &*state.templates,
-        crate::routes::auth(&state).account_id,
+        crate::routes::auth(&request, &state).account_id,
         template_id(&path)?,
         &body.name,
-        &actor_from(&request, &crate::routes::auth(&state)),
+        &actor_from(&request, &crate::routes::auth(&request, &state)),
     )
     .await?;
 
@@ -102,11 +105,12 @@ async fn create_design(
 #[delete("/templates/{id}")]
 async fn remove(
     state: web::Data<AppState>,
+    request: HttpRequest,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
     application::templates::delete(
         &*state.templates,
-        crate::routes::auth(&state).account_id,
+        crate::routes::auth(&request, &state).account_id,
         template_id(&path)?,
     )
     .await?;

@@ -17,6 +17,7 @@ import type { DesignOperation, DesignRecord, Version } from "./api";
 
 export const keys = {
   status: ["status"] as const,
+  apiKeys: ["api-keys"] as const,
   projects: ["projects"] as const,
   project: (id: string) => ["project", id] as const,
   brand: (projectId: string) => ["brand", projectId] as const,
@@ -255,6 +256,31 @@ export function useCancelAssetRequest(projectId: string | null) {
     mutationFn: (requestId: string) => api.cancelAssetRequest(requestId),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: keys.assetRequests(projectId ?? "") });
+    },
+  });
+}
+
+export const useApiKeys = () =>
+  useQuery({ queryKey: keys.apiKeys, queryFn: api.listApiKeys });
+
+export function useCreateApiKey() {
+  const client = useQueryClient();
+
+  return useMutation({
+    mutationFn: (name: string) => api.createApiKey({ name }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: keys.apiKeys });
+    },
+  });
+}
+
+export function useRevokeApiKey() {
+  const client = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => api.revokeApiKey(id),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: keys.apiKeys });
     },
   });
 }

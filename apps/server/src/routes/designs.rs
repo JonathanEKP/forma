@@ -82,9 +82,10 @@ fn blank(format: DesignFormat) -> DesignDocument {
 #[get("/projects/{id}/designs")]
 async fn list(
     state: web::Data<AppState>,
+    request: HttpRequest,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
-    let account = crate::routes::auth(&state).account_id;
+    let account = crate::routes::auth(&request, &state).account_id;
     let project = project_id(&path)?;
     application::projects::get(&*state.projects, account, project).await?;
     let designs = application::designs::list(&*state.designs, account, project).await?;
@@ -127,11 +128,11 @@ async fn create(
 
     let record = application::designs::create(
         &*state.designs,
-        crate::routes::auth(&state).account_id,
+        crate::routes::auth(&request, &state).account_id,
         project,
         &body.name,
         &document,
-        &actor_from(&request, &crate::routes::auth(&state)),
+        &actor_from(&request, &crate::routes::auth(&request, &state)),
     )
     .await?;
 
@@ -143,11 +144,12 @@ async fn create(
 #[get("/designs/{id}")]
 async fn get(
     state: web::Data<AppState>,
+    request: HttpRequest,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
     let record = application::designs::get(
         &*state.designs,
-        crate::routes::auth(&state).account_id,
+        crate::routes::auth(&request, &state).account_id,
         design_id(&path)?,
     )
     .await?;
@@ -168,11 +170,11 @@ async fn operations(
 ) -> Result<HttpResponse, ApiError> {
     let record = application::designs::apply(
         &*state.designs,
-        crate::routes::auth(&state).account_id,
+        crate::routes::auth(&request, &state).account_id,
         design_id(&path)?,
         body.base_version,
         &body.operations,
-        &actor_from(&request, &crate::routes::auth(&state)),
+        &actor_from(&request, &crate::routes::auth(&request, &state)),
     )
     .await?;
 
@@ -191,10 +193,10 @@ async fn undo(
 ) -> Result<HttpResponse, ApiError> {
     let record = application::designs::undo(
         &*state.designs,
-        crate::routes::auth(&state).account_id,
+        crate::routes::auth(&request, &state).account_id,
         design_id(&path)?,
         body.base_version,
-        &actor_from(&request, &crate::routes::auth(&state)),
+        &actor_from(&request, &crate::routes::auth(&request, &state)),
     )
     .await?;
 
@@ -206,11 +208,12 @@ async fn undo(
 #[get("/designs/{id}/history")]
 async fn history(
     state: web::Data<AppState>,
+    request: HttpRequest,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
     let history = application::designs::history(
         &*state.designs,
-        crate::routes::auth(&state).account_id,
+        crate::routes::auth(&request, &state).account_id,
         design_id(&path)?,
     )
     .await?;
@@ -231,6 +234,7 @@ async fn history(
 #[delete("/designs/{id}")]
 async fn remove(
     state: web::Data<AppState>,
+    request: HttpRequest,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
     application::designs::delete(
@@ -238,7 +242,7 @@ async fn remove(
         &*state.exports,
         &*state.store,
         &state.cache,
-        crate::routes::auth(&state).account_id,
+        crate::routes::auth(&request, &state).account_id,
         design_id(&path)?,
     )
     .await?;

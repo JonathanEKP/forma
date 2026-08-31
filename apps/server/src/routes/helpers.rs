@@ -1,6 +1,6 @@
 //! Transport-level parsing shared by the handlers.
 
-use actix_web::HttpRequest;
+use actix_web::{HttpMessage, HttpRequest};
 use design_core::{Actor, ActorType, AuthContext, AuthKind, DesignId, ProjectId};
 use uuid::Uuid;
 
@@ -125,12 +125,15 @@ fn actor_header(request: &HttpRequest) -> Actor {
 /// The identity behind this request (plan section 108).
 ///
 /// One function, so the account is resolved in a single place and a handler
-/// cannot invent one. Slice one always answers `Local`: there is no credential
-/// to read, the process boundary is the security boundary, and every request
-/// belongs to the one account this process serves. The hosted slice replaces the
-/// body of this function and nothing else.
-pub fn auth(state: &AppState) -> AuthContext {
-    AuthContext::local(state.account)
+/// cannot invent one. Middleware inserts credential-derived identity; test
+/// harnesses and trusted-local calls that omit the middleware retain the
+/// process account as their explicit fallback.
+pub fn auth(request: &HttpRequest, state: &AppState) -> AuthContext {
+    request
+        .extensions()
+        .get::<AuthContext>()
+        .cloned()
+        .unwrap_or_else(|| AuthContext::local(state.account))
 }
 
 #[cfg(test)]

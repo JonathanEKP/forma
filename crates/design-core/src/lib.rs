@@ -21,8 +21,8 @@ pub mod template;
 mod version;
 
 pub use account::{
-    Account, AccountInvite, AccountMembership, AccountRole, AuthContext, AuthKind,
-    BOOTSTRAP_ACCOUNT,
+    Account, AccountInvite, AccountMembership, AccountRole, ApiKey, AuthContext, AuthKind,
+    CreatedApiKey, BOOTSTRAP_ACCOUNT,
 };
 pub use asset::{Asset, AssetKind, AssetOrigin};
 pub use asset_request::{AssetRequest, AssetRequestStatus};

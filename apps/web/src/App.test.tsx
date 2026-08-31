@@ -81,8 +81,13 @@ describe("the project view", () => {
 });
 
 describe("public entry points", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", mockFetch({ "/api-keys": [] }));
+  });
+
   afterEach(() => {
     window.history.replaceState({}, "", "/");
+    vi.unstubAllGlobals();
   });
 
   it.each([

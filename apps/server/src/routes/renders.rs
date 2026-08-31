@@ -5,7 +5,7 @@
 //! the same pipeline. A second render path is how preview and export drift
 //! apart, which the plan calls risk R3.
 
-use actix_web::{get, post, web, HttpResponse};
+use actix_web::{get, post, web, HttpRequest, HttpResponse};
 use design_core::{DesignId, PageId};
 use serde::Deserialize;
 use ts_rs::TS;
@@ -54,15 +54,19 @@ fn resolve_page(
 
 /// Loads the design, its project's Brand Kit, and the assets one page needs.
 async fn context(
+    request: &HttpRequest,
     state: &AppState,
     id: DesignId,
 ) -> Result<(design_core::DesignRecord, Option<design_core::BrandKit>), ApiError> {
-    let record =
-        application::designs::get(&*state.designs, crate::routes::auth(state).account_id, id)
-            .await?;
+    let record = application::designs::get(
+        &*state.designs,
+        crate::routes::auth(request, state).account_id,
+        id,
+    )
+    .await?;
     let brand = application::projects::get_brand(
         &*state.projects,
-        crate::routes::auth(state).account_id,
+        crate::routes::auth(request, state).account_id,
         record.project_id,
     )
     .await?;
@@ -72,12 +76,13 @@ async fn context(
 #[post("/designs/{id}/validate")]
 async fn validate(
     state: web::Data<AppState>,
+    request: HttpRequest,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
-    let (record, brand) = context(&state, design_id(&path)?).await?;
+    let (record, brand) = context(&request, &state, design_id(&path)?).await?;
 
     let report = application::renders::validate(
-        crate::routes::auth(&state).account_id,
+        crate::routes::auth(&request, &state).account_id,
         &record,
         brand.as_ref(),
         &state.fonts,
@@ -97,22 +102,23 @@ async fn validate(
 #[post("/designs/{id}/render")]
 async fn render(
     state: web::Data<AppState>,
+    request: HttpRequest,
     path: web::Path<String>,
     body: Option<web::Json<RenderRequest>>,
 ) -> Result<HttpResponse, ApiError> {
     let id = design_id(&path)?;
-    let (record, brand) = context(&state, id).await?;
+    let (record, brand) = context(&request, &state, id).await?;
 
-    let request = body.map(web::Json::into_inner).unwrap_or(RenderRequest {
+    let render_request = body.map(web::Json::into_inner).unwrap_or(RenderRequest {
         page_id: None,
         scale: default_scale(),
     });
-    let page_id = resolve_page(&record.document, request.page_id)?;
+    let page_id = resolve_page(&record.document, render_request.page_id)?;
 
     let assets = application::renders::load_page_assets(
         &*state.assets,
         &*state.store,
-        crate::routes::auth(&state).account_id,
+        crate::routes::auth(&request, &state).account_id,
         &record.document,
         page_id,
     )
@@ -127,14 +133,14 @@ async fn render(
         brand.as_ref(),
         &state.fonts,
         &assets,
-        request.scale,
+        render_request.scale,
     )?;
 
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "design_id": id,
         "page_id": page_id,
         "version": record.version,
-        "scale": request.scale,
+        "scale": render_request.scale,
         "mime_type": "image/png",
         "byte_size": png.len(),
         "png_base64": base64_of(&png),
@@ -149,17 +155,18 @@ fn base64_of(bytes: &[u8]) -> String {
 #[get("/designs/{design_id}/pages/{page_id}/preview.svg")]
 async fn preview_svg(
     state: web::Data<AppState>,
+    request: HttpRequest,
     path: web::Path<(String, String)>,
 ) -> Result<HttpResponse, ApiError> {
     let (raw_design, raw_page) = path.into_inner();
     let id = design_id(&raw_design)?;
     let page_id = PageId(parse_id(&raw_page, "page id")?);
 
-    let (record, brand) = context(&state, id).await?;
+    let (record, brand) = context(&request, &state, id).await?;
     let assets = application::renders::load_page_assets(
         &*state.assets,
         &*state.store,
-        crate::routes::auth(&state).account_id,
+        crate::routes::auth(&request, &state).account_id,
         &record.document,
         page_id,
     )
@@ -185,6 +192,7 @@ async fn preview_svg(
 #[get("/designs/{design_id}/pages/{page_id}/preview.png")]
 async fn preview_png(
     state: web::Data<AppState>,
+    request: HttpRequest,
     path: web::Path<(String, String)>,
     query: web::Query<ScaleQuery>,
 ) -> Result<HttpResponse, ApiError> {
@@ -192,11 +200,11 @@ async fn preview_png(
     let id = design_id(&raw_design)?;
     let page_id = PageId(parse_id(&raw_page, "page id")?);
 
-    let (record, brand) = context(&state, id).await?;
+    let (record, brand) = context(&request, &state, id).await?;
     let assets = application::renders::load_page_assets(
         &*state.assets,
         &*state.store,
-        crate::routes::auth(&state).account_id,
+        crate::routes::auth(&request, &state).account_id,
         &record.document,
         page_id,
     )

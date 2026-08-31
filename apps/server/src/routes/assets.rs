@@ -1,7 +1,7 @@
 //! Assets: upload, listing, download and soft delete (plan section 31).
 
 use actix_multipart::Multipart;
-use actix_web::{delete, get, post, web, HttpResponse};
+use actix_web::{delete, get, post, web, HttpRequest, HttpResponse};
 use design_core::AssetId;
 use futures_util::StreamExt as _;
 
@@ -71,6 +71,7 @@ async fn read_upload(
 #[post("/projects/{id}/assets")]
 async fn upload(
     state: web::Data<AppState>,
+    request: HttpRequest,
     path: web::Path<String>,
     payload: Multipart,
 ) -> Result<HttpResponse, ApiError> {
@@ -81,7 +82,7 @@ async fn upload(
         &*state.projects,
         &*state.assets,
         &*state.store,
-        crate::routes::auth(&state).account_id,
+        crate::routes::auth(&request, &state).account_id,
         project,
         bytes,
         filename,
@@ -103,9 +104,10 @@ async fn upload(
 #[get("/projects/{id}/assets")]
 async fn list(
     state: web::Data<AppState>,
+    request: HttpRequest,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
-    let account = crate::routes::auth(&state).account_id;
+    let account = crate::routes::auth(&request, &state).account_id;
     let project = project_id(&path)?;
     application::projects::get(&*state.projects, account, project).await?;
     let assets = application::assets::list(&*state.assets, account, project).await?;
@@ -115,11 +117,12 @@ async fn list(
 #[get("/assets/{id}")]
 async fn get(
     state: web::Data<AppState>,
+    request: HttpRequest,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
     let asset = application::assets::get(
         &*state.assets,
-        crate::routes::auth(&state).account_id,
+        crate::routes::auth(&request, &state).account_id,
         asset_id(&path)?,
     )
     .await?;
@@ -130,12 +133,13 @@ async fn get(
 #[get("/assets/{id}/content")]
 async fn content(
     state: web::Data<AppState>,
+    request: HttpRequest,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
     let (asset, bytes) = application::assets::bytes(
         &*state.assets,
         &*state.store,
-        crate::routes::auth(&state).account_id,
+        crate::routes::auth(&request, &state).account_id,
         asset_id(&path)?,
     )
     .await?;
@@ -153,11 +157,12 @@ async fn content(
 #[delete("/assets/{id}")]
 async fn remove(
     state: web::Data<AppState>,
+    request: HttpRequest,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
     application::assets::delete(
         &*state.assets,
-        crate::routes::auth(&state).account_id,
+        crate::routes::auth(&request, &state).account_id,
         asset_id(&path)?,
     )
     .await?;

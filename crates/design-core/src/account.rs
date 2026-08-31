@@ -9,7 +9,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::ids::{AccountId, AuthUserId};
+use crate::ids::{AccountId, ApiKeyId, AuthUserId};
 
 /// The fixed id of the account that existed before anyone signed in.
 ///
@@ -105,6 +105,47 @@ impl AccountInvite {
     pub fn is_open(&self) -> bool {
         self.claimed_at.is_none()
     }
+}
+
+/// Safe metadata for one personal access token (plan §112.1).
+///
+/// The hash is deliberately absent. The prefix is enough for a person to
+/// recognise a key in the Agents page and is never used as authentication on
+/// its own.
+///
+/// `created_by_user_id` is absent for the trusted-local process, which has no
+/// external subject.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ApiKey {
+    pub id: ApiKeyId,
+    pub account_id: AccountId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_by_user_id: Option<AuthUserId>,
+    pub name: String,
+    pub token_prefix: String,
+    pub created_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_used_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revoked_at: Option<String>,
+}
+
+impl ApiKey {
+    pub fn is_revoked(&self) -> bool {
+        self.revoked_at.is_some()
+    }
+}
+
+/// The only response that contains a complete PAT.
+///
+/// Deliberately not `Debug` or `Clone`: the server must serialize this once
+/// to the caller, and diagnostics must not acquire an easy path to the secret.
+#[derive(Serialize, TS)]
+#[ts(export)]
+pub struct CreatedApiKey {
+    pub key: ApiKey,
+    pub token: String,
 }
 
 /// How a caller proved who they are (plan section 108).

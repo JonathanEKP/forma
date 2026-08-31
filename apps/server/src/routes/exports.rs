@@ -1,6 +1,6 @@
 //! Export (plan sections 31 and 71).
 
-use actix_web::{get, post, web, HttpResponse};
+use actix_web::{get, post, web, HttpRequest, HttpResponse};
 use design_core::{ExportId, ExportScope, PageId};
 use serde::Deserialize;
 use ts_rs::TS;
@@ -40,11 +40,12 @@ fn export_id(raw: &str) -> Result<ExportId, ApiError> {
 #[post("/designs/{id}/exports")]
 async fn create(
     state: web::Data<AppState>,
+    request: HttpRequest,
     path: web::Path<String>,
     body: Option<web::Json<CreateExportRequest>>,
 ) -> Result<HttpResponse, ApiError> {
     let design = design_id(&path)?;
-    let request = body
+    let export_request = body
         .map(web::Json::into_inner)
         .unwrap_or(CreateExportRequest {
             scope: None,
@@ -54,13 +55,13 @@ async fn create(
 
     let record = application::designs::get(
         &*state.designs,
-        crate::routes::auth(&state).account_id,
+        crate::routes::auth(&request, &state).account_id,
         design,
     )
     .await?;
     let brand = application::projects::get_brand(
         &*state.projects,
-        crate::routes::auth(&state).account_id,
+        crate::routes::auth(&request, &state).account_id,
         record.project_id,
     )
     .await?;
@@ -71,12 +72,12 @@ async fn create(
         &*state.store,
         &state.cache,
         &state.fonts,
-        crate::routes::auth(&state).account_id,
+        crate::routes::auth(&request, &state).account_id,
         &record,
         brand.as_ref(),
-        request.scope.unwrap_or(ExportScope::AllPages),
-        request.page_id,
-        request.scale,
+        export_request.scope.unwrap_or(ExportScope::AllPages),
+        export_request.page_id,
+        export_request.scale,
     )
     .await?;
 
@@ -93,11 +94,12 @@ async fn create(
 #[get("/exports/{id}")]
 async fn get(
     state: web::Data<AppState>,
+    request: HttpRequest,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
     let export = application::exports::get(
         &*state.exports,
-        crate::routes::auth(&state).account_id,
+        crate::routes::auth(&request, &state).account_id,
         export_id(&path)?,
     )
     .await?;
@@ -106,13 +108,13 @@ async fn get(
     // as it stands now: a page added since must not appear in this listing.
     let record = application::designs::get(
         &*state.designs,
-        crate::routes::auth(&state).account_id,
+        crate::routes::auth(&request, &state).account_id,
         export.design_id,
     )
     .await?;
     let document = application::designs::snapshot(
         &*state.designs,
-        crate::routes::auth(&state).account_id,
+        crate::routes::auth(&request, &state).account_id,
         export.design_id,
         export.design_version,
     )
@@ -129,12 +131,13 @@ async fn get(
 #[get("/exports/{id}/download")]
 async fn download(
     state: web::Data<AppState>,
+    request: HttpRequest,
     path: web::Path<String>,
     query: web::Query<DownloadQuery>,
 ) -> Result<HttpResponse, ApiError> {
     let export = application::exports::get(
         &*state.exports,
-        crate::routes::auth(&state).account_id,
+        crate::routes::auth(&request, &state).account_id,
         export_id(&path)?,
     )
     .await?;
@@ -159,10 +162,11 @@ async fn download(
 #[get("/designs/{id}/exports")]
 async fn list(
     state: web::Data<AppState>,
+    request: HttpRequest,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
     let design = design_id(&path)?;
-    let account = crate::routes::auth(&state).account_id;
+    let account = crate::routes::auth(&request, &state).account_id;
     application::designs::get(&*state.designs, account, design).await?;
     let exports = application::exports::list(&*state.exports, account, design).await?;
     Ok(HttpResponse::Ok().json(exports))

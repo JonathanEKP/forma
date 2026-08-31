@@ -1,6 +1,7 @@
 //! SQLite adapters (plan section 25.1). The server is the only writer.
 
 pub mod account;
+pub mod api_key;
 pub mod asset;
 pub mod asset_request;
 pub mod design;
@@ -20,6 +21,7 @@ use uuid::Uuid;
 use crate::error::{PersistenceError, Result};
 
 pub use account::SqliteAccountRepository;
+pub use api_key::{SqliteApiKeyRepository, PAT_PREFIX};
 pub use asset::SqliteAssetRepository;
 pub use asset_request::SqliteAssetRequestRepository;
 pub use design::SqliteDesignRepository;
