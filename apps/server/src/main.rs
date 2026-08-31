@@ -3,8 +3,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use actix_web::{web, App, HttpServer};
+use anyhow::Context;
+use design_core::{AccountRole, AuthUserId};
 use forma_server::{auth, backup, routes, telemetry, AppState, Config};
-use persistence::DesignRepository;
+use persistence::{AccountRepository, DesignRepository};
 use renderer::{FontRegistry, RenderCache};
 use tracing_subscriber::EnvFilter;
 
@@ -23,8 +25,10 @@ async fn main() -> anyhow::Result<()> {
         .with_target(false)
         .init();
 
-    // One subcommand, deliberately: a backup is the one thing you need the
-    // server's own configuration for but do not want a running server to do.
+    // These commands use the server's own configuration while keeping shell
+    // access as their security boundary. None belongs on the network API: a
+    // backup touches the whole workspace, and invites and recovery grants are
+    // decisions only the machine's operator may make.
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
         None => {}
@@ -45,9 +49,104 @@ async fn main() -> anyhow::Result<()> {
             println!("{}", summary.out.display());
             return Ok(());
         }
+        Some("invite") => {
+            let email = required_email(args.next(), "forma-server invite <email>")?;
+            reject_extra(&mut args, "forma-server invite <email>")?;
+
+            let pool = persistence::connect(&config.database_url, &config.data_dir)
+                .await
+                .context("could not open the Forma database to create an invite")?;
+            let accounts = persistence::SqliteAccountRepository::new(pool.clone());
+            let invite = accounts
+                .invite(&email)
+                .await
+                .with_context(|| format!("could not invite {email:?}"))?;
+            persistence::checkpoint_and_close(&pool)
+                .await
+                .context("the invite was written, but the database could not close cleanly")?;
+
+            println!("invite open for {}", invite.email);
+            println!("created {}", invite.created_at);
+            return Ok(());
+        }
+        Some("grant-owner") => {
+            let usage = "forma-server grant-owner <email> [subject-uuid]";
+            let email = required_email(args.next(), usage)?;
+            let subject = match args.next() {
+                Some(raw) => AuthUserId(uuid::Uuid::parse_str(&raw).with_context(|| {
+                    format!("subject UUID {raw:?} is malformed; usage: {usage}")
+                })?),
+                None => AuthUserId::new(),
+            };
+            reject_extra(&mut args, usage)?;
+
+            let pool = persistence::connect(&config.database_url, &config.data_dir)
+                .await
+                .context("could not open the Forma database to grant ownership")?;
+            let accounts = persistence::SqliteAccountRepository::new(pool.clone());
+            let account = accounts
+                .bootstrap()
+                .await
+                .context("could not find the bootstrap account to recover")?;
+            let membership = accounts
+                .grant(account.id, subject, &email, AccountRole::Owner)
+                .await
+                .with_context(|| {
+                    format!("could not grant bootstrap-account ownership to {email:?}")
+                })?;
+            persistence::checkpoint_and_close(&pool)
+                .await
+                .context("the owner grant was written, but the database could not close cleanly")?;
+
+            println!("owner granted for {}", membership.email);
+            println!("account {}", membership.account_id);
+            println!("subject {}", membership.user_id);
+            return Ok(());
+        }
+        Some("invites") => {
+            reject_extra(&mut args, "forma-server invites")?;
+
+            let pool = persistence::connect(&config.database_url, &config.data_dir)
+                .await
+                .context("could not open the Forma database to list invites")?;
+            let accounts = persistence::SqliteAccountRepository::new(pool.clone());
+            let invites = accounts
+                .list_invites()
+                .await
+                .context("could not list account invites")?;
+            persistence::checkpoint_and_close(&pool)
+                .await
+                .context("the database could not close cleanly after listing invites")?;
+
+            println!("STATUS\tEMAIL\tCREATED\tCLAIMED\tSUBJECT");
+            for invite in invites {
+                let status = if invite.is_open() { "open" } else { "claimed" };
+                let claimed = invite.claimed_at.as_deref().unwrap_or("-");
+                let subject = invite
+                    .claimed_by_user_id
+                    .map(|id| id.to_string())
+                    .unwrap_or_else(|| "-".to_string());
+                println!(
+                    "{status}\t{}\t{}\t{claimed}\t{subject}",
+                    invite.email, invite.created_at
+                );
+            }
+            return Ok(());
+        }
         Some("--help" | "-h" | "help") => {
-            println!("forma-server                 run the server");
-            println!("forma-server backup [DIR]    write a backup, default DATA_DIR/backups/<utc>");
+            println!("forma-server                                      run the server");
+            println!(
+                "forma-server backup [DIR]                         write a backup, default DATA_DIR/backups/<utc>"
+            );
+            println!(
+                "forma-server invite <email>                       mint an invite so this address can create an account"
+            );
+            println!(
+                "forma-server grant-owner <email> [subject-uuid]   attach an owner membership to the bootstrap account"
+            );
+            println!(
+                "forma-server invites                              list invites, showing which are claimed"
+            );
             return Ok(());
         }
         Some(other) => anyhow::bail!("unknown argument {other:?}; try --help"),
@@ -183,6 +282,21 @@ async fn main() -> anyhow::Result<()> {
     persistence::checkpoint_and_close(&pool).await?;
 
     tracing::info!("stopped cleanly");
+    Ok(())
+}
+
+fn required_email(value: Option<String>, usage: &str) -> anyhow::Result<String> {
+    let email = value.ok_or_else(|| anyhow::anyhow!("missing email; usage: {usage}"))?;
+    if email.trim().is_empty() {
+        anyhow::bail!("email is empty; usage: {usage}");
+    }
+    Ok(email)
+}
+
+fn reject_extra(args: &mut impl Iterator<Item = String>, usage: &str) -> anyhow::Result<()> {
+    if let Some(extra) = args.next() {
+        anyhow::bail!("unexpected argument {extra:?}; usage: {usage}");
+    }
     Ok(())
 }
 
