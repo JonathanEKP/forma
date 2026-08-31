@@ -259,8 +259,18 @@ async fn assert_not_found(
     );
 }
 
-#[actix_web::test]
-async fn known_ids_from_another_account_are_not_found_through_every_route() {
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum Surface {
+    Projects,
+    Brand,
+    Designs,
+    Assets,
+    Templates,
+    AssetRequests,
+    Exports,
+}
+
+async fn assert_surface(surface: Surface) {
     let dir = tempfile::tempdir().expect("temp dir");
     let pool = persistence::connect(
         &format!("sqlite://{}", dir.path().join("forma.db").display()),
@@ -302,24 +312,30 @@ async fn known_ids_from_another_account_are_not_found_through_every_route() {
     .await;
 
     let fixtures = fixtures(&app_a).await;
+    let a = &fixtures.asset;
+    let t = &fixtures.template;
+    let r = &fixtures.request;
+    let e = &fixtures.export;
 
-    let a_projects = expect_json(
-        &app_a,
-        TestRequest::get().uri("/api/v1/projects").to_request(),
-        StatusCode::OK,
-        "list A projects",
-    )
-    .await;
-    assert_eq!(a_projects.as_array().expect("projects").len(), 1);
+    if surface == Surface::Projects {
+        let a_projects = expect_json(
+            &app_a,
+            TestRequest::get().uri("/api/v1/projects").to_request(),
+            StatusCode::OK,
+            "list A projects",
+        )
+        .await;
+        assert_eq!(a_projects.as_array().expect("projects").len(), 1);
 
-    let b_projects = expect_json(
-        &app_b,
-        TestRequest::get().uri("/api/v1/projects").to_request(),
-        StatusCode::OK,
-        "list B projects",
-    )
-    .await;
-    assert!(b_projects.as_array().expect("projects").is_empty());
+        let b_projects = expect_json(
+            &app_b,
+            TestRequest::get().uri("/api/v1/projects").to_request(),
+            StatusCode::OK,
+            "list B projects",
+        )
+        .await;
+        assert!(b_projects.as_array().expect("projects").is_empty());
+    }
 
     let p = &fixtures.project;
     let project_cases = vec![
@@ -396,7 +412,18 @@ async fn known_ids_from_another_account_are_not_found_through_every_route() {
         ),
     ];
     for (what, request) in project_cases {
-        assert_not_found(&app_b, what, request, "PROJECT_NOT_FOUND").await;
+        let case_surface = match what {
+            "read project" | "rename project" | "delete project" => Surface::Projects,
+            "read brand" | "write brand" => Surface::Brand,
+            "list designs" | "create design" => Surface::Designs,
+            "list assets" | "upload asset" => Surface::Assets,
+            "list templates" => Surface::Templates,
+            "list asset requests" | "create asset request" => Surface::AssetRequests,
+            _ => unreachable!("every project route belongs to a named surface"),
+        };
+        if case_surface == surface {
+            assert_not_found(&app_b, what, request, "PROJECT_NOT_FOUND").await;
+        }
     }
 
     let d = &fixtures.design;
@@ -481,99 +508,114 @@ async fn known_ids_from_another_account_are_not_found_through_every_route() {
         ),
     ];
     for (what, request) in design_cases {
-        assert_not_found(&app_b, what, request, "DESIGN_NOT_FOUND").await;
+        let case_surface = match what {
+            "save template" => Surface::Templates,
+            "create export" | "list exports" => Surface::Exports,
+            _ => Surface::Designs,
+        };
+        if case_surface == surface {
+            assert_not_found(&app_b, what, request, "DESIGN_NOT_FOUND").await;
+        }
     }
 
-    let a = &fixtures.asset;
-    for (what, request) in [
-        (
-            "read asset",
-            TestRequest::get()
-                .uri(&format!("/api/v1/assets/{a}"))
-                .to_request(),
-        ),
-        (
-            "read asset content",
-            TestRequest::get()
-                .uri(&format!("/api/v1/assets/{a}/content"))
-                .to_request(),
-        ),
-        (
-            "delete asset",
-            TestRequest::delete()
-                .uri(&format!("/api/v1/assets/{a}"))
-                .to_request(),
-        ),
-    ] {
-        assert_not_found(&app_b, what, request, "NOT_FOUND").await;
+    if surface == Surface::Assets {
+        let a = &fixtures.asset;
+        for (what, request) in [
+            (
+                "read asset",
+                TestRequest::get()
+                    .uri(&format!("/api/v1/assets/{a}"))
+                    .to_request(),
+            ),
+            (
+                "read asset content",
+                TestRequest::get()
+                    .uri(&format!("/api/v1/assets/{a}/content"))
+                    .to_request(),
+            ),
+            (
+                "delete asset",
+                TestRequest::delete()
+                    .uri(&format!("/api/v1/assets/{a}"))
+                    .to_request(),
+            ),
+        ] {
+            assert_not_found(&app_b, what, request, "NOT_FOUND").await;
+        }
     }
 
-    let t = &fixtures.template;
-    for (what, request) in [
-        (
-            "read template",
-            TestRequest::get()
-                .uri(&format!("/api/v1/templates/{t}"))
-                .to_request(),
-        ),
-        (
-            "create design from template",
-            TestRequest::post()
-                .uri(&format!("/api/v1/templates/{t}/designs"))
-                .set_json(json!({ "name": "Intruder copy" }))
-                .to_request(),
-        ),
-        (
-            "delete template",
-            TestRequest::delete()
-                .uri(&format!("/api/v1/templates/{t}"))
-                .to_request(),
-        ),
-    ] {
-        assert_not_found(&app_b, what, request, "NOT_FOUND").await;
+    if surface == Surface::Templates {
+        let t = &fixtures.template;
+        for (what, request) in [
+            (
+                "read template",
+                TestRequest::get()
+                    .uri(&format!("/api/v1/templates/{t}"))
+                    .to_request(),
+            ),
+            (
+                "create design from template",
+                TestRequest::post()
+                    .uri(&format!("/api/v1/templates/{t}/designs"))
+                    .set_json(json!({ "name": "Intruder copy" }))
+                    .to_request(),
+            ),
+            (
+                "delete template",
+                TestRequest::delete()
+                    .uri(&format!("/api/v1/templates/{t}"))
+                    .to_request(),
+            ),
+        ] {
+            assert_not_found(&app_b, what, request, "NOT_FOUND").await;
+        }
     }
 
-    let r = &fixtures.request;
-    for (what, request) in [
-        (
-            "read asset request",
-            TestRequest::get()
-                .uri(&format!("/api/v1/asset-requests/{r}"))
-                .to_request(),
-        ),
-        (
-            "resolve asset request",
-            TestRequest::post()
-                .uri(&format!("/api/v1/asset-requests/{r}/resolve"))
-                .set_json(json!({ "asset_id": a }))
-                .to_request(),
-        ),
-        (
-            "cancel asset request",
-            TestRequest::post()
-                .uri(&format!("/api/v1/asset-requests/{r}/cancel"))
-                .to_request(),
-        ),
-    ] {
-        assert_not_found(&app_b, what, request, "NOT_FOUND").await;
+    if surface == Surface::AssetRequests {
+        let r = &fixtures.request;
+        for (what, request) in [
+            (
+                "read asset request",
+                TestRequest::get()
+                    .uri(&format!("/api/v1/asset-requests/{r}"))
+                    .to_request(),
+            ),
+            (
+                "resolve asset request",
+                TestRequest::post()
+                    .uri(&format!("/api/v1/asset-requests/{r}/resolve"))
+                    .set_json(json!({ "asset_id": a }))
+                    .to_request(),
+            ),
+            (
+                "cancel asset request",
+                TestRequest::post()
+                    .uri(&format!("/api/v1/asset-requests/{r}/cancel"))
+                    .to_request(),
+            ),
+        ] {
+            assert_not_found(&app_b, what, request, "NOT_FOUND").await;
+        }
     }
 
-    let e = &fixtures.export;
-    for (what, request) in [
-        (
-            "read export",
-            TestRequest::get()
-                .uri(&format!("/api/v1/exports/{e}"))
-                .to_request(),
-        ),
-        (
-            "download export",
-            TestRequest::get()
-                .uri(&format!("/api/v1/exports/{e}/download"))
-                .to_request(),
-        ),
-    ] {
-        assert_not_found(&app_b, what, request, "NOT_FOUND").await;
+    if surface == Surface::Exports {
+        let e = &fixtures.export;
+        for (what, request) in [
+            (
+                "read export",
+                TestRequest::get()
+                    .uri(&format!("/api/v1/exports/{e}"))
+                    .to_request(),
+            ),
+            (
+                "download export",
+                TestRequest::get()
+                    .uri(&format!("/api/v1/exports/{e}/download"))
+                    .to_request(),
+            ),
+        ] {
+            assert_not_found(&app_b, what, request, "NOT_FOUND").await;
+        }
     }
 
     // Failed mutations through B did not change A's work.
@@ -598,4 +640,39 @@ async fn known_ids_from_another_account_are_not_found_through_every_route() {
         let response = test::call_service(&app_a, TestRequest::get().uri(&uri).to_request()).await;
         assert_eq!(response.status(), StatusCode::OK, "A lost its {what}");
     }
+}
+
+#[actix_web::test]
+async fn projects_from_another_account_are_not_found() {
+    assert_surface(Surface::Projects).await;
+}
+
+#[actix_web::test]
+async fn brand_from_another_account_is_not_found() {
+    assert_surface(Surface::Brand).await;
+}
+
+#[actix_web::test]
+async fn designs_from_another_account_are_not_found() {
+    assert_surface(Surface::Designs).await;
+}
+
+#[actix_web::test]
+async fn assets_from_another_account_are_not_found() {
+    assert_surface(Surface::Assets).await;
+}
+
+#[actix_web::test]
+async fn templates_from_another_account_are_not_found() {
+    assert_surface(Surface::Templates).await;
+}
+
+#[actix_web::test]
+async fn asset_requests_from_another_account_are_not_found() {
+    assert_surface(Surface::AssetRequests).await;
+}
+
+#[actix_web::test]
+async fn exports_from_another_account_are_not_found() {
+    assert_surface(Surface::Exports).await;
 }
