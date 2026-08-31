@@ -82,11 +82,10 @@ async fn remove(
     Ok(HttpResponse::NoContent().finish())
 }
 
-/// A project with no Brand Kit yet answers 200 with `null` rather than 404.
-///
-/// The project exists; it simply has no kit. A 404 here would make a client
-/// that is checking whether to show the brand panel indistinguishable from one
-/// that used a bad project id.
+/// A project this account owns with no Brand Kit answers `200 null`; an unknown
+/// id or one owned by another account answers 404, like every other scoped
+/// route. That distinction lets the editor show an empty brand panel without
+/// turning a missing parent into a valid empty state.
 #[get("/projects/{id}/brand")]
 async fn get_brand(
     state: web::Data<AppState>,
