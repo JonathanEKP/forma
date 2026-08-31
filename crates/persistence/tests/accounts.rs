@@ -253,3 +253,243 @@ async fn a_project_is_created_in_the_account_that_was_passed() {
     assert!(projects.get(a, project.id).await.is_err());
     assert!(projects.get(b, project.id).await.is_ok());
 }
+
+/// Every object type reachable through REST or MCP, tried across the boundary
+/// with a known id (plan section 116.2).
+///
+/// Ownership is recorded once, on `projects`, so each of these is scoped by a
+/// join rather than by a column of its own. That makes one mistake in one query
+/// enough to open a hole, which is why this walks the whole surface instead of
+/// sampling it.
+#[tokio::test]
+async fn every_object_type_is_scoped_to_its_account() {
+    use design_core::{
+        Actor, Asset, AssetId, AssetKind, AssetOrigin, AssetRequest, AssetRequestId,
+        AssetRequestStatus, DesignColor, DesignDocument, DesignFormat, Export, ExportId,
+        ExportScope, FormatPreset, Page, Template, TemplateId,
+    };
+    use persistence::{
+        AssetRepository, AssetRequestRepository, DesignRepository, ExportRepository,
+        SqliteAssetRepository, SqliteAssetRequestRepository, SqliteDesignRepository,
+        SqliteExportRepository, SqliteTemplateRepository, TemplateRepository,
+    };
+
+    let harness = Harness::start().await;
+    let accounts = harness.accounts();
+    let projects = harness.projects();
+    let designs = SqliteDesignRepository::new(harness.pool.clone());
+    let assets = SqliteAssetRepository::new(harness.pool.clone());
+    let requests = SqliteAssetRequestRepository::new(harness.pool.clone());
+    let templates = SqliteTemplateRepository::new(harness.pool.clone());
+    let exports = SqliteExportRepository::new(harness.pool.clone());
+
+    let a = accounts.bootstrap().await.unwrap().id;
+    let b = accounts.create("Account B").await.unwrap().id;
+    let b_project = projects.create(b, "B's work").await.unwrap();
+
+    let mut document = DesignDocument::new(DesignFormat::from_preset(FormatPreset::Square));
+    let mut page = Page::new("Cover");
+    page.background = Some(DesignColor::token("brand.background"));
+    document.pages.push(page);
+
+    // Everything below belongs to B.
+    let design = designs
+        .create(b, b_project.id, "B's cover", &document, &Actor::human())
+        .await
+        .unwrap();
+
+    let asset = assets
+        .create(
+            b,
+            &Asset {
+                id: AssetId::new(),
+                project_id: b_project.id,
+                hash: "abcdef0123456789".into(),
+                kind: AssetKind::Raster,
+                mime_type: "image/png".into(),
+                width: 10,
+                height: 10,
+                byte_size: 100,
+                storage_key: "k".into(),
+                original_filename: None,
+                origin: AssetOrigin::UserUpload,
+                attribution: None,
+                created_at: String::new(),
+            },
+        )
+        .await
+        .unwrap();
+
+    let request = requests
+        .create(
+            b,
+            &AssetRequest {
+                id: AssetRequestId::new(),
+                project_id: b_project.id,
+                design_id: None,
+                purpose: "hero".into(),
+                description: "a photograph".into(),
+                suggested_prompt: None,
+                requested_width: None,
+                requested_height: None,
+                status: AssetRequestStatus::Pending,
+                resolved_asset_id: None,
+                created_at: String::new(),
+                resolved_at: None,
+            },
+        )
+        .await
+        .unwrap();
+
+    let template = templates
+        .create(
+            b,
+            &Template {
+                id: TemplateId::new(),
+                project_id: b_project.id,
+                name: "Cover".into(),
+                description: String::new(),
+                document: document.clone(),
+                roles: Vec::new(),
+                created_at: String::new(),
+            },
+        )
+        .await
+        .unwrap();
+
+    let export = exports
+        .create(
+            b,
+            &Export {
+                id: ExportId::new(),
+                design_id: design.id,
+                design_version: design.version,
+                scope: ExportScope::SinglePage,
+                page_id: Some(document.pages[0].id),
+                scale: 1.0,
+                storage_key: "e".into(),
+                byte_size: 10,
+                created_at: String::new(),
+            },
+        )
+        .await
+        .unwrap();
+
+    // --- A holds every id, and reaches none of it -------------------------
+
+    assert!(designs.get(a, design.id).await.is_err(), "design");
+    assert!(designs.history(a, design.id).await.unwrap().is_empty(), "history");
+    assert!(
+        designs.snapshot(a, design.id, design.version).await.is_err(),
+        "snapshot"
+    );
+    assert!(designs.delete(a, design.id).await.is_err(), "design delete");
+    assert!(
+        designs.list_for_project(a, b_project.id).await.unwrap().is_empty(),
+        "designs of another account's project"
+    );
+
+    assert!(assets.get(a, asset.id).await.is_err(), "asset");
+    assert!(
+        assets.list_for_project(a, b_project.id).await.unwrap().is_empty(),
+        "assets"
+    );
+    assert!(
+        assets
+            .find_by_hash(a, b_project.id, "abcdef0123456789")
+            .await
+            .unwrap()
+            .is_none(),
+        "a known hash must not confirm another account's asset"
+    );
+    assert!(assets.soft_delete(a, asset.id).await.is_err(), "asset delete");
+
+    assert!(requests.get(a, request.id).await.is_err(), "asset request");
+    assert!(
+        requests.list_for_project(a, b_project.id).await.unwrap().is_empty(),
+        "asset requests"
+    );
+    assert!(
+        requests.resolve(a, request.id, asset.id).await.is_err(),
+        "resolving another account's request"
+    );
+    assert!(requests.cancel(a, request.id).await.is_err(), "cancel");
+
+    assert!(templates.get(a, template.id).await.is_err(), "template");
+    assert!(
+        templates.list_for_project(a, b_project.id).await.unwrap().is_empty(),
+        "templates"
+    );
+    assert!(templates.delete(a, template.id).await.is_err(), "template delete");
+
+    assert!(exports.get(a, export.id).await.is_err(), "export");
+    assert!(
+        exports.list_for_design(a, design.id).await.unwrap().is_empty(),
+        "exports"
+    );
+
+    // Creating into another account's project writes nothing.
+    assert!(
+        designs
+            .create(a, b_project.id, "Intruder", &document, &Actor::human())
+            .await
+            .is_err(),
+        "a design cannot be created in another account's project"
+    );
+
+    // --- and B still has all of it, untouched -----------------------------
+
+    assert_eq!(designs.get(b, design.id).await.unwrap().name, "B's cover");
+    assert_eq!(designs.history(b, design.id).await.unwrap().len(), 1);
+    assert!(designs.snapshot(b, design.id, design.version).await.is_ok());
+    assert_eq!(assets.get(b, asset.id).await.unwrap().id, asset.id);
+    assert_eq!(
+        requests.get(b, request.id).await.unwrap().status,
+        AssetRequestStatus::Pending
+    );
+    assert_eq!(templates.get(b, template.id).await.unwrap().id, template.id);
+    assert_eq!(exports.get(b, export.id).await.unwrap().id, export.id);
+    assert_eq!(designs.list_for_project(b, b_project.id).await.unwrap().len(), 1);
+}
+
+/// The guarded UPDATE must not become an oracle.
+///
+/// `save` answers `VERSION_CONFLICT` with the version actually stored, so
+/// answering one across the boundary would confirm the design exists and say how
+/// often somebody else edits it. It has to be not-found instead.
+#[tokio::test]
+async fn a_cross_account_save_is_not_found_rather_than_a_version_conflict() {
+    use design_core::{Actor, DesignColor, DesignDocument, DesignFormat, FormatPreset, Page, Version};
+    use persistence::{DesignRepository, SqliteDesignRepository};
+
+    let harness = Harness::start().await;
+    let accounts = harness.accounts();
+    let designs = SqliteDesignRepository::new(harness.pool.clone());
+
+    let a = accounts.bootstrap().await.unwrap().id;
+    let b = accounts.create("Account B").await.unwrap().id;
+    let b_project = harness.projects().create(b, "B's work").await.unwrap();
+
+    let mut document = DesignDocument::new(DesignFormat::from_preset(FormatPreset::Square));
+    let mut page = Page::new("Cover");
+    page.background = Some(DesignColor::token("brand.background"));
+    document.pages.push(page);
+
+    let design = designs
+        .create(b, b_project.id, "B's cover", &document, &Actor::human())
+        .await
+        .unwrap();
+
+    let refused = designs
+        .save(a, design.id, Version::INITIAL, &document, &Actor::human())
+        .await
+        .unwrap_err();
+
+    assert!(
+        matches!(refused, PersistenceError::DesignNotFound(_)),
+        "a conflict here would leak the stored version: {refused:?}"
+    );
+
+    // And B's design did not move.
+    assert_eq!(designs.get(b, design.id).await.unwrap().version, Version::INITIAL);
+}

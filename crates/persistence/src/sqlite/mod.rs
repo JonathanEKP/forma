@@ -83,6 +83,66 @@ pub async fn checkpoint_and_close(pool: &SqlitePool) -> Result<()> {
     Ok(())
 }
 
+/// The projects one account owns.
+///
+/// Ownership is recorded on `projects` and nowhere else (plan section 107.1), so
+/// every scoped query reaches it through this subquery rather than through an
+/// `account_id` copied onto each table. The copy would be a second thing that
+/// can disagree with the first, and disagreement about who owns a row is the
+/// failure the account boundary exists to prevent.
+///
+/// It binds one parameter, at the position where the fragment appears in the
+/// statement.
+pub(crate) const OWNED_PROJECTS: &str = "(SELECT id FROM projects WHERE account_id = ?)";
+
+/// The designs one account owns, one hop further out.
+///
+/// For rows that hang off a design rather than a project — exports, version
+/// snapshots — whose account is therefore two joins away.
+pub(crate) const OWNED_DESIGNS: &str = "(SELECT d.id FROM designs d \
+     JOIN projects p ON p.id = d.project_id WHERE p.account_id = ?)";
+
+/// Refuses unless this account owns the project.
+///
+/// For writes that name a project in the row being inserted: guarding the INSERT
+/// itself would write nothing and report success, which is the worst of both.
+pub(crate) async fn owned_project(
+    pool: &SqlitePool,
+    account: design_core::AccountId,
+    project_id: design_core::ProjectId,
+) -> Result<()> {
+    let found: Option<String> =
+        sqlx::query_scalar("SELECT id FROM projects WHERE id = ? AND account_id = ?")
+            .bind(project_id.to_string())
+            .bind(account.to_string())
+            .fetch_optional(pool)
+            .await?;
+
+    found
+        .map(|_| ())
+        .ok_or(PersistenceError::ProjectNotFound(project_id))
+}
+
+/// The same, for a row that hangs off a design.
+pub(crate) async fn owned_design(
+    pool: &SqlitePool,
+    account: design_core::AccountId,
+    design_id: design_core::DesignId,
+) -> Result<()> {
+    let found: Option<String> = sqlx::query_scalar(
+        "SELECT d.id FROM designs d JOIN projects p ON p.id = d.project_id
+         WHERE d.id = ? AND p.account_id = ?",
+    )
+    .bind(design_id.to_string())
+    .bind(account.to_string())
+    .fetch_optional(pool)
+    .await?;
+
+    found
+        .map(|_| ())
+        .ok_or(PersistenceError::DesignNotFound(design_id))
+}
+
 /// RFC 3339 in UTC. Timestamps are strings so the domain stays free of a clock.
 pub(crate) fn now() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)

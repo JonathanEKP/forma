@@ -1,11 +1,11 @@
 use async_trait::async_trait;
-use design_core::{Asset, AssetId, AssetKind, AssetOrigin, ProjectId};
+use design_core::{AccountId, Asset, AssetId, AssetKind, AssetOrigin, ProjectId};
 use sqlx::{Row, SqlitePool};
 
 use crate::error::{PersistenceError, Result};
 use crate::traits::AssetRepository;
 
-use super::{now, parse_uuid};
+use super::{now, parse_uuid, OWNED_PROJECTS};
 
 pub struct SqliteAssetRepository {
     pool: SqlitePool,
@@ -72,7 +72,9 @@ const COLUMNS: &str = "id, project_id, hash, kind, mime_type, width, height, byt
 
 #[async_trait]
 impl AssetRepository for SqliteAssetRepository {
-    async fn create(&self, asset: &Asset) -> Result<Asset> {
+    async fn create(&self, account: AccountId, asset: &Asset) -> Result<Asset> {
+        super::owned_project(&self.pool, account, asset.project_id).await?;
+
         // Stamped here rather than taken from the caller, matching the design
         // repository. A caller that forgot the field would otherwise write an
         // empty timestamp, and one that did not forget could backdate a row.
@@ -105,11 +107,13 @@ impl AssetRepository for SqliteAssetRepository {
         })
     }
 
-    async fn get(&self, id: AssetId) -> Result<Asset> {
+    async fn get(&self, account: AccountId, id: AssetId) -> Result<Asset> {
         let row = sqlx::query(&format!(
-            "SELECT {COLUMNS} FROM assets WHERE id = ? AND deleted_at IS NULL"
+            "SELECT {COLUMNS} FROM assets
+             WHERE id = ? AND deleted_at IS NULL AND project_id IN {OWNED_PROJECTS}"
         ))
         .bind(id.to_string())
+        .bind(account.to_string())
         .fetch_optional(&self.pool)
         .await?
         .ok_or_else(|| PersistenceError::NotFound(format!("asset {id}")))?;
@@ -117,38 +121,54 @@ impl AssetRepository for SqliteAssetRepository {
         row_to_asset(&row)
     }
 
-    async fn list_for_project(&self, project_id: ProjectId) -> Result<Vec<Asset>> {
+    async fn list_for_project(
+        &self,
+        account: AccountId,
+        project_id: ProjectId,
+    ) -> Result<Vec<Asset>> {
         let rows = sqlx::query(&format!(
             "SELECT {COLUMNS} FROM assets
-             WHERE project_id = ? AND deleted_at IS NULL
+             WHERE project_id = ? AND project_id IN {OWNED_PROJECTS} AND deleted_at IS NULL
              ORDER BY created_at DESC"
         ))
         .bind(project_id.to_string())
+        .bind(account.to_string())
         .fetch_all(&self.pool)
         .await?;
 
         rows.iter().map(row_to_asset).collect()
     }
 
-    async fn find_by_hash(&self, project_id: ProjectId, hash: &str) -> Result<Option<Asset>> {
+    async fn find_by_hash(
+        &self,
+        account: AccountId,
+        project_id: ProjectId,
+        hash: &str,
+    ) -> Result<Option<Asset>> {
         let row = sqlx::query(&format!(
             "SELECT {COLUMNS} FROM assets
-             WHERE project_id = ? AND hash = ? AND deleted_at IS NULL"
+             WHERE project_id = ? AND hash = ? AND deleted_at IS NULL
+               AND project_id IN {OWNED_PROJECTS}"
         ))
         .bind(project_id.to_string())
         .bind(hash)
+        .bind(account.to_string())
         .fetch_optional(&self.pool)
         .await?;
 
         row.as_ref().map(row_to_asset).transpose()
     }
 
-    async fn soft_delete(&self, id: AssetId) -> Result<()> {
+    async fn soft_delete(&self, account: AccountId, id: AssetId) -> Result<()> {
         // The bytes stay: historical versions may still reference them.
         let updated =
-            sqlx::query("UPDATE assets SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL")
-                .bind(now())
-                .bind(id.to_string())
+            sqlx::query(&format!(
+                "UPDATE assets SET deleted_at = ?
+                 WHERE id = ? AND deleted_at IS NULL AND project_id IN {OWNED_PROJECTS}"
+            ))
+            .bind(now())
+            .bind(id.to_string())
+            .bind(account.to_string())
                 .execute(&self.pool)
                 .await?;
 

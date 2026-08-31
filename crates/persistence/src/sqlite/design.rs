@@ -1,7 +1,7 @@
 //! SQLite design repository, including the optimistic concurrency of section 27.
 
 use async_trait::async_trait;
-use design_core::{
+use design_core::{AccountId, 
     Actor, ActorType, DesignDocument, DesignId, DesignRecord, DesignSummary, ProjectId, Version,
     SCHEMA_VERSION,
 };
@@ -11,7 +11,7 @@ use uuid::Uuid;
 use crate::error::{PersistenceError, Result};
 use crate::traits::{DesignRepository, VersionSummary};
 
-use super::{now, parse_document, parse_uuid};
+use super::{now, parse_document, parse_uuid, OWNED_DESIGNS, OWNED_PROJECTS};
 
 pub struct SqliteDesignRepository {
     pool: SqlitePool,
@@ -43,6 +43,7 @@ fn actor_type_from(raw: &str) -> ActorType {
 impl DesignRepository for SqliteDesignRepository {
     async fn create(
         &self,
+        account: AccountId,
         project_id: ProjectId,
         name: &str,
         document: &DesignDocument,
@@ -61,6 +62,19 @@ impl DesignRepository for SqliteDesignRepository {
         // The row and its first snapshot are written together: a design must
         // never exist without the version it claims to be at.
         let mut tx = self.pool.begin().await?;
+
+        // Inside the transaction, so the project cannot be deleted between the
+        // check and the insert. A project in another account is reported exactly
+        // as one that does not exist.
+        let owned: Option<String> =
+            sqlx::query_scalar("SELECT id FROM projects WHERE id = ? AND account_id = ?")
+                .bind(project_id.to_string())
+                .bind(account.to_string())
+                .fetch_optional(&mut *tx)
+                .await?;
+        if owned.is_none() {
+            return Err(PersistenceError::ProjectNotFound(project_id));
+        }
 
         sqlx::query(
             "INSERT INTO designs (id, project_id, name, schema_version, version, document_json, created_at, updated_at)
@@ -97,12 +111,13 @@ impl DesignRepository for SqliteDesignRepository {
         })
     }
 
-    async fn get(&self, id: DesignId) -> Result<DesignRecord> {
-        let row = sqlx::query(
+    async fn get(&self, account: AccountId, id: DesignId) -> Result<DesignRecord> {
+        let row = sqlx::query(&format!(
             "SELECT id, project_id, name, version, document_json, created_at, updated_at
-             FROM designs WHERE id = ?",
-        )
+             FROM designs WHERE id = ? AND project_id IN {OWNED_PROJECTS}",
+        ))
         .bind(id.to_string())
+        .bind(account.to_string())
         .fetch_optional(&self.pool)
         .await?
         .ok_or(PersistenceError::DesignNotFound(id))?;
@@ -118,12 +133,18 @@ impl DesignRepository for SqliteDesignRepository {
         })
     }
 
-    async fn list_for_project(&self, project_id: ProjectId) -> Result<Vec<DesignSummary>> {
-        let rows = sqlx::query(
+    async fn list_for_project(
+        &self,
+        account: AccountId,
+        project_id: ProjectId,
+    ) -> Result<Vec<DesignSummary>> {
+        let rows = sqlx::query(&format!(
             "SELECT id, name, version, document_json, created_at, updated_at
-             FROM designs WHERE project_id = ? ORDER BY updated_at DESC",
-        )
+             FROM designs WHERE project_id = ? AND project_id IN {OWNED_PROJECTS}
+             ORDER BY updated_at DESC",
+        ))
         .bind(project_id.to_string())
+        .bind(account.to_string())
         .fetch_all(&self.pool)
         .await?;
 
@@ -147,6 +168,7 @@ impl DesignRepository for SqliteDesignRepository {
 
     async fn save(
         &self,
+        account: AccountId,
         id: DesignId,
         base_version: Version,
         document: &DesignDocument,
@@ -165,27 +187,33 @@ impl DesignRepository for SqliteDesignRepository {
 
         // The whole concurrency story is this WHERE clause: the update only
         // lands if nobody else moved the design since we read it.
-        let updated = sqlx::query(
+        let updated = sqlx::query(&format!(
             "UPDATE designs
              SET version = ?, document_json = ?, updated_at = ?
-             WHERE id = ? AND version = ?",
-        )
+             WHERE id = ? AND version = ? AND project_id IN {OWNED_PROJECTS}",
+        ))
         .bind(next.0 as i64)
         .bind(&json)
         .bind(&timestamp)
         .bind(id.to_string())
         .bind(base_version.0 as i64)
+        .bind(account.to_string())
         .execute(&mut *tx)
         .await?;
 
         if updated.rows_affected() == 0 {
             // Zero rows is ambiguous on its own: either the design is gone or
             // the version moved. Tell the caller which, so it can act.
-            let actual: Option<i64> =
-                sqlx::query_scalar("SELECT version FROM designs WHERE id = ?")
-                    .bind(id.to_string())
-                    .fetch_optional(&mut *tx)
-                    .await?;
+            // Scoped as well, and that matters: a conflict reports the version
+            // actually stored, so answering one for another account's design
+            // would confirm it exists and say how often it is edited.
+            let actual: Option<i64> = sqlx::query_scalar(&format!(
+                "SELECT version FROM designs WHERE id = ? AND project_id IN {OWNED_PROJECTS}",
+            ))
+            .bind(id.to_string())
+            .bind(account.to_string())
+            .fetch_optional(&mut *tx)
+            .await?;
 
             return Err(match actual {
                 Some(actual) => PersistenceError::VersionConflict {
@@ -199,15 +227,17 @@ impl DesignRepository for SqliteDesignRepository {
         insert_snapshot(&mut tx, id, next, &json, actor, &timestamp).await?;
         tx.commit().await?;
 
-        self.get(id).await
+        self.get(account, id).await
     }
 
-    async fn history(&self, id: DesignId) -> Result<Vec<VersionSummary>> {
-        let rows = sqlx::query(
+    async fn history(&self, account: AccountId, id: DesignId) -> Result<Vec<VersionSummary>> {
+        let rows = sqlx::query(&format!(
             "SELECT version, actor_type, actor_id, created_at
-             FROM design_versions WHERE design_id = ? ORDER BY version DESC",
-        )
+             FROM design_versions WHERE design_id = ? AND design_id IN {OWNED_DESIGNS}
+             ORDER BY version DESC",
+        ))
         .bind(id.to_string())
+        .bind(account.to_string())
         .fetch_all(&self.pool)
         .await?;
 
@@ -222,12 +252,19 @@ impl DesignRepository for SqliteDesignRepository {
             .collect())
     }
 
-    async fn snapshot(&self, id: DesignId, version: Version) -> Result<DesignDocument> {
-        let json: Option<String> = sqlx::query_scalar(
-            "SELECT document_json FROM design_versions WHERE design_id = ? AND version = ?",
-        )
+    async fn snapshot(
+        &self,
+        account: AccountId,
+        id: DesignId,
+        version: Version,
+    ) -> Result<DesignDocument> {
+        let json: Option<String> = sqlx::query_scalar(&format!(
+            "SELECT document_json FROM design_versions
+             WHERE design_id = ? AND version = ? AND design_id IN {OWNED_DESIGNS}",
+        ))
         .bind(id.to_string())
         .bind(version.0 as i64)
+        .bind(account.to_string())
         .fetch_optional(&self.pool)
         .await?;
 
@@ -249,9 +286,12 @@ impl DesignRepository for SqliteDesignRepository {
             .collect()
     }
 
-    async fn delete(&self, id: DesignId) -> Result<()> {
-        let deleted = sqlx::query("DELETE FROM designs WHERE id = ?")
-            .bind(id.to_string())
+    async fn delete(&self, account: AccountId, id: DesignId) -> Result<()> {
+        let deleted = sqlx::query(&format!(
+            "DELETE FROM designs WHERE id = ? AND project_id IN {OWNED_PROJECTS}",
+        ))
+        .bind(id.to_string())
+        .bind(account.to_string())
             .execute(&self.pool)
             .await?;
 

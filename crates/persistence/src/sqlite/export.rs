@@ -1,11 +1,11 @@
 use async_trait::async_trait;
-use design_core::{DesignId, Export, ExportId, ExportScope, PageId, Version};
+use design_core::{AccountId, DesignId, Export, ExportId, ExportScope, PageId, Version};
 use sqlx::{Row, SqlitePool};
 
 use crate::error::{PersistenceError, Result};
 use crate::traits::ExportRepository;
 
-use super::{now, parse_uuid};
+use super::{now, parse_uuid, OWNED_DESIGNS};
 
 pub struct SqliteExportRepository {
     pool: SqlitePool,
@@ -54,7 +54,9 @@ const COLUMNS: &str = "id, design_id, design_version, scope, page_id, scale, sto
 
 #[async_trait]
 impl ExportRepository for SqliteExportRepository {
-    async fn create(&self, export: &Export) -> Result<Export> {
+    async fn create(&self, account: AccountId, export: &Export) -> Result<Export> {
+        super::owned_design(&self.pool, account, export.design_id).await?;
+
         // Stamped here rather than taken from the caller, like every other
         // repository. A caller that left the field empty would otherwise
         // persist a blank timestamp and only find out by reading the row back.
@@ -83,9 +85,12 @@ impl ExportRepository for SqliteExportRepository {
         })
     }
 
-    async fn get(&self, id: ExportId) -> Result<Export> {
-        let row = sqlx::query(&format!("SELECT {COLUMNS} FROM exports WHERE id = ?"))
+    async fn get(&self, account: AccountId, id: ExportId) -> Result<Export> {
+        let row = sqlx::query(&format!(
+            "SELECT {COLUMNS} FROM exports WHERE id = ? AND design_id IN {OWNED_DESIGNS}"
+        ))
             .bind(id.to_string())
+            .bind(account.to_string())
             .fetch_optional(&self.pool)
             .await?
             .ok_or_else(|| PersistenceError::NotFound(format!("export {id}")))?;
@@ -93,11 +98,13 @@ impl ExportRepository for SqliteExportRepository {
         row_to_export(&row)
     }
 
-    async fn list_for_design(&self, design_id: DesignId) -> Result<Vec<Export>> {
+    async fn list_for_design(&self, account: AccountId, design_id: DesignId) -> Result<Vec<Export>> {
         let rows = sqlx::query(&format!(
-            "SELECT {COLUMNS} FROM exports WHERE design_id = ? ORDER BY created_at DESC"
+            "SELECT {COLUMNS} FROM exports
+             WHERE design_id = ? AND design_id IN {OWNED_DESIGNS} ORDER BY created_at DESC"
         ))
         .bind(design_id.to_string())
+        .bind(account.to_string())
         .fetch_all(&self.pool)
         .await?;
 

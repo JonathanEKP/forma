@@ -5,7 +5,7 @@
 //! the agent sees what each slot is for and how much text the layout actually
 //! held, which is a brief rather than a puzzle to reverse-engineer.
 
-use design_core::{Actor, DesignId, DesignRecord, ProjectId, Template, TemplateDraft, TemplateId};
+use design_core::{AccountId, Actor, DesignId, DesignRecord, ProjectId, Template, TemplateDraft, TemplateId};
 use persistence::{DesignRepository, TemplateRepository};
 
 use crate::error::Result;
@@ -18,10 +18,11 @@ use crate::error::Result;
 pub async fn save_from_design(
     templates: &dyn TemplateRepository,
     designs: &dyn DesignRepository,
+    account: AccountId,
     design_id: DesignId,
     draft: &TemplateDraft,
 ) -> Result<Template> {
-    let record = designs.get(design_id).await?;
+    let record = designs.get(account, design_id).await?;
     let roles = design_core::roles_of(&record.document);
 
     let template = Template {
@@ -34,22 +35,31 @@ pub async fn save_from_design(
         created_at: String::new(),
     };
 
-    Ok(templates.create(&template).await?)
+    Ok(templates.create(account, &template).await?)
 }
 
 pub async fn list(
     templates: &dyn TemplateRepository,
+    account: AccountId,
     project_id: ProjectId,
 ) -> Result<Vec<Template>> {
-    Ok(templates.list_for_project(project_id).await?)
+    Ok(templates.list_for_project(account, project_id).await?)
 }
 
-pub async fn get(templates: &dyn TemplateRepository, id: TemplateId) -> Result<Template> {
-    Ok(templates.get(id).await?)
+pub async fn get(
+    templates: &dyn TemplateRepository,
+    account: AccountId,
+    id: TemplateId,
+) -> Result<Template> {
+    Ok(templates.get(account, id).await?)
 }
 
-pub async fn delete(templates: &dyn TemplateRepository, id: TemplateId) -> Result<()> {
-    Ok(templates.delete(id).await?)
+pub async fn delete(
+    templates: &dyn TemplateRepository,
+    account: AccountId,
+    id: TemplateId,
+) -> Result<()> {
+    Ok(templates.delete(account, id).await?)
 }
 
 /// Starts a design from a template's shape, in the template's own project.
@@ -61,15 +71,16 @@ pub async fn delete(templates: &dyn TemplateRepository, id: TemplateId) -> Resul
 pub async fn create_design(
     designs: &dyn DesignRepository,
     templates: &dyn TemplateRepository,
+    account: AccountId,
     template_id: TemplateId,
     name: &str,
     actor: &Actor,
 ) -> Result<DesignRecord> {
-    let template = templates.get(template_id).await?;
+    let template = templates.get(account, template_id).await?;
     let document = template.instantiate();
     document.validate_structure()?;
 
     Ok(designs
-        .create(template.project_id, name, &document, actor)
+        .create(account, template.project_id, name, &document, actor)
         .await?)
 }

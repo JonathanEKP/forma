@@ -34,7 +34,7 @@ pub async fn create(
     // A request pinned to a design that does not exist would show up in no
     // editor and be resolvable by nobody.
     if let Some(design_id) = new.design_id {
-        designs.get(design_id).await?;
+        designs.get(account, design_id).await?;
     }
 
     if new.description.trim().is_empty() {
@@ -60,21 +60,23 @@ pub async fn create(
         resolved_at: None,
     };
 
-    Ok(requests.create(&request).await?)
+    Ok(requests.create(account, &request).await?)
 }
 
 pub async fn get(
     requests: &dyn AssetRequestRepository,
+    account: AccountId,
     id: AssetRequestId,
 ) -> Result<AssetRequest> {
-    Ok(requests.get(id).await?)
+    Ok(requests.get(account, id).await?)
 }
 
 pub async fn list(
     requests: &dyn AssetRequestRepository,
+    account: AccountId,
     project_id: ProjectId,
 ) -> Result<Vec<AssetRequest>> {
-    Ok(requests.list_for_project(project_id).await?)
+    Ok(requests.list_for_project(account, project_id).await?)
 }
 
 /// Marks a request satisfied by an asset the user uploaded.
@@ -84,11 +86,12 @@ pub async fn list(
 pub async fn resolve(
     requests: &dyn AssetRequestRepository,
     assets: &dyn AssetRepository,
+    account: AccountId,
     id: AssetRequestId,
     asset_id: AssetId,
 ) -> Result<AssetRequest> {
-    let request = requests.get(id).await?;
-    let asset = assets.get(asset_id).await?;
+    let request = requests.get(account, id).await?;
+    let asset = assets.get(account, asset_id).await?;
 
     if asset.project_id != request.project_id {
         return Err(ApplicationError::rejected(
@@ -103,12 +106,13 @@ pub async fn resolve(
 
     // The repository's guarded UPDATE is what actually prevents a double
     // resolve; this only makes the common case a clearer error.
-    Ok(requests.resolve(id, asset_id).await?)
+    Ok(requests.resolve(account, id, asset_id).await?)
 }
 
 pub async fn cancel(
     requests: &dyn AssetRequestRepository,
+    account: AccountId,
     id: AssetRequestId,
 ) -> Result<AssetRequest> {
-    Ok(requests.cancel(id).await?)
+    Ok(requests.cancel(account, id).await?)
 }

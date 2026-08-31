@@ -37,7 +37,7 @@ pub async fn upload(
 
     let ingested: Ingested = assets::ingest(bytes, max_bytes)?;
 
-    if let Some(existing) = assets.find_by_hash(project_id, &ingested.hash).await? {
+    if let Some(existing) = assets.find_by_hash(account, project_id, &ingested.hash).await? {
         return Ok((existing, false));
     }
 
@@ -64,30 +64,43 @@ pub async fn upload(
         created_at: String::new(),
     };
 
-    Ok((assets.create(&asset).await?, true))
+    Ok((assets.create(account, &asset).await?, true))
 }
 
-pub async fn list(assets: &dyn AssetRepository, project_id: ProjectId) -> Result<Vec<Asset>> {
-    Ok(assets.list_for_project(project_id).await?)
+pub async fn list(
+    assets: &dyn AssetRepository,
+    account: AccountId,
+    project_id: ProjectId,
+) -> Result<Vec<Asset>> {
+    Ok(assets.list_for_project(account, project_id).await?)
 }
 
-pub async fn get(assets: &dyn AssetRepository, id: AssetId) -> Result<Asset> {
-    Ok(assets.get(id).await?)
+pub async fn get(
+    assets: &dyn AssetRepository,
+    account: AccountId,
+    id: AssetId,
+) -> Result<Asset> {
+    Ok(assets.get(account, id).await?)
 }
 
 /// Reads the stored bytes back, for serving the file itself.
 pub async fn bytes(
     assets: &dyn AssetRepository,
     store: &dyn ObjectStore,
+    account: AccountId,
     id: AssetId,
 ) -> Result<(Asset, Vec<u8>)> {
-    let asset = assets.get(id).await?;
+    let asset = assets.get(account, id).await?;
     let bytes = store.get(&asset.storage_key).await?;
     Ok((asset, bytes))
 }
 
 /// A soft delete. Historical design versions may still reference the asset, so
 /// the bytes stay put and real collection is deferred (plan section 74).
-pub async fn delete(assets: &dyn AssetRepository, id: AssetId) -> Result<()> {
-    Ok(assets.soft_delete(id).await?)
+pub async fn delete(
+    assets: &dyn AssetRepository,
+    account: AccountId,
+    id: AssetId,
+) -> Result<()> {
+    Ok(assets.soft_delete(account, id).await?)
 }

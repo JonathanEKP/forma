@@ -1,11 +1,11 @@
 use async_trait::async_trait;
-use design_core::{DesignDocument, ProjectId, Template, TemplateId, TemplateRole};
+use design_core::{AccountId, DesignDocument, ProjectId, Template, TemplateId, TemplateRole};
 use sqlx::{Row, SqlitePool};
 
 use crate::error::{PersistenceError, Result};
 use crate::traits::TemplateRepository;
 
-use super::{now, parse_uuid};
+use super::{now, parse_uuid, OWNED_PROJECTS};
 
 pub struct SqliteTemplateRepository {
     pool: SqlitePool,
@@ -37,7 +37,9 @@ fn row_to_template(row: &sqlx::sqlite::SqliteRow) -> Result<Template> {
 #[async_trait]
 impl TemplateRepository for SqliteTemplateRepository {
     /// The row stamps its own `created_at`, so a caller cannot backdate one.
-    async fn create(&self, template: &Template) -> Result<Template> {
+    async fn create(&self, account: AccountId, template: &Template) -> Result<Template> {
+        super::owned_project(&self.pool, account, template.project_id).await?;
+
         let created_at = now();
         sqlx::query(
             "INSERT INTO templates (id, project_id, name, description, document_json, roles_json, created_at)
@@ -59,32 +61,46 @@ impl TemplateRepository for SqliteTemplateRepository {
 
         // Read it back rather than returning what was built in memory: a create
         // that trusts its own struct proves nothing about what was stored.
-        self.get(template.id).await
+        self.get(account, template.id).await
     }
 
-    async fn get(&self, id: TemplateId) -> Result<Template> {
-        let row = sqlx::query("SELECT * FROM templates WHERE id = ?")
+    async fn get(&self, account: AccountId, id: TemplateId) -> Result<Template> {
+        let row = sqlx::query(&format!(
+            "SELECT * FROM templates WHERE id = ? AND project_id IN {OWNED_PROJECTS}"
+        ))
             .bind(id.to_string())
+            .bind(account.to_string())
             .fetch_optional(&self.pool)
             .await?
             .ok_or(PersistenceError::NotFound(format!("template {id}")))?;
         row_to_template(&row)
     }
 
-    async fn list_for_project(&self, project_id: ProjectId) -> Result<Vec<Template>> {
+    async fn list_for_project(
+        &self,
+        account: AccountId,
+        project_id: ProjectId,
+    ) -> Result<Vec<Template>> {
         let rows = sqlx::query(
-            "SELECT * FROM templates WHERE project_id = ? ORDER BY created_at DESC, id DESC",
+            &format!(
+                "SELECT * FROM templates WHERE project_id = ? AND project_id IN {OWNED_PROJECTS}
+                 ORDER BY created_at DESC, id DESC"
+            ),
         )
         .bind(project_id.to_string())
+        .bind(account.to_string())
         .fetch_all(&self.pool)
         .await?;
 
         rows.iter().map(row_to_template).collect()
     }
 
-    async fn delete(&self, id: TemplateId) -> Result<()> {
-        let deleted = sqlx::query("DELETE FROM templates WHERE id = ?")
+    async fn delete(&self, account: AccountId, id: TemplateId) -> Result<()> {
+        let deleted = sqlx::query(&format!(
+            "DELETE FROM templates WHERE id = ? AND project_id IN {OWNED_PROJECTS}"
+        ))
             .bind(id.to_string())
+            .bind(account.to_string())
             .execute(&self.pool)
             .await?;
 

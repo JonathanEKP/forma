@@ -141,7 +141,7 @@ async fn a_design_reported_valid_can_actually_be_rendered() {
     let record = record(document_using_tokens());
     let page_id = record.document.pages[0].id;
 
-    let report = application::renders::validate(&record, Some(&brand), &fonts, &assets, &store)
+    let report = application::renders::validate(account(), &record, Some(&brand), &fonts, &assets, &store)
         .await
         .unwrap();
     assert!(report.valid, "unexpected issues: {:?}", report.issues);
@@ -172,7 +172,7 @@ async fn tokens_without_a_brand_kit_are_reported_rather_than_failing_at_render()
     );
 
     // So validation must say so, instead of reporting the design as exportable.
-    let report = application::renders::validate(&record, None, &fonts, &assets, &store)
+    let report = application::renders::validate(account(), &record, None, &fonts, &assets, &store)
         .await
         .unwrap();
 
@@ -186,4 +186,11 @@ async fn tokens_without_a_brand_kit_are_reported_rather_than_failing_at_render()
         "expected UNKNOWN_BRAND_TOKEN, got: {:?}",
         report.issues
     );
+}
+
+/// The account these fixtures belong to: the one the migration creates.
+fn account() -> design_core::AccountId {
+    design_core::AccountId(
+        uuid::Uuid::parse_str(design_core::BOOTSTRAP_ACCOUNT).expect("a constant uuid"),
+    )
 }

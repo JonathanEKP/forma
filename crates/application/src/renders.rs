@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 
-use design_core::{
+use design_core::{AccountId, 
     AssetId, BrandKit, DesignDocument, DesignId, DesignRecord, DomainError, Layer, LayerId, Page,
     PageId, Version,
 };
@@ -46,6 +46,7 @@ fn find_page(document: &DesignDocument, page_id: PageId) -> Result<&Page> {
 pub async fn asset_report(
     assets: &dyn AssetRepository,
     store: &dyn ObjectStore,
+    account: AccountId,
     document: &DesignDocument,
 ) -> HashMap<AssetId, AssetInfo> {
     let mut report = HashMap::new();
@@ -57,7 +58,7 @@ pub async fn asset_report(
                 continue;
             }
 
-            let info = match assets.get(image.asset_id).await {
+            let info = match assets.get(account, image.asset_id).await {
                 Err(_) => AssetInfo::unreadable(),
                 Ok(asset) if !asset.is_usable_as_image() => AssetInfo::wrong_type(),
                 Ok(asset) => match store.exists(&asset.storage_key).await {
@@ -78,6 +79,7 @@ pub async fn asset_report(
 pub async fn load_page_assets(
     assets: &dyn AssetRepository,
     store: &dyn ObjectStore,
+    account: AccountId,
     document: &DesignDocument,
     page_id: PageId,
 ) -> Result<InMemoryAssets> {
@@ -86,7 +88,7 @@ pub async fn load_page_assets(
 
     for layer in &page.layers {
         let Layer::Image(image) = layer else { continue };
-        let asset = assets.get(image.asset_id).await?;
+        let asset = assets.get(account, image.asset_id).await?;
         let bytes = store.get(&asset.storage_key).await?;
 
         let raster = RasterAsset::from_bytes(bytes).ok_or_else(|| {
@@ -189,6 +191,7 @@ pub fn render_png(
 /// measurements rather than aborting the report: the failure has its own issue
 /// already, and an agent fixing a design wants the whole list (plan section 41).
 pub async fn validate(
+    account: AccountId,
     record: &DesignRecord,
     brand: Option<&BrandKit>,
     fonts: &FontRegistry,
@@ -196,11 +199,11 @@ pub async fn validate(
     store: &dyn ObjectStore,
 ) -> Result<ValidationReport> {
     let document = &record.document;
-    let asset_infos = asset_report(assets, store, document).await;
+    let asset_infos = asset_report(assets, store, account, document).await;
 
     let mut measurements: HashMap<LayerId, MeasuredLayer> = HashMap::new();
     for page in &document.pages {
-        let Ok(loaded) = load_page_assets(assets, store, document, page.id).await else {
+        let Ok(loaded) = load_page_assets(assets, store, account, document, page.id).await else {
             continue;
         };
         let Ok(rendered) = render(document, page.id, brand, fonts, &loaded) else {

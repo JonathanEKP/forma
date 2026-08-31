@@ -34,12 +34,7 @@ async fn save(
     path: web::Path<String>,
     body: web::Json<TemplateDraft>,
 ) -> Result<HttpResponse, ApiError> {
-    let template = application::templates::save_from_design(
-        &*state.templates,
-        &*state.designs,
-        design_id(&path)?,
-        &body.into_inner(),
-    )
+    let template = application::templates::save_from_design(&*state.templates, &*state.designs, crate::routes::auth(&state).account_id, design_id(&path)?, &body.into_inner())
     .await?;
     Ok(HttpResponse::Created().json(template))
 }
@@ -49,7 +44,7 @@ async fn list(
     state: web::Data<AppState>,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
-    let templates = application::templates::list(&*state.templates, project_id(&path)?).await?;
+    let templates = application::templates::list(&*state.templates, crate::routes::auth(&state).account_id, project_id(&path)?).await?;
     Ok(HttpResponse::Ok().json(templates))
 }
 
@@ -58,7 +53,7 @@ async fn get(
     state: web::Data<AppState>,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
-    let template = application::templates::get(&*state.templates, template_id(&path)?).await?;
+    let template = application::templates::get(&*state.templates, crate::routes::auth(&state).account_id, template_id(&path)?).await?;
     Ok(HttpResponse::Ok().json(template))
 }
 
@@ -75,13 +70,7 @@ async fn create_design(
     path: web::Path<String>,
     body: web::Json<CreateFromTemplateRequest>,
 ) -> Result<HttpResponse, ApiError> {
-    let record = application::templates::create_design(
-        &*state.designs,
-        &*state.templates,
-        template_id(&path)?,
-        &body.name,
-        &actor_from(&request),
-    )
+    let record = application::templates::create_design(&*state.designs, &*state.templates, crate::routes::auth(&state).account_id, template_id(&path)?, &body.name, &actor_from(&request))
     .await?;
 
     telemetry::record_project(record.project_id);
@@ -94,7 +83,7 @@ async fn remove(
     state: web::Data<AppState>,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
-    application::templates::delete(&*state.templates, template_id(&path)?).await?;
+    application::templates::delete(&*state.templates, crate::routes::auth(&state).account_id, template_id(&path)?).await?;
     Ok(HttpResponse::NoContent().finish())
 }
 

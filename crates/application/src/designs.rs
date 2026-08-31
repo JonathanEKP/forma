@@ -6,6 +6,7 @@
 //! part every transport would otherwise duplicate.
 
 use design_core::{
+    AccountId,
     apply_operations, Actor, DesignDocument, DesignId, DesignOperation, DesignRecord,
     DesignSummary, ProjectId, Version,
 };
@@ -16,6 +17,7 @@ use crate::error::{ApplicationError, Result};
 
 pub async fn create(
     designs: &dyn DesignRepository,
+    account: AccountId,
     project_id: ProjectId,
     name: &str,
     document: &DesignDocument,
@@ -35,22 +37,31 @@ pub async fn create(
     // document the caller just sent. This surfaces the domain's own error.
     document.validate_structure()?;
 
-    Ok(designs.create(project_id, name, document, actor).await?)
+    Ok(designs.create(account, project_id, name, document, actor).await?)
 }
 
-pub async fn get(designs: &dyn DesignRepository, id: DesignId) -> Result<DesignRecord> {
-    Ok(designs.get(id).await?)
+pub async fn get(
+    designs: &dyn DesignRepository,
+    account: AccountId,
+    id: DesignId,
+) -> Result<DesignRecord> {
+    Ok(designs.get(account, id).await?)
 }
 
 pub async fn list(
     designs: &dyn DesignRepository,
+    account: AccountId,
     project_id: ProjectId,
 ) -> Result<Vec<DesignSummary>> {
-    Ok(designs.list_for_project(project_id).await?)
+    Ok(designs.list_for_project(account, project_id).await?)
 }
 
-pub async fn history(designs: &dyn DesignRepository, id: DesignId) -> Result<Vec<VersionSummary>> {
-    Ok(designs.history(id).await?)
+pub async fn history(
+    designs: &dyn DesignRepository,
+    account: AccountId,
+    id: DesignId,
+) -> Result<Vec<VersionSummary>> {
+    Ok(designs.history(account, id).await?)
 }
 
 /// The document as it was at one version.
@@ -59,10 +70,11 @@ pub async fn history(designs: &dyn DesignRepository, id: DesignId) -> Result<Vec
 /// reproducible and the render cache stay safe.
 pub async fn snapshot(
     designs: &dyn DesignRepository,
+    account: AccountId,
     id: DesignId,
     version: Version,
 ) -> Result<DesignDocument> {
-    Ok(designs.snapshot(id, version).await?)
+    Ok(designs.snapshot(account, id, version).await?)
 }
 
 /// Applies a batch of operations as one version (plan sections 27 and 28).
@@ -75,14 +87,15 @@ pub async fn snapshot(
 /// overwriting the other writer.
 pub async fn apply(
     designs: &dyn DesignRepository,
+    account: AccountId,
     id: DesignId,
     base_version: Version,
     operations: &[DesignOperation],
     actor: &Actor,
 ) -> Result<DesignRecord> {
-    let current = designs.get(id).await?;
+    let current = designs.get(account, id).await?;
     let updated = apply_operations(&current.document, operations)?;
-    Ok(designs.save(id, base_version, &updated, actor).await?)
+    Ok(designs.save(account, id, base_version, &updated, actor).await?)
 }
 
 /// Restores an earlier snapshot as a new version (plan section 29).
@@ -92,6 +105,7 @@ pub async fn apply(
 /// exactly what optimistic concurrency relies on never happening.
 pub async fn undo(
     designs: &dyn DesignRepository,
+    account: AccountId,
     id: DesignId,
     base_version: Version,
     actor: &Actor,
@@ -105,8 +119,8 @@ pub async fn undo(
     }
 
     let previous = Version(base_version.0 - 1);
-    let snapshot = designs.snapshot(id, previous).await?;
-    Ok(designs.save(id, base_version, &snapshot, actor).await?)
+    let snapshot = designs.snapshot(account, id, previous).await?;
+    Ok(designs.save(account, id, base_version, &snapshot, actor).await?)
 }
 
 /// Deletes a design and the derived data that only existed for it.
@@ -126,11 +140,12 @@ pub async fn delete(
     exports: &dyn ExportRepository,
     store: &dyn ObjectStore,
     cache: &RenderCache,
+    account: AccountId,
     id: DesignId,
 ) -> Result<()> {
-    let exported = exports.list_for_design(id).await.unwrap_or_default();
+    let exported = exports.list_for_design(account, id).await.unwrap_or_default();
 
-    designs.delete(id).await?;
+    designs.delete(account, id).await?;
 
     for export in exported {
         if let Err(error) = store.delete(&export.storage_key).await {

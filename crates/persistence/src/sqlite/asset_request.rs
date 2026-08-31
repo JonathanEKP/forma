@@ -1,11 +1,11 @@
 use async_trait::async_trait;
-use design_core::{AssetId, AssetRequest, AssetRequestId, AssetRequestStatus, DesignId, ProjectId};
+use design_core::{AccountId, AssetId, AssetRequest, AssetRequestId, AssetRequestStatus, DesignId, ProjectId};
 use sqlx::{Row, SqlitePool};
 
 use crate::error::{PersistenceError, Result};
 use crate::traits::AssetRequestRepository;
 
-use super::{now, parse_uuid};
+use super::{now, parse_uuid, OWNED_PROJECTS};
 
 pub struct SqliteAssetRequestRepository {
     pool: SqlitePool,
@@ -68,7 +68,9 @@ const COLUMNS: &str = "id, project_id, design_id, purpose, description, suggeste
 
 #[async_trait]
 impl AssetRequestRepository for SqliteAssetRequestRepository {
-    async fn create(&self, request: &AssetRequest) -> Result<AssetRequest> {
+    async fn create(&self, account: AccountId, request: &AssetRequest) -> Result<AssetRequest> {
+        super::owned_project(&self.pool, account, request.project_id).await?;
+
         // Stamped here rather than taken from the caller, like every other
         // repository, so a caller that leaves the field empty cannot persist a
         // blank timestamp.
@@ -101,11 +103,13 @@ impl AssetRequestRepository for SqliteAssetRequestRepository {
         })
     }
 
-    async fn get(&self, id: AssetRequestId) -> Result<AssetRequest> {
+    async fn get(&self, account: AccountId, id: AssetRequestId) -> Result<AssetRequest> {
         let row = sqlx::query(&format!(
-            "SELECT {COLUMNS} FROM asset_requests WHERE id = ?"
+            "SELECT {COLUMNS} FROM asset_requests
+             WHERE id = ? AND project_id IN {OWNED_PROJECTS}"
         ))
         .bind(id.to_string())
+        .bind(account.to_string())
         .fetch_optional(&self.pool)
         .await?
         .ok_or_else(|| PersistenceError::NotFound(format!("asset request {id}")))?;
@@ -113,57 +117,71 @@ impl AssetRequestRepository for SqliteAssetRequestRepository {
         row_to_request(&row)
     }
 
-    async fn list_for_project(&self, project_id: ProjectId) -> Result<Vec<AssetRequest>> {
+    async fn list_for_project(
+        &self,
+        account: AccountId,
+        project_id: ProjectId,
+    ) -> Result<Vec<AssetRequest>> {
         let rows = sqlx::query(&format!(
             "SELECT {COLUMNS} FROM asset_requests
-             WHERE project_id = ? ORDER BY created_at DESC"
+             WHERE project_id = ? AND project_id IN {OWNED_PROJECTS}
+             ORDER BY created_at DESC"
         ))
         .bind(project_id.to_string())
+        .bind(account.to_string())
         .fetch_all(&self.pool)
         .await?;
 
         rows.iter().map(row_to_request).collect()
     }
 
-    async fn resolve(&self, id: AssetRequestId, asset_id: AssetId) -> Result<AssetRequest> {
+    async fn resolve(
+        &self,
+        account: AccountId,
+        id: AssetRequestId,
+        asset_id: AssetId,
+    ) -> Result<AssetRequest> {
         // Only a pending request can be resolved, so a late second upload cannot
         // silently overwrite the asset the design already uses.
-        let updated = sqlx::query(
+        let updated = sqlx::query(&format!(
             "UPDATE asset_requests
              SET status = 'resolved', resolved_asset_id = ?, resolved_at = ?
-             WHERE id = ? AND status = 'pending'",
-        )
+             WHERE id = ? AND status = 'pending' AND project_id IN {OWNED_PROJECTS}",
+        ))
         .bind(asset_id.to_string())
         .bind(now())
         .bind(id.to_string())
+        .bind(account.to_string())
         .execute(&self.pool)
         .await?;
 
         if updated.rows_affected() == 0 {
-            let existing = self.get(id).await?;
+            let existing = self.get(account, id).await?;
             return Err(PersistenceError::InvalidTransition(format!(
                 "asset request {id} is already {:?} and cannot be resolved again",
                 existing.status
             )));
         }
-        self.get(id).await
+        self.get(account, id).await
     }
 
-    async fn cancel(&self, id: AssetRequestId) -> Result<AssetRequest> {
-        let updated = sqlx::query(
-            "UPDATE asset_requests SET status = 'cancelled' WHERE id = ? AND status = 'pending'",
-        )
+    async fn cancel(&self, account: AccountId, id: AssetRequestId) -> Result<AssetRequest> {
+        let updated = sqlx::query(&format!(
+            "UPDATE asset_requests SET status = 'cancelled'
+             WHERE id = ? AND status = 'pending' AND project_id IN {OWNED_PROJECTS}",
+        ))
         .bind(id.to_string())
+        .bind(account.to_string())
         .execute(&self.pool)
         .await?;
 
         if updated.rows_affected() == 0 {
-            let existing = self.get(id).await?;
+            let existing = self.get(account, id).await?;
             return Err(PersistenceError::InvalidTransition(format!(
                 "asset request {id} is already {:?}",
                 existing.status
             )));
         }
-        self.get(id).await
+        self.get(account, id).await
     }
 }

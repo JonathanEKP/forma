@@ -52,26 +52,11 @@ async fn create(
             scale: default_scale(),
         });
 
-    let record = application::designs::get(&*state.designs, design).await?;
-    let brand = application::projects::get_brand(
-        &*state.projects,
-        crate::routes::auth(&state).account_id,
-        record.project_id,
-    )
+    let record = application::designs::get(&*state.designs, crate::routes::auth(&state).account_id, design).await?;
+    let brand = application::projects::get_brand(&*state.projects, crate::routes::auth(&state).account_id, record.project_id)
     .await?;
 
-    let (export, files) = application::exports::create(
-        &*state.exports,
-        &*state.assets,
-        &*state.store,
-        &state.cache,
-        &state.fonts,
-        &record,
-        brand.as_ref(),
-        request.scope.unwrap_or(ExportScope::AllPages),
-        request.page_id,
-        request.scale,
-    )
+    let (export, files) = application::exports::create(&*state.exports, &*state.assets, &*state.store, &state.cache, &state.fonts, crate::routes::auth(&state).account_id, &record, brand.as_ref(), request.scope.unwrap_or(ExportScope::AllPages), request.page_id, request.scale)
     .await?;
 
     Ok(HttpResponse::Created().json(serde_json::json!({
@@ -89,13 +74,13 @@ async fn get(
     state: web::Data<AppState>,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
-    let export = application::exports::get(&*state.exports, export_id(&path)?).await?;
+    let export = application::exports::get(&*state.exports, crate::routes::auth(&state).account_id, export_id(&path)?).await?;
 
     // The names come from the snapshot the export pinned, not from the design
     // as it stands now: a page added since must not appear in this listing.
-    let record = application::designs::get(&*state.designs, export.design_id).await?;
+    let record = application::designs::get(&*state.designs, crate::routes::auth(&state).account_id, export.design_id).await?;
     let document =
-        application::designs::snapshot(&*state.designs, export.design_id, export.design_version)
+        application::designs::snapshot(&*state.designs, crate::routes::auth(&state).account_id, export.design_id, export.design_version)
             .await?;
 
     let filenames = application::exports::filenames(&export, &record.name, document.pages.len());
@@ -112,7 +97,7 @@ async fn download(
     path: web::Path<String>,
     query: web::Query<DownloadQuery>,
 ) -> Result<HttpResponse, ApiError> {
-    let export = application::exports::get(&*state.exports, export_id(&path)?).await?;
+    let export = application::exports::get(&*state.exports, crate::routes::auth(&state).account_id, export_id(&path)?).await?;
     let bytes =
         application::exports::download(&*state.store, &export, query.file.as_deref()).await?;
 
@@ -137,7 +122,7 @@ async fn list(
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
     let design = design_id(&path)?;
-    let exports = application::exports::list(&*state.exports, design).await?;
+    let exports = application::exports::list(&*state.exports, crate::routes::auth(&state).account_id, design).await?;
     Ok(HttpResponse::Ok().json(exports))
 }
 

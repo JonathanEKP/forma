@@ -5,7 +5,7 @@
 //! looking at; and because a version's document never changes, an export stays
 //! reproducible after the design moves on.
 
-use design_core::{BrandKit, DesignId, DesignRecord, Export, ExportId, ExportScope, PageId};
+use design_core::{AccountId, BrandKit, DesignId, DesignRecord, Export, ExportId, ExportScope, PageId};
 use persistence::{export_storage_key, AssetRepository, ExportRepository, ObjectStore};
 use renderer::{FontRegistry, RenderCache};
 
@@ -67,6 +67,7 @@ pub async fn create(
     store: &dyn ObjectStore,
     cache: &RenderCache,
     fonts: &FontRegistry,
+    account: AccountId,
     record: &DesignRecord,
     brand: Option<&BrandKit>,
     scope: ExportScope,
@@ -115,7 +116,7 @@ pub async fn create(
     let mut files = Vec::new();
 
     for (index, page) in pages {
-        let loaded = renders::load_page_assets(assets, store, document, page).await?;
+        let loaded = renders::load_page_assets(assets, store, account, document, page).await?;
         let png = renders::render_png(
             cache,
             record.id,
@@ -164,15 +165,23 @@ pub async fn create(
         created_at: String::new(),
     };
 
-    Ok((exports.create(&export).await?, files))
+    Ok((exports.create(account, &export).await?, files))
 }
 
-pub async fn get(exports: &dyn ExportRepository, id: ExportId) -> Result<Export> {
-    Ok(exports.get(id).await?)
+pub async fn get(
+    exports: &dyn ExportRepository,
+    account: AccountId,
+    id: ExportId,
+) -> Result<Export> {
+    Ok(exports.get(account, id).await?)
 }
 
-pub async fn list(exports: &dyn ExportRepository, design_id: DesignId) -> Result<Vec<Export>> {
-    Ok(exports.list_for_design(design_id).await?)
+pub async fn list(
+    exports: &dyn ExportRepository,
+    account: AccountId,
+    design_id: DesignId,
+) -> Result<Vec<Export>> {
+    Ok(exports.list_for_design(account, design_id).await?)
 }
 
 /// The filenames an export produced, derived from the version it pinned.
@@ -195,6 +204,10 @@ pub fn filenames(export: &Export, design_name: &str, page_count: usize) -> Vec<S
 }
 
 /// Reads one file of an export back.
+/// Takes no `AccountId` on purpose: the `Export` it is handed was fetched
+/// through a scoped read, so the boundary was crossed before this is reached.
+/// Asking for the account again would suggest this function enforces something,
+/// and a check that enforces nothing is worse than no check.
 pub async fn download(
     store: &dyn ObjectStore,
     export: &Export,

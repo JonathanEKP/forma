@@ -152,7 +152,7 @@ async fn the_manifest_counts_what_was_copied() {
         .await
         .unwrap();
     assets
-        .create(&design_core::Asset {
+        .create(account(), &design_core::Asset {
             id: design_core::AssetId::new(),
             project_id: projects[0].id,
             hash: "abcdef0123456789".to_string(),
