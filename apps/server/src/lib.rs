@@ -5,6 +5,7 @@ pub mod auth;
 pub mod backup;
 pub mod config;
 pub mod error;
+pub mod jwt;
 pub mod routes;
 pub mod security;
 pub mod state;

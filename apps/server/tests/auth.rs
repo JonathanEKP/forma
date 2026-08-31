@@ -166,6 +166,7 @@ fn a_public_bind_without_a_token_refuses_to_start() {
         supabase_url: None,
         supabase_issuer: None,
         supabase_jwks_url: None,
+        supabase_audience: "authenticated".to_string(),
     };
 
     assert!(config("127.0.0.1:4765", None).binding_is_safe().is_ok());
@@ -204,6 +205,7 @@ fn hosted(issuer: Option<&str>, jwks: Option<&str>) -> Config {
         supabase_url: None,
         supabase_issuer: issuer.map(str::to_string),
         supabase_jwks_url: jwks.map(str::to_string),
+        supabase_audience: "authenticated".to_string(),
     }
 }
 

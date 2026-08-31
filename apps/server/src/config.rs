@@ -48,6 +48,20 @@ pub struct Config {
     pub supabase_url: Option<String>,
     pub supabase_issuer: Option<String>,
     pub supabase_jwks_url: Option<String>,
+    /// The `aud` a browser session token must carry.
+    ///
+    /// **Not measured.** Obtaining one needs a real sign-in, and this project's
+    /// mailer does not auto-confirm, so the first person to log in is the first
+    /// chance to read it. `authenticated` is Supabase's documented value for a
+    /// direct user session and is the default here.
+    ///
+    /// It is configuration rather than a constant precisely because it is a
+    /// guess: if it is wrong the verifier **fails closed** — valid tokens are
+    /// refused, nobody gets in, and it is corrected with an environment
+    /// variable rather than a release. A wrong guess in the other direction
+    /// would have been a hole; this one is a lockout, which is the right way
+    /// for an unverified assumption to break.
+    pub supabase_audience: String,
 }
 
 /// An environment value that is absent when unset or blank.
@@ -81,6 +95,7 @@ impl Config {
             supabase_url: optional("FORMA_SUPABASE_URL"),
             supabase_issuer: optional("FORMA_SUPABASE_ISSUER"),
             supabase_jwks_url: optional("FORMA_SUPABASE_JWKS_URL"),
+            supabase_audience: env_or("FORMA_SUPABASE_AUDIENCE", "authenticated"),
             remote_token: std::env::var("FORMA_REMOTE_TOKEN")
                 .ok()
                 .map(|token| token.trim().to_string())

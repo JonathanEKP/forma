@@ -25,6 +25,9 @@ actix-files.workspace = true
 # Hashing the remote token: already here for asset hashing, and its Hash
 # compares in constant time.
 blake3.workspace = true
+async-trait.workspace = true
+reqwest.workspace = true
+jsonwebtoken.workspace = true
 actix-multipart.workspace = true
 futures-util.workspace = true
 sqlx.workspace = true
