@@ -4886,8 +4886,8 @@ the same project would be a universal MCP credential.
 
 ```text
 /api/v1/*
-    accepts: Supabase browser user session JWT
-    rejects: a Forma PAT
+    accepts: Supabase browser user session JWT, or a Forma PAT
+    rejects: unauthenticated calls
 
 /mcp
     accepts: Supabase OAuth MCP JWT, or a Forma PAT
@@ -4898,6 +4898,22 @@ A browser's Supabase token does not become an MCP credential merely because it
 exists in the same browser. `/mcp` requires its own OAuth client identity or a
 PAT. This keeps browser authorization, agent authorization and revocation
 separate.
+
+**Amended during slice 2A.** This section first said `/api/v1/*` *rejects* a
+Forma PAT, which read literally contradicts §109.2: `forma-mcp` forwards the
+caller's credential to `forma-server`, and every MCP tool call is therefore a
+REST call carrying a PAT. Taken at its word it would need a second verifier
+inside `forma-mcp`, and two verifiers can disagree about who someone is.
+
+What the original line was protecting is still true and still enforced: **a
+browser session is never a PAT.** The SPA authenticates with the Supabase
+session it already holds and never asks anyone for a token, so the credential
+classes stay separate where that separation does work — in what each product
+surface uses, and in what revoking each one disconnects.
+
+A PAT reaching REST directly is the same account with the same permissions as
+that PAT reaching it through `/mcp`, and it is useful for scripting. Refusing it
+there would buy nothing and cost a second implementation of identity.
 
 ## 112.1 Personal access tokens
 
