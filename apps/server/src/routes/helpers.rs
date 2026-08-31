@@ -129,11 +129,28 @@ fn actor_header(request: &HttpRequest) -> Actor {
 /// harnesses and trusted-local calls that omit the middleware retain the
 /// process account as their explicit fallback.
 pub fn auth(request: &HttpRequest, state: &AppState) -> AuthContext {
-    request
-        .extensions()
-        .get::<AuthContext>()
-        .cloned()
-        .unwrap_or_else(|| AuthContext::local(state.account))
+    if let Some(resolved) = request.extensions().get::<AuthContext>().cloned() {
+        return resolved;
+    }
+
+    // Nothing was resolved, which means one of two very different things.
+    //
+    // In local mode it is the ordinary case: there is no credential to read, the
+    // process boundary is the security boundary, and every request belongs to
+    // the one account this process serves.
+    //
+    // In hosted mode it should be unreachable — `require_bearer` refuses
+    // anything under `/api/` that it could not resolve. But "should be
+    // unreachable" is a property of another function, and `is_open` has already
+    // grown once; a path added there later would silently arrive here. So this
+    // fails closed rather than trusting that: an account id nothing references
+    // owns no project, so every scoped query answers exactly as it would for an
+    // id that was never issued. The tenancy boundary contains the bug instead of
+    // the bug escaping through it.
+    match state.mode {
+        crate::config::AuthMode::Local => AuthContext::local(state.account),
+        _ => AuthContext::local(design_core::AccountId::new()),
+    }
 }
 
 #[cfg(test)]

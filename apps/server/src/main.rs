@@ -173,7 +173,34 @@ async fn main() -> anyhow::Result<()> {
         .await
         .map_err(|e| std::io::Error::other(format!("no account to serve: {e}")))?;
     tracing::info!(account = %account.id, claimed = account.claimed_at.is_some(), "serving one account");
-    let state = state.with_account(account.id).with_mode(config.mode());
+    let mut state = state.with_account(account.id).with_mode(config.mode());
+
+    // Hosted mode verifies the provider's tokens, and `binding_is_safe` has
+    // already refused to start without the configuration this needs.
+    if config.mode() == forma_server::config::AuthMode::Supabase {
+        let (Some(issuer), Some(jwks)) = (&config.supabase_issuer, &config.supabase_jwks_url)
+        else {
+            anyhow::bail!("hosted mode needs FORMA_SUPABASE_ISSUER and FORMA_SUPABASE_JWKS_URL");
+        };
+
+        let verifier = std::sync::Arc::new(forma_server::jwt::Verifier::new(
+            issuer.clone(),
+            config.supabase_audience.clone(),
+            Box::new(forma_server::jwt::HttpJwks::new(jwks.clone())),
+        ));
+
+        // Fetched once here rather than on somebody's first request, so a JWKS
+        // URL that is wrong is a startup failure instead of an outage that only
+        // appears when the first person tries to sign in.
+        verifier
+            .warm()
+            .await
+            .map_err(|e| anyhow::anyhow!("cannot read the provider's keys: {e}"))?;
+
+        tracing::info!(issuer = %issuer, "verifying identity against the provider");
+        state = state.with_verifier(verifier);
+    }
+    let state = state;
 
     // Renders of designs that no longer exist (plan section 74). Doing it at
     // startup rather than on every delete path means a path added later cannot
@@ -196,18 +223,6 @@ async fn main() -> anyhow::Result<()> {
 
     // The one configuration that must not start: reachable from the network
     // with nothing in front of it.
-    // Hosted mode is specified (plan §110 to §112) and not built: slice one is
-    // the account boundary. Refusing to start says that once, at the moment
-    // somebody configures it, rather than answering 401 to every request and
-    // letting them work out why.
-    if config.mode() == forma_server::config::AuthMode::Supabase {
-        tracing::error!(
-            "FORMA_AUTH_MODE=supabase is not implemented yet: Phase 11.5 slice one builds the \
-             account boundary, and hosted identity is slice two. Unset it to run in local mode."
-        );
-        std::process::exit(1);
-    }
-
     if let Err(reason) = config.binding_is_safe() {
         tracing::error!("{reason}");
         anyhow::bail!(reason);

@@ -12,6 +12,8 @@ use actix_web::{web, Error, HttpMessage, ResponseError};
 use design_core::{AuthContext, AuthKind};
 use persistence::ApiKeyRepository;
 
+use persistence::AccountRepository;
+
 use crate::error::ApiError;
 
 /// The configured token, reduced to something a comparison cannot leak.
@@ -65,7 +67,8 @@ fn is_open(path: &str) -> bool {
     !path.starts_with("/api/")
 }
 
-/// Resolves a deployment token or PAT into the request's `AuthContext`.
+/// Resolves a deployment token, a PAT or a provider session into the request's
+/// `AuthContext` (plan sections 108 and 112).
 pub async fn require_bearer(
     request: ServiceRequest,
     next: Next<impl MessageBody + 'static>,
@@ -148,6 +151,77 @@ pub async fn require_bearer(
             client_id: None,
             api_key_id: Some(key.id),
         })
+    } else if let Some((state, verifier)) = state
+        .as_ref()
+        .zip(state.as_ref().and_then(|state| state.verifier.clone()))
+        .filter(|_| hosted)
+        .zip(credential.as_deref())
+        .map(|((state, verifier), _)| (state.clone(), verifier))
+    {
+        // A session token from the identity provider (plan section 111.4).
+        //
+        // Reached only after the deployment token and the PAT prefix have both
+        // failed to match, so the three credential classes cannot be confused
+        // for one another.
+        let Some(token) = credential.as_deref() else {
+            return Ok(request.into_response(refusal()));
+        };
+
+        let identity = match verifier.verify(token).await {
+            Ok(identity) => identity,
+            Err(crate::jwt::JwtError::ProviderUnreachable) => {
+                // Distinguished from a bad token on purpose: this one is ours to
+                // fix, and answering 401 would send a person to re-authenticate
+                // against something that is down.
+                return Ok(request.into_response(
+                    ApiError::internal(
+                        "IDENTITY_UNAVAILABLE",
+                        "the identity provider could not be reached",
+                    )
+                    .error_response(),
+                ));
+            }
+            Err(_) => return Ok(request.into_response(refusal())),
+        };
+
+        match state.accounts.membership_of(identity.subject).await {
+            Ok(Some(membership)) => Some(AuthContext {
+                account_id: membership.account_id,
+                user_id: Some(identity.subject),
+                // Supabase populates `client_id` for an OAuth client and leaves
+                // it null for a direct user session, which is exactly the
+                // distinction plan section 112 rests on.
+                kind: if identity.client_id.is_some() {
+                    AuthKind::McpOAuth
+                } else {
+                    AuthKind::BrowserUser
+                },
+                client_id: identity.client_id,
+                api_key_id: None,
+            }),
+            // A valid identity that is not an authorized Forma account. The one
+            // 403 in this codebase, and never for an object in another account —
+            // that stays a 404, because a 403 there would confirm it exists.
+            Ok(None) => {
+                return Ok(request.into_response(
+                    ApiError::forbidden(
+                        "ACCOUNT_REQUIRED",
+                        "this identity has no Forma account yet",
+                        "Create an account with an invite, or claim the existing workspace.",
+                    )
+                    .error_response(),
+                ))
+            }
+            Err(_) => {
+                return Ok(request.into_response(
+                    ApiError::internal(
+                        "AUTH_STORAGE_ERROR",
+                        "the account for this identity could not be read",
+                    )
+                    .error_response(),
+                ))
+            }
+        }
     } else if expected.is_some() || hosted {
         // No detail about why: a caller learning whether the header was
         // missing, malformed or simply wrong is a caller being helped to guess.

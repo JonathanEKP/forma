@@ -43,6 +43,9 @@ pub struct AppState {
     pub account: AccountId,
     /// How callers prove who they are in this process (plan section 106.2).
     pub mode: crate::config::AuthMode,
+    /// Verifies the identity provider's tokens. `None` in local mode, where
+    /// there is no provider and nothing to verify.
+    pub verifier: Option<Arc<crate::jwt::Verifier>>,
 }
 
 impl AppState {
@@ -65,6 +68,7 @@ impl AppState {
                 uuid::Uuid::parse_str(design_core::BOOTSTRAP_ACCOUNT).expect("a constant uuid"),
             ),
             mode: crate::config::AuthMode::Local,
+            verifier: None,
             pool,
             fonts,
             cache,
@@ -93,6 +97,11 @@ impl AppState {
 
     pub fn with_mode(mut self, mode: crate::config::AuthMode) -> Self {
         self.mode = mode;
+        self
+    }
+
+    pub fn with_verifier(mut self, verifier: Arc<crate::jwt::Verifier>) -> Self {
+        self.verifier = Some(verifier);
         self
     }
 }
