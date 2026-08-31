@@ -44,7 +44,9 @@ async fn list(
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
     let project = ProjectId(parse_id(&path, "project id")?);
-    let requests = application::asset_requests::list(&*state.asset_requests, crate::routes::auth(&state).account_id, project).await?;
+    let account = crate::routes::auth(&state).account_id;
+    application::projects::get(&*state.projects, account, project).await?;
+    let requests = application::asset_requests::list(&*state.asset_requests, account, project).await?;
     Ok(HttpResponse::Ok().json(requests))
 }
 

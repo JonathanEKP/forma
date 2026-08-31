@@ -84,7 +84,10 @@ async fn list(
     state: web::Data<AppState>,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
-    let designs = application::designs::list(&*state.designs, crate::routes::auth(&state).account_id, project_id(&path)?).await?;
+    let account = crate::routes::auth(&state).account_id;
+    let project = project_id(&path)?;
+    application::projects::get(&*state.projects, account, project).await?;
+    let designs = application::designs::list(&*state.designs, account, project).await?;
     Ok(HttpResponse::Ok().json(designs))
 }
 

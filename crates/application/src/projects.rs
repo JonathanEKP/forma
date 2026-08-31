@@ -84,6 +84,10 @@ pub async fn get_brand(
     account: AccountId,
     id: ProjectId,
 ) -> Result<Option<BrandKit>> {
+    // None means an owned project has no kit. Prove the parent exists first so
+    // another account's project cannot collapse into that valid state and
+    // answer 200 null through REST (plan 108.2).
+    projects.get(account, id).await?;
     Ok(projects.get_brand(account, id).await?)
 }
 

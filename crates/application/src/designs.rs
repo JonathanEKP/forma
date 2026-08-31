@@ -61,6 +61,7 @@ pub async fn history(
     account: AccountId,
     id: DesignId,
 ) -> Result<Vec<VersionSummary>> {
+    designs.get(account, id).await?;
     Ok(designs.history(account, id).await?)
 }
 
@@ -110,6 +111,11 @@ pub async fn undo(
     base_version: Version,
     actor: &Actor,
 ) -> Result<DesignRecord> {
+    // Resolve the scoped design before reasoning about versions. Otherwise a
+    // foreign design reaches the snapshot lookup and returns a generic missing
+    // version, while every other route says DESIGN_NOT_FOUND (plan 108.2).
+    designs.get(account, id).await?;
+
     if base_version.0 <= Version::INITIAL.0 {
         return Err(ApplicationError::rejected(
             "NOTHING_TO_UNDO",

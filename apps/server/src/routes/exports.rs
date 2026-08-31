@@ -122,7 +122,9 @@ async fn list(
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
     let design = design_id(&path)?;
-    let exports = application::exports::list(&*state.exports, crate::routes::auth(&state).account_id, design).await?;
+    let account = crate::routes::auth(&state).account_id;
+    application::designs::get(&*state.designs, account, design).await?;
+    let exports = application::exports::list(&*state.exports, account, design).await?;
     Ok(HttpResponse::Ok().json(exports))
 }
 
