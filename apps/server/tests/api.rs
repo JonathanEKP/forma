@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use actix_web::{test, web, App};
+use actix_web::{http::StatusCode, test, web, App};
 use forma_server::{routes, state::AppState};
 use renderer::FontRegistry;
 
@@ -36,6 +36,35 @@ async fn health_reports_ok() {
     let request = test::TestRequest::get().uri("/api/v1/health").to_request();
     let body: serde_json::Value = test::call_and_read_body_json(&app, request).await;
     assert_eq!(body["status"], "ok");
+}
+
+#[actix_web::test]
+async fn an_unknown_api_route_stays_a_json_error() {
+    let (state, _dir) = state().await;
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(state))
+            .configure(routes::configure),
+    )
+    .await;
+
+    let request = test::TestRequest::get()
+        .uri("/api/v1/nonsense")
+        .to_request();
+    let response = test::call_service(&app, request).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(
+        response
+            .headers()
+            .get("content-type")
+            .and_then(|value| value.to_str().ok()),
+        Some("application/json")
+    );
+
+    let body: serde_json::Value = test::read_body_json(response).await;
+    assert_eq!(body["error"]["code"], "NOT_FOUND");
+    assert!(body["error"]["message"].as_str().is_some());
+    assert!(body["error"]["hint"].as_str().is_some());
 }
 
 #[actix_web::test]

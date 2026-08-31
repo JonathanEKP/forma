@@ -80,6 +80,23 @@ describe("the project view", () => {
   });
 });
 
+describe("public entry points", () => {
+  afterEach(() => {
+    window.history.replaceState({}, "", "/");
+  });
+
+  it.each([
+    ["/login", "Sign in to Forma"],
+    ["/oauth/consent?authorization_id=request-1", "Authorize an agent"],
+    ["/agents", "Agent connections"],
+  ])("renders %s without starting the editor", (path, heading) => {
+    window.history.replaceState({}, "", path);
+    renderApp();
+
+    expect(screen.getByRole("heading", { name: heading })).toBeTruthy();
+  });
+});
+
 describe("the project view with a live server", () => {
   beforeEach(() => {
     vi.stubGlobal(

@@ -18,6 +18,19 @@ import { fileURLToPath } from "node:url";
 
 const HERO = fileURLToPath(new URL("../../fixtures/assets/hero.png", import.meta.url));
 
+test("every hosted SPA entry point reaches the application shell", async ({ page }) => {
+  for (const [path, heading] of [
+    ["/", "Give visual ideas a form."],
+    ["/login", "Sign in to Forma"],
+    ["/oauth/consent?authorization_id=request-1", "Authorize an agent"],
+    ["/agents", "Agent connections"],
+  ]) {
+    const response = await page.goto(path);
+    expect(response?.status(), `${path} did not serve the SPA`).toBe(200);
+    await expect(page.getByRole("heading", { name: heading })).toBeVisible();
+  }
+});
+
 /** Section 79 steps 3 and 4: a project, and the Brand Kit everything assumes. */
 async function createProjectWithBrand(page: Page, name: string) {
   await page.goto("/");

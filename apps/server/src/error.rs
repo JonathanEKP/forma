@@ -96,6 +96,15 @@ impl ApiError {
         }
     }
 
+    pub fn not_found(code: &'static str, message: impl Into<String>, hint: &'static str) -> Self {
+        Self::Request {
+            code,
+            message: message.into(),
+            hint,
+            status: StatusCode::NOT_FOUND,
+        }
+    }
+
     pub fn internal(code: &'static str, message: impl Into<String>) -> Self {
         Self::Request {
             code,

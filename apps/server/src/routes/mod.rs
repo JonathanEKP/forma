@@ -5,7 +5,9 @@
 //! `application`, so the MCP process reaches the same behaviour through the
 //! same code rather than through a second implementation of it.
 
-use actix_web::web;
+use actix_web::{web, HttpRequest, HttpResponse};
+
+use crate::error::ApiError;
 
 pub mod asset_requests;
 pub mod assets;
@@ -47,6 +49,18 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .configure(assets::configure)
             .configure(asset_requests::configure)
             .configure(exports::configure)
-            .configure(templates::configure),
+            .configure(templates::configure)
+            // The static app deliberately falls back to index.html. Ending the
+            // API scope here keeps a miss machine-readable instead of letting
+            // an API typo escape into that browser-only fallback.
+            .default_service(web::route().to(api_not_found)),
     );
+}
+
+async fn api_not_found(request: HttpRequest) -> Result<HttpResponse, ApiError> {
+    Err(ApiError::not_found(
+        "NOT_FOUND",
+        format!("no API route matches {}", request.path()),
+        "Check the request method and the /api/v1 path.",
+    ))
 }

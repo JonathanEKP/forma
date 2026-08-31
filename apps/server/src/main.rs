@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use actix_web::{web, App, HttpServer};
+use actix_web::{dev::fn_service, web, App, HttpServer};
 use anyhow::Context;
 use design_core::{AccountRole, AuthUserId};
 use forma_server::{auth, backup, routes, telemetry, AppState, Config};
@@ -238,10 +238,25 @@ async fn main() -> anyhow::Result<()> {
         // The built React app is served from the same origin, so the whole
         // product is one URL (plan section 58).
         if web_dir.is_dir() {
+            let index = web_dir.join("index.html");
             app.service(
                 actix_files::Files::new("/", &web_dir)
                     .index_file("index.html")
-                    .prefer_utf8(true),
+                    .prefer_utf8(true)
+                    // Client-side routes are real entry points even though
+                    // they are not files. API misses are consumed by their
+                    // scope above and can never reach this HTML fallback.
+                    .default_handler(fn_service(
+                        move |request: actix_web::dev::ServiceRequest| {
+                            let index = index.clone();
+                            async move {
+                                let (request, _) = request.into_parts();
+                                let file = actix_files::NamedFile::open_async(index).await?;
+                                let response = file.into_response(&request);
+                                Ok(actix_web::dev::ServiceResponse::new(request, response))
+                            }
+                        },
+                    )),
             )
         } else {
             app
