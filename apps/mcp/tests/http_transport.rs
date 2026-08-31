@@ -76,6 +76,15 @@ async fn start_mcp(base_url: &str, token: Option<&str>) -> Mcp {
 }
 
 async fn start_mcp_for(base_url: &str, token: Option<&str>, domain: Option<&str>) -> Mcp {
+    start_mcp_with_discovery(base_url, token, domain, None).await
+}
+
+async fn start_mcp_with_discovery(
+    base_url: &str,
+    token: Option<&str>,
+    domain: Option<&str>,
+    issuer: Option<&str>,
+) -> Mcp {
     let port = free_port();
     let mut command = Command::new(env!("CARGO_BIN_EXE_forma-mcp"));
     command
@@ -94,6 +103,10 @@ async fn start_mcp_for(base_url: &str, token: Option<&str>, domain: Option<&str>
     match domain {
         Some(domain) => command.env("FORMA_DOMAIN", domain),
         None => command.env_remove("FORMA_DOMAIN"),
+    };
+    match issuer {
+        Some(issuer) => command.env("FORMA_SUPABASE_ISSUER", issuer),
+        None => command.env_remove("FORMA_SUPABASE_ISSUER"),
     };
 
     let child = command.spawn().expect("forma-mcp starts");
@@ -156,9 +169,28 @@ async fn an_unauthenticated_caller_gets_the_envelope_and_nothing_else() {
 
     let response = initialize(&mcp.url, None).await;
     assert_eq!(response.status(), reqwest::StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        response
+            .headers()
+            .get("www-authenticate")
+            .expect("bearer challenge"),
+        "Bearer"
+    );
 
     let body: Value = response.json().await.expect("the §32 envelope");
     assert_eq!(body["error"]["code"], "UNAUTHORIZED");
+
+    let metadata = reqwest::Client::new()
+        .get(format!(
+            "{}.well-known/oauth-protected-resource/mcp",
+            mcp.url
+        ))
+        .send()
+        .await
+        .expect("the metadata route answers");
+    assert_eq!(metadata.status(), reqwest::StatusCode::NOT_FOUND);
+    let body: Value = metadata.json().await.expect("the §32 envelope");
+    assert_eq!(body["error"]["code"], "NOT_FOUND");
 
     let wrong = initialize(&mcp.url, Some("not-the-token")).await;
     assert_eq!(wrong.status(), reqwest::StatusCode::UNAUTHORIZED);
@@ -222,6 +254,48 @@ async fn an_authorized_host_can_speak_mcp_and_the_token_travels_onward() {
         !called.contains("UNAUTHORIZED"),
         "the token did not travel to forma-server: {called}"
     );
+}
+
+#[tokio::test]
+async fn configured_oauth_discovery_is_public_and_named_in_the_challenge() {
+    const DOMAIN: &str = "forma.example.org";
+    const ISSUER: &str = "https://project.supabase.co/auth/v1";
+
+    let dir = tempfile::tempdir().unwrap();
+    let base_url = start_server(dir.path());
+    let mcp = start_mcp_with_discovery(&base_url, Some(TOKEN), Some(DOMAIN), Some(ISSUER)).await;
+
+    let unauthorized = initialize(&mcp.url, None).await;
+    assert_eq!(unauthorized.status(), reqwest::StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        unauthorized
+            .headers()
+            .get("www-authenticate")
+            .expect("discovery challenge"),
+        "Bearer resource_metadata=\"https://forma.example.org/.well-known/oauth-protected-resource/mcp\""
+    );
+
+    let metadata = reqwest::Client::new()
+        .get(format!(
+            "{}.well-known/oauth-protected-resource/mcp",
+            mcp.url
+        ))
+        .send()
+        .await
+        .expect("discovery document answers without a bearer");
+    assert_eq!(metadata.status(), reqwest::StatusCode::OK);
+    let document: Value = metadata.json().await.expect("discovery JSON");
+    assert_eq!(document["resource"], "https://forma.example.org/mcp");
+    assert_eq!(document["authorization_servers"], json!([ISSUER]));
+    assert_eq!(document["bearer_methods_supported"], json!(["header"]));
+}
+
+#[test]
+fn caddy_forwards_the_canonical_discovery_path_without_rewriting_it() {
+    let caddyfile = include_str!("../../../deploy/caddy/Caddyfile");
+    assert!(caddyfile.contains(
+        "handle /.well-known/oauth-protected-resource/mcp {\n\t\treverse_proxy 127.0.0.1:4766\n\t}"
+    ));
 }
 
 /// The first real deploy failed here, and every smoke check after it cascaded

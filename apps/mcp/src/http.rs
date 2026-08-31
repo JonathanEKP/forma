@@ -10,15 +10,18 @@
 use std::sync::Arc;
 
 use axum::body::Body;
-use axum::extract::Request;
-use axum::http::{header, HeaderMap, StatusCode};
+use axum::extract::{Request, State};
+use axum::http::{header, uri::Authority, HeaderMap, HeaderValue, StatusCode, Uri};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
+use axum::routing::get;
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
 
 use crate::client::{BearerCredential, ServerClient};
 use crate::server::FormaMcp;
+
+const PROTECTED_RESOURCE_PATH: &str = "/.well-known/oauth-protected-resource/mcp";
 
 fn handler(base_url: String, public_host: Option<String>) -> FormaMcp {
     FormaMcp::for_http(ServerClient::new(base_url)).on_deployment(public_host)
@@ -63,29 +66,147 @@ impl Guard {
     }
 }
 
+/// Everything an OAuth-capable client may learn before it has a credential.
+///
+/// The challenge is built at startup and stored as a `HeaderValue`, so an
+/// operator-controlled domain cannot become an invalid response header on the
+/// authentication hot path.
+#[derive(Clone)]
+struct ProtectedResource {
+    document: String,
+    challenge: HeaderValue,
+}
+
+impl ProtectedResource {
+    fn from_config(
+        public_host: Option<&str>,
+        issuer: Option<&str>,
+    ) -> anyhow::Result<Option<Self>> {
+        let Some(issuer) = issuer.map(str::trim).filter(|value| !value.is_empty()) else {
+            return Ok(None);
+        };
+        let public_host = public_host
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "FORMA_SUPABASE_ISSUER is set but FORMA_DOMAIN is not; OAuth discovery needs \
+                     the public MCP resource name"
+                )
+            })?;
+        let authority = public_host
+            .parse::<Authority>()
+            .map_err(|error| anyhow::anyhow!("FORMA_DOMAIN is not a valid hostname: {error}"))?;
+        let issuer_uri = issuer.parse::<Uri>().map_err(|error| {
+            anyhow::anyhow!("FORMA_SUPABASE_ISSUER is not a valid URL: {error}")
+        })?;
+        if !matches!(issuer_uri.scheme_str(), Some("http" | "https"))
+            || issuer_uri.authority().is_none()
+        {
+            anyhow::bail!("FORMA_SUPABASE_ISSUER must be an absolute http or https URL");
+        }
+
+        let public_base = format!("https://{authority}");
+        let metadata_url = format!("{public_base}{PROTECTED_RESOURCE_PATH}");
+        let document = serde_json::to_string(&serde_json::json!({
+            "resource": format!("{public_base}/mcp"),
+            "authorization_servers": [issuer],
+            "bearer_methods_supported": ["header"],
+        }))?;
+        let challenge =
+            HeaderValue::from_str(&format!("Bearer resource_metadata=\"{metadata_url}\""))
+                .map_err(|error| {
+                    anyhow::anyhow!("OAuth discovery challenge is invalid: {error}")
+                })?;
+
+        Ok(Some(Self {
+            document,
+            challenge,
+        }))
+    }
+}
+
+#[derive(Clone)]
+struct HttpAuth {
+    guard: Guard,
+    protected_resource: Option<ProtectedResource>,
+}
+
+impl HttpAuth {
+    fn from_config(
+        guard: Guard,
+        public_host: Option<&str>,
+        issuer: Option<&str>,
+    ) -> anyhow::Result<Self> {
+        Ok(Self {
+            guard,
+            protected_resource: ProtectedResource::from_config(public_host, issuer)?,
+        })
+    }
+}
+
 async fn require_bearer(
-    axum::extract::State(guard): axum::extract::State<Guard>,
+    State(auth): State<HttpAuth>,
     mut request: Request,
     next: Next,
 ) -> Response {
-    if let Some(credential) = guard.credential(request.headers()) {
+    // Discovery has to be reachable before a client knows where to obtain a
+    // credential. No other path bypasses the guard.
+    if request.uri().path() == PROTECTED_RESOURCE_PATH {
+        return next.run(request).await;
+    }
+
+    if let Some(credential) = auth.guard.credential(request.headers()) {
         request.extensions_mut().insert(credential);
         return next.run(request).await;
     }
 
     // Nothing about why. A caller learning whether the header was missing,
     // malformed or merely wrong is a caller being helped to guess.
-    (
+    let mut response = (
         StatusCode::UNAUTHORIZED,
         [(header::CONTENT_TYPE, "application/json")],
         Body::from(
             r#"{"error":{"code":"UNAUTHORIZED","message":"this endpoint requires a bearer token","hint":"Send Authorization: Bearer <token>, with the value of FORMA_REMOTE_TOKEN."}}"#,
         ),
     )
-        .into_response()
+        .into_response();
+    let challenge = auth
+        .protected_resource
+        .as_ref()
+        .map(|resource| resource.challenge.clone())
+        .unwrap_or_else(|| HeaderValue::from_static("Bearer"));
+    response
+        .headers_mut()
+        .insert(header::WWW_AUTHENTICATE, challenge);
+    response
 }
 
-fn router(base_url: String, guard: Guard, public_host: Option<String>) -> axum::Router {
+async fn protected_resource_metadata(State(auth): State<HttpAuth>) -> Response {
+    match auth.protected_resource {
+        Some(resource) => (
+            StatusCode::OK,
+            [(header::CONTENT_TYPE, "application/json")],
+            resource.document,
+        )
+            .into_response(),
+        None => (
+            StatusCode::NOT_FOUND,
+            [(header::CONTENT_TYPE, "application/json")],
+            Body::from(
+                r#"{"error":{"code":"NOT_FOUND","message":"OAuth discovery is not configured","hint":"Set FORMA_SUPABASE_ISSUER and FORMA_DOMAIN before using OAuth discovery."}}"#,
+            ),
+        )
+            .into_response(),
+    }
+}
+
+fn router(
+    base_url: String,
+    guard: Guard,
+    public_host: Option<String>,
+    issuer: Option<String>,
+) -> anyhow::Result<axum::Router> {
     // rmcp validates the inbound Host header against an allowlist, and its
     // default is loopback only. That is a real protection rather than a nuisance:
     // it stops a page in someone's browser from being pointed at an MCP server
@@ -106,6 +227,7 @@ fn router(base_url: String, guard: Guard, public_host: Option<String>) -> axum::
     }
     tracing::info!(?allowed, "accepting these Host headers");
 
+    let auth = HttpAuth::from_config(guard, public_host.as_deref(), issuer.as_deref())?;
     let named = public_host;
     let mcp = StreamableHttpService::new(
         move || Ok(handler(base_url.clone(), named.clone())),
@@ -113,13 +235,14 @@ fn router(base_url: String, guard: Guard, public_host: Option<String>) -> axum::
         StreamableHttpServerConfig::default().with_allowed_hosts(allowed),
     );
 
-    axum::Router::new()
+    Ok(axum::Router::new()
+        .route(PROTECTED_RESOURCE_PATH, get(protected_resource_metadata))
         .fallback_service(mcp)
         .layer(axum::middleware::from_fn_with_state(
-            guard.clone(),
+            auth.clone(),
             require_bearer,
         ))
-        .with_state(guard)
+        .with_state(auth))
 }
 
 /// Serves MCP over HTTP until the process is stopped.
@@ -133,6 +256,7 @@ pub async fn serve(
     base_url: String,
     token: Option<String>,
     public_host: Option<String>,
+    issuer: Option<String>,
 ) -> anyhow::Result<()> {
     let Some(token) = token else {
         anyhow::bail!(
@@ -141,7 +265,7 @@ pub async fn serve(
         );
     };
 
-    let app = router(base_url, Guard::new(&token), public_host);
+    let app = router(base_url, Guard::new(&token), public_host, issuer)?;
 
     let listener = tokio::net::TcpListener::bind(listen)
         .await
@@ -200,6 +324,15 @@ mod tests {
             axum::serve(listener, app).await.expect("serve test app");
         });
         (format!("http://{address}"), task)
+    }
+
+    #[test]
+    fn an_issuer_without_a_public_domain_is_rejected_at_startup() {
+        let error =
+            ProtectedResource::from_config(None, Some("https://project.supabase.co/auth/v1"))
+                .err()
+                .expect("the configuration must fail");
+        assert!(error.to_string().contains("FORMA_DOMAIN"));
     }
 
     async fn initialize(http: &reqwest::Client, url: &str, credential: &str) -> String {
@@ -276,7 +409,8 @@ mod tests {
         let (upstream_url, upstream_task) = start(upstream).await;
 
         let guard = Guard::for_test(&["credential-a", "credential-b"]);
-        let (mcp_url, mcp_task) = start(router(upstream_url, guard, None)).await;
+        let (mcp_url, mcp_task) =
+            start(router(upstream_url, guard, None, None).expect("HTTP router")).await;
         let http = reqwest::Client::new();
 
         let (session_a, session_b) = tokio::join!(

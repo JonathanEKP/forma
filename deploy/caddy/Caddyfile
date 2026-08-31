@@ -15,6 +15,12 @@
 {$FORMA_DOMAIN:forma.hintly.online} {
 	encode zstd gzip
 
+	# OAuth clients fetch this before they have a bearer. It is a forma-mcp
+	# route, and unlike /mcp its canonical path must arrive unchanged.
+	handle /.well-known/oauth-protected-resource/mcp {
+		reverse_proxy 127.0.0.1:4766
+	}
+
 	# MCP over Streamable HTTP. The bearer token is checked by forma-mcp
 	# itself, not here: this is a proxy, and putting the credential in two
 	# places is how they drift apart.

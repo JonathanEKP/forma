@@ -43,6 +43,8 @@ async fn main() -> anyhow::Result<()> {
                 println!("  FORMA_REMOTE_TOKEN  bearer token; required by --transport http");
                 println!("  FORMA_DOMAIN        public hostname to accept in the Host header,");
                 println!("                      for --transport http behind a reverse proxy");
+                println!("  FORMA_SUPABASE_ISSUER");
+                println!("                      authorization server advertised to MCP clients");
                 println!("  FORMA_LOG           log filter (default warn)");
                 return Ok(());
             }
@@ -81,7 +83,11 @@ async fn main() -> anyhow::Result<()> {
                 .ok()
                 .map(|host| host.trim().to_string())
                 .filter(|host| !host.is_empty());
-            http::serve(&listen, base_url, token, public_host).await?
+            let issuer = std::env::var("FORMA_SUPABASE_ISSUER")
+                .ok()
+                .map(|issuer| issuer.trim().to_string())
+                .filter(|issuer| !issuer.is_empty());
+            http::serve(&listen, base_url, token, public_host, issuer).await?
         }
         other => anyhow::bail!("unknown transport {other:?}; use stdio or http"),
     }
