@@ -25,7 +25,7 @@ impl RemoteToken {
         Self(blake3::hash(token.as_bytes()))
     }
 
-    fn accepts(&self, presented: &str) -> bool {
+    pub(crate) fn accepts(&self, presented: &str) -> bool {
         // blake3::Hash's PartialEq is constant time.
         self.0 == blake3::hash(presented.as_bytes())
     }
@@ -46,7 +46,7 @@ impl std::fmt::Debug for RemoteToken {
 fn is_open(path: &str) -> bool {
     // Liveness. It reports nothing about the workspace, and Caddy and any
     // monitor need it before anyone has configured a credential.
-    if path == "/api/v1/health" {
+    if path == "/api/v1/health" || path == "/api/v1/identity" {
         return true;
     }
 
@@ -65,6 +65,20 @@ fn is_open(path: &str) -> bool {
     // What this discloses is the bundle: no project, no design, no asset, no
     // name. Every one of those is still behind `/api/`.
     !path.starts_with("/api/")
+}
+
+/// Paths a verified identity may reach *before* it owns an account.
+///
+/// Everything else under `/api/` answers `ACCOUNT_REQUIRED` without one, which
+/// is correct and would also be a dead end: the two doors out of that state are
+/// here. They are reached with a provider session and no membership, so their
+/// handlers work from the `VerifiedIdentity` rather than an `AuthContext` —
+/// there is no account yet for a context to name.
+fn is_onboarding(path: &str) -> bool {
+    matches!(
+        path,
+        "/api/v1/onboarding" | "/api/v1/accounts" | "/api/v1/bootstrap/claim"
+    )
 }
 
 /// Resolves a deployment token, a PAT or a provider session into the request's
@@ -184,6 +198,11 @@ pub async fn require_bearer(
             Err(_) => return Ok(request.into_response(refusal())),
         };
 
+        let onboarding = is_onboarding(request.path());
+        // Available to a handler even when there is no account behind it, which
+        // is what the onboarding routes work from.
+        request.extensions_mut().insert(identity.clone());
+
         match state.accounts.membership_of(identity.subject).await {
             Ok(Some(membership)) => Some(AuthContext {
                 account_id: membership.account_id,
@@ -202,6 +221,8 @@ pub async fn require_bearer(
             // A valid identity that is not an authorized Forma account. The one
             // 403 in this codebase, and never for an object in another account —
             // that stays a 404, because a 403 there would confirm it exists.
+            // A verified identity with no account, on its way to getting one.
+            Ok(None) if onboarding => None,
             Ok(None) => {
                 return Ok(request.into_response(
                     ApiError::forbidden(

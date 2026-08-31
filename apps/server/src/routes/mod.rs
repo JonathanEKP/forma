@@ -14,6 +14,7 @@ pub mod asset_requests;
 pub mod assets;
 pub mod designs;
 pub mod exports;
+pub mod identity;
 pub mod meta;
 pub mod projects;
 pub mod renders;
@@ -55,6 +56,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         web::scope("/api/v1")
             .configure(api_keys::configure)
             .configure(meta::configure)
+            .configure(identity::configure)
             .configure(projects::configure)
             .configure(designs::configure)
             .configure(renders::configure)

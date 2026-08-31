@@ -17,11 +17,16 @@ import type { DesignRecord } from "@forma/bindings/DesignRecord";
 import type { DesignSummary } from "@forma/bindings/DesignSummary";
 import type { Export } from "@forma/bindings/Export";
 import type { ExportScope } from "@forma/bindings/ExportScope";
+import type { IdentityStatus } from "@forma/bindings/IdentityStatus";
+import type { Onboarding } from "@forma/bindings/Onboarding";
 import type { Project } from "@forma/bindings/Project";
 import type { Status } from "@forma/bindings/Status";
 import type { ValidationReport } from "@forma/bindings/ValidationReport";
 import type { Version } from "@forma/bindings/Version";
+
 import type { VersionSummary } from "@forma/bindings/VersionSummary";
+
+import { accessToken } from "./identity";
 
 export type { BrandKitDraft } from "@forma/bindings/BrandKitDraft";
 export type { Export, ExportScope };
@@ -29,6 +34,8 @@ export type { Export, ExportScope };
 export type {
   ApiKey,
   Asset,
+  IdentityStatus,
+  Onboarding,
   AssetRequest,
   BrandKit,
   DesignOperation,
@@ -120,6 +127,19 @@ async function fail(response: Response): Promise<never> {
   );
 }
 
+/**
+ * The session's bearer, attached here rather than at each call site.
+ *
+ * One place, for the same reason the actor header lives here: a credential
+ * added per call is a credential somebody forgets on the one call that mattered.
+ * `null` in local mode, where there is no provider and the server asks for
+ * nothing.
+ */
+async function authorization(): Promise<Record<string, string>> {
+  const token = await accessToken();
+  return token ? { authorization: `Bearer ${token}` } : {};
+}
+
 async function request<T>(
   path: string,
   init?: { method?: string; body?: unknown },
@@ -128,9 +148,11 @@ async function request<T>(
 
   const response = await fetch(`/api/v1${path}`, {
     method: init?.method ?? "GET",
-    headers: hasBody
-      ? { "content-type": "application/json", ...ACTOR_HEADER }
-      : ACTOR_HEADER,
+    headers: {
+      ...(hasBody ? { "content-type": "application/json" } : {}),
+      ...ACTOR_HEADER,
+      ...(await authorization()),
+    },
     body: hasBody ? JSON.stringify(init.body) : undefined,
   });
 
@@ -227,7 +249,7 @@ export async function uploadAsset(projectId: string, file: File): Promise<Asset>
   // No content-type header: the browser sets it with the multipart boundary.
   const response = await fetch(`/api/v1/projects/${projectId}/assets`, {
     method: "POST",
-    headers: ACTOR_HEADER,
+    headers: { ...ACTOR_HEADER, ...(await authorization()) },
     body: form,
   });
 
@@ -308,7 +330,28 @@ export async function fetchPreviewSvg(
   pageId: string,
   version: Version,
 ): Promise<string> {
-  const response = await fetch(previewSvgUrl(designId, pageId, version));
+  const response = await fetch(previewSvgUrl(designId, pageId, version), {
+    headers: await authorization(),
+  });
   if (!response.ok) await fail(response);
   return await response.text();
 }
+
+// --- identity ----------------------------------------------------------------
+
+/**
+ * Whether this deployment verifies identity at all.
+ *
+ * Asked before anything is drawn. A local Forma has no provider and must not
+ * show a sign-in page for one; a hosted Forma refuses every other call until
+ * there is a session, and discovering that through a dozen failing queries shows
+ * a dozen errors where one screen belongs.
+ */
+export const getIdentity = () => request<IdentityStatus>("/identity");
+
+export const getOnboarding = () => request<Onboarding>("/onboarding");
+
+export const createAccount = () => request<unknown>("/accounts", { method: "POST" });
+
+export const claimWorkspace = (token: string) =>
+  request<unknown>("/bootstrap/claim", { method: "POST", body: { token } });

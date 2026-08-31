@@ -287,3 +287,312 @@ async fn a_session_cannot_claim_to_be_someone_else_in_the_history() {
         "the header said agent:not-really; the history says who signed in"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Onboarding (plan §107.3 and §113.1)
+// ---------------------------------------------------------------------------
+
+fn session_for_email(user: AuthUserId, email: &str, verified: bool) -> String {
+    let mut header = Header::new(Algorithm::ES256);
+    header.kid = Some("test-key-1".into());
+    encode(
+        &header,
+        &Claims {
+            sub: user.to_string(),
+            iss: ISSUER.into(),
+            aud: AUDIENCE.into(),
+            exp: chrono::Utc::now().timestamp() + 3600,
+            email: email.into(),
+            email_verified: verified,
+        },
+        &EncodingKey::from_ec_der(SIGNING_KEY),
+    )
+    .expect("mint")
+}
+
+/// Signing in is not the gate; owning an account is.
+#[actix_web::test]
+async fn an_uninvited_identity_cannot_mint_itself_a_workspace() {
+    let (state, _dir) = hosted().await;
+    let app = serve!(state);
+
+    let response = test::call_service(
+        &app,
+        TestRequest::post()
+            .uri("/api/v1/accounts")
+            .insert_header(bearer(&session_for_email(
+                AuthUserId::new(),
+                "stranger@example.com",
+                true,
+            )))
+            .to_request(),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let body: serde_json::Value = test::read_body_json(response).await;
+    assert_eq!(body["error"]["code"], "ACCOUNT_REQUIRED");
+}
+
+/// The gate rests on the address having been proven. If it did not, anyone
+/// could register as an invited address and walk in.
+#[actix_web::test]
+async fn an_unverified_address_is_not_an_invitation() {
+    let (state, _dir) = hosted().await;
+    let accounts = SqliteAccountRepository::new(state.pool.clone());
+    accounts
+        .invite("invited@example.com")
+        .await
+        .expect("invite");
+
+    let app = serve!(state);
+    let response = test::call_service(
+        &app,
+        TestRequest::post()
+            .uri("/api/v1/accounts")
+            .insert_header(bearer(&session_for_email(
+                AuthUserId::new(),
+                // The right address, claimed and not proven.
+                "invited@example.com",
+                false,
+            )))
+            .to_request(),
+    )
+    .await;
+
+    assert_eq!(
+        response.status(),
+        StatusCode::FORBIDDEN,
+        "an unverified address must not open an invitation"
+    );
+}
+
+#[actix_web::test]
+async fn an_invitation_creates_an_account_once() {
+    let (state, _dir) = hosted().await;
+    let accounts = SqliteAccountRepository::new(state.pool.clone());
+    // Cased and padded on purpose: the same invitation, however it is typed.
+    accounts
+        .invite("  Invited@Example.com ")
+        .await
+        .expect("invite");
+
+    let app = serve!(state);
+    let user = AuthUserId::new();
+    let token = session_for_email(user, "invited@example.com", true);
+
+    let created = test::call_service(
+        &app,
+        TestRequest::post()
+            .uri("/api/v1/accounts")
+            .insert_header(bearer(&token))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(created.status(), StatusCode::CREATED);
+
+    // The invitation is spent.
+    assert!(accounts
+        .open_invite("invited@example.com")
+        .await
+        .unwrap()
+        .is_none());
+
+    // And a second identity cannot reuse it.
+    let second = test::call_service(
+        &app,
+        TestRequest::post()
+            .uri("/api/v1/accounts")
+            .insert_header(bearer(&session_for_email(
+                AuthUserId::new(),
+                "invited@example.com",
+                true,
+            )))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(second.status(), StatusCode::FORBIDDEN);
+
+    // The first identity now reaches its own workspace rather than a 403.
+    let projects = test::call_service(
+        &app,
+        TestRequest::get()
+            .uri("/api/v1/projects")
+            .insert_header(bearer(&token))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(projects.status(), StatusCode::OK);
+}
+
+/// An invitation for one address is not an invitation for another.
+#[actix_web::test]
+async fn an_invitation_belongs_to_the_address_it_names() {
+    let (state, _dir) = hosted().await;
+    SqliteAccountRepository::new(state.pool.clone())
+        .invite("invited@example.com")
+        .await
+        .expect("invite");
+
+    let app = serve!(state);
+    let response = test::call_service(
+        &app,
+        TestRequest::post()
+            .uri("/api/v1/accounts")
+            .insert_header(bearer(&session_for_email(
+                AuthUserId::new(),
+                "someone.else@example.com",
+                true,
+            )))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+/// The claim needs both halves: the token proves you run the machine, the
+/// session says who to hand it to.
+#[actix_web::test]
+async fn claiming_the_workspace_needs_the_token_and_a_session() {
+    let (state, _dir) = hosted().await;
+    let app = test::init_service(
+        App::new()
+            .wrap(actix_web::middleware::from_fn(
+                forma_server::auth::require_bearer,
+            ))
+            .app_data(web::Data::new(state))
+            .app_data(web::Data::new(forma_server::auth::RemoteToken::new(
+                "the-deployment-token",
+            )))
+            .configure(routes::configure),
+    )
+    .await;
+
+    let user = AuthUserId::new();
+    let session = session_for_email(user, "owner@example.com", true);
+
+    // The session, and the wrong token.
+    let wrong = test::call_service(
+        &app,
+        TestRequest::post()
+            .uri("/api/v1/bootstrap/claim")
+            .insert_header(bearer(&session))
+            .set_json(serde_json::json!({ "token": "not-it" }))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(wrong.status(), StatusCode::UNAUTHORIZED);
+
+    // The token, and no session at all.
+    let anonymous = test::call_service(
+        &app,
+        TestRequest::post()
+            .uri("/api/v1/bootstrap/claim")
+            .set_json(serde_json::json!({ "token": "the-deployment-token" }))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(anonymous.status(), StatusCode::UNAUTHORIZED);
+
+    // Both.
+    let claimed = test::call_service(
+        &app,
+        TestRequest::post()
+            .uri("/api/v1/bootstrap/claim")
+            .insert_header(bearer(&session))
+            .set_json(serde_json::json!({ "token": "the-deployment-token" }))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(claimed.status(), StatusCode::OK);
+
+    // And never twice, which is what stops the workspace falling to whoever
+    // signs up second.
+    let again = test::call_service(
+        &app,
+        TestRequest::post()
+            .uri("/api/v1/bootstrap/claim")
+            .insert_header(bearer(&session_for_email(
+                AuthUserId::new(),
+                "someone.else@example.com",
+                true,
+            )))
+            .set_json(serde_json::json!({ "token": "the-deployment-token" }))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(again.status(), StatusCode::BAD_REQUEST);
+    let body: serde_json::Value = test::read_body_json(again).await;
+    assert_eq!(body["error"]["code"], "LEGACY_ACCOUNT_ALREADY_CLAIMED");
+}
+
+/// The editor asks this before it draws anything, and it must answer to someone
+/// holding nothing at all.
+#[actix_web::test]
+async fn whether_identity_is_required_is_public() {
+    let (state, _dir) = hosted().await;
+    let app = serve!(state);
+
+    let response = test::call_service(
+        &app,
+        TestRequest::get().uri("/api/v1/identity").to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: serde_json::Value = test::read_body_json(response).await;
+    assert_eq!(body["required"], true);
+    assert_eq!(
+        body.as_object().expect("an object").len(),
+        1,
+        "it must say whether, and nothing else"
+    );
+}
+
+/// The claim door is offered only while there is something to claim.
+#[actix_web::test]
+async fn onboarding_says_which_doors_are_open() {
+    let (state, _dir) = hosted().await;
+    let accounts = SqliteAccountRepository::new(state.pool.clone());
+    accounts
+        .invite("invited@example.com")
+        .await
+        .expect("invite");
+
+    let app = serve!(state);
+    let body: serde_json::Value = test::call_and_read_body_json(
+        &app,
+        TestRequest::get()
+            .uri("/api/v1/onboarding")
+            .insert_header(bearer(&session_for_email(
+                AuthUserId::new(),
+                "invited@example.com",
+                true,
+            )))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(body["invited"], true);
+    assert_eq!(body["claimable"], true);
+    assert_eq!(body["email"], "invited@example.com");
+
+    // Once claimed, that door closes.
+    accounts
+        .claim_bootstrap(AuthUserId::new(), "owner@example.com")
+        .await
+        .expect("claim");
+
+    let body: serde_json::Value = test::call_and_read_body_json(
+        &app,
+        TestRequest::get()
+            .uri("/api/v1/onboarding")
+            .insert_header(bearer(&session_for_email(
+                AuthUserId::new(),
+                "nobody@example.com",
+                true,
+            )))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(body["claimable"], false);
+    assert_eq!(body["invited"], false);
+}
