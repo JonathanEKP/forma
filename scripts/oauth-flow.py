@@ -113,6 +113,36 @@ def header(headers, name):
     return next((value for key, value in headers.items() if key.lower() == wanted), "")
 
 
+def initialize(base, credential):
+    """One `initialize`, so two callers cannot send subtly different ones.
+
+    They did: the second copy omitted protocolVersion, capabilities and
+    clientInfo, and rmcp answered 422 "Unexpected message, expect initialize
+    request". The script reported the refreshed token as refused when the
+    deployment had refused the *request* — a check that duplicated its subject
+    instead of sharing it.
+    """
+    return fetch(
+        f"{base}/mcp",
+        method="POST",
+        body={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "flow-check", "version": "0"},
+            },
+        },
+        headers={
+            "content-type": "application/json",
+            "accept": "application/json, text/event-stream",
+            "authorization": f"Bearer {credential}",
+        },
+    )
+
+
 def as_json(text, default=None):
     try:
         return json.loads(text)
@@ -183,25 +213,7 @@ def exchange(redirected):
     )
     check("and names the client holding it", saved["client_id"], claims.get("client_id"))
 
-    status, _, _ = fetch(
-        f"{BASE}/mcp",
-        method="POST",
-        body={
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2025-06-18",
-                "capabilities": {},
-                "clientInfo": {"name": "flow-check", "version": "0"},
-            },
-        },
-        headers={
-            "content-type": "application/json",
-            "accept": "application/json, text/event-stream",
-            "authorization": f"Bearer {access}",
-        },
-    )
+    status, _, _ = initialize(BASE, access)
     if status == 403:
         # The credential is good and belongs to nobody here yet. Distinguished
         # because it is the one refusal a person can act on, and because
@@ -226,16 +238,7 @@ def exchange(redirected):
         check("refreshing returns a new token", 200, status)
         renewed = as_json(text, {}).get("access_token")
         if renewed:
-            status, _, _ = fetch(
-                f"{BASE}/mcp",
-                method="POST",
-                body={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
-                headers={
-                    "content-type": "application/json",
-                    "accept": "application/json, text/event-stream",
-                    "authorization": f"Bearer {renewed}",
-                },
-            )
+            status, _, _ = initialize(BASE, renewed)
             if status != 403:
                 check("and the refreshed one still opens /mcp", 200, status)
 
@@ -253,6 +256,9 @@ if RESUME:
 
 print("The 401 that starts a discovery")
 
+# Deliberately not the shared `initialize` helper: this one carries no
+# credential, and the refusal happens before the body is looked at. What is being
+# tested is the challenge, not the handshake.
 status, headers, _ = fetch(
     f"{BASE}/mcp",
     method="POST",
