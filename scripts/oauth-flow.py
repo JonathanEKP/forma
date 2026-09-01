@@ -35,8 +35,25 @@ import urllib.request
 
 BASE = (sys.argv[1] if len(sys.argv) > 1 else "").rstrip("/")
 
+# Where the first half leaves what the second half needs.
+#
+# The flow has a person in the middle of it, and that step can take minutes: a
+# script that must stay alive across it is one lost to a closed terminal, a
+# timeout, or a pipe. Worse, the PKCE verifier is generated before the browser
+# step and is useless afterwards if the process that made it is gone -- so the
+# authorization URL dies with it, and the only symptom is a code that cannot be
+# exchanged.
+STATE_FILE = os.path.join(
+    os.environ.get("TMPDIR", "/tmp"), "forma-oauth-flow.json"
+)
+RESUME = sys.argv[2] if len(sys.argv) > 2 else ""
+
 if not BASE:
     print(__doc__.strip().splitlines()[2].strip(), file=sys.stderr)
+    print(
+        "  and afterwards:  ./scripts/oauth-flow.py <base> '<the redirected URL>'",
+        file=sys.stderr,
+    )
     sys.exit(2)
 
 passed, failed, manual = 0, 0, 0
@@ -101,6 +118,125 @@ def as_json(text, default=None):
         return json.loads(text)
     except json.JSONDecodeError:
         return default
+
+
+def save(state):
+    with open(STATE_FILE, "w", encoding="utf-8") as handle:
+        json.dump(state, handle)
+
+
+def load():
+    try:
+        with open(STATE_FILE, encoding="utf-8") as handle:
+            return json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def exchange(redirected):
+    """The half that runs after a person has approved the request."""
+    global passed, failed
+    saved = load()
+    if not saved:
+        print(f"  no saved authorization in {STATE_FILE}; run the first half again")
+        sys.exit(2)
+
+    query = urllib.parse.parse_qs(urllib.parse.urlparse(redirected).query)
+    print("Coming back from the browser")
+    # The state is what ties this redirect to the request we started, and
+    # checking it is the whole defence against being handed somebody else's.
+    check("the state comes back unchanged", [saved["state"]], query.get("state"))
+    code = (query.get("code") or [""])[0]
+    check("an authorization code came back", True, bool(code))
+    if not code:
+        return
+
+    print("\nThe token, and what it opens")
+    status, _, text = fetch(
+        saved["token_endpoint"],
+        method="POST",
+        body={
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": saved["redirect_uri"],
+            "client_id": saved["client_id"],
+            "code_verifier": saved["verifier"],
+        },
+    )
+    check("the code exchanges for a token", 200, status)
+    tokens = as_json(text, {})
+    access, refresh = tokens.get("access_token"), tokens.get("refresh_token")
+    if not access:
+        print(f"          {text[:200]}")
+        return
+
+    claims = json.loads(base64.urlsafe_b64decode(access.split(".")[1] + "==").decode())
+    print(f"          aud:       {claims.get('aud')}")
+    print(f"          client_id: {claims.get('client_id')}")
+
+    # The audience is what stops this being spendable as a browser session, and
+    # naming the client is what stops one grant's tokens being spent as another's.
+    check(
+        "the audience names this deployment's MCP resource",
+        True,
+        str(claims.get("aud", "")).startswith(f"{BASE}/mcp"),
+    )
+    check("and names the client holding it", saved["client_id"], claims.get("client_id"))
+
+    status, _, _ = fetch(
+        f"{BASE}/mcp",
+        method="POST",
+        body={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "flow-check", "version": "0"},
+            },
+        },
+        headers={
+            "content-type": "application/json",
+            "accept": "application/json, text/event-stream",
+            "authorization": f"Bearer {access}",
+        },
+    )
+    check("the token opens /mcp", 200, status)
+
+    if refresh:
+        status, _, text = fetch(
+            saved["token_endpoint"],
+            method="POST",
+            body={
+                "grant_type": "refresh_token",
+                "refresh_token": refresh,
+                "client_id": saved["client_id"],
+            },
+        )
+        check("refreshing returns a new token", 200, status)
+        renewed = as_json(text, {}).get("access_token")
+        if renewed:
+            status, _, _ = fetch(
+                f"{BASE}/mcp",
+                method="POST",
+                body={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+                headers={
+                    "content-type": "application/json",
+                    "accept": "application/json, text/event-stream",
+                    "authorization": f"Bearer {renewed}",
+                },
+            )
+            check("and the refreshed one still opens /mcp", 200, status)
+
+    note("revoke this connection from Forma's Agents page")
+    note("then re-run the first half: it must not reconnect without a new approval")
+
+
+if RESUME:
+    exchange(RESUME)
+    print(f"\n{passed} passed, {failed} failed, {manual} for a person")
+    sys.exit(1 if failed else 0)
 
 
 # --- 1 and 2: the challenge -------------------------------------------------
@@ -192,7 +328,9 @@ else:
 
 print("\nAuthorization")
 
-if client_id:
+if not client_id:
+    note("everything past registration")
+else:
     verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode().rstrip("=")
     challenge_value = (
         base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
@@ -210,102 +348,25 @@ if client_id:
         }
     )
 
-    note("open this and approve it", "")
+    save(
+        {
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "verifier": verifier,
+            "state": state,
+            "token_endpoint": server.get("token_endpoint", ""),
+        }
+    )
+
+    note("open this and approve it")
     print(f"\n{authorize}\n")
-    print("          It must land on Forma's own consent page, name the client,")
-    print("          and return to the redirect above carrying ?code= and ?state=.")
+    print("  It must land on Forma's own consent page, name the client, and return")
+    print(f"  to {redirect_uri} carrying ?code= and ?state=. Nothing listens there,")
+    print("  so the browser will report a refused connection — the address bar is")
+    print("  what matters. Copy the whole URL and run:\n")
+    print(f"    ./scripts/oauth-flow.py {BASE} '<the redirected URL>'\n")
     note("the consent page renders and names the client")
     note("approving returns the code and the matching state")
-
-    print("\n  Paste the full redirected URL to continue, or press Enter to stop here.")
-    try:
-        redirected = input("  > ").strip()
-    except EOFError:
-        redirected = ""
-
-    if redirected:
-        query = urllib.parse.parse_qs(urllib.parse.urlparse(redirected).query)
-        check("the state comes back unchanged", [state], query.get("state"))
-        code = (query.get("code") or [""])[0]
-        check("an authorization code came back", True, bool(code))
-
-        # --- 9: the exchange ------------------------------------------------
-        print("\nThe token, and what it opens")
-        status, _, text = fetch(
-            server.get("token_endpoint", ""),
-            method="POST",
-            body={
-                "grant_type": "authorization_code",
-                "code": code,
-                "redirect_uri": redirect_uri,
-                "client_id": client_id,
-                "code_verifier": verifier,
-            },
-        )
-        check("the code exchanges for a token", 200, status)
-        tokens = as_json(text, {})
-        access, refresh = tokens.get("access_token"), tokens.get("refresh_token")
-
-        if access:
-            claims = json.loads(
-                base64.urlsafe_b64decode(access.split(".")[1] + "==").decode()
-            )
-            # The audience is what stops this being spendable as a browser
-            # session, and it must name the client that holds it.
-            print(f"          aud:       {claims.get('aud')}")
-            print(f"          client_id: {claims.get('client_id')}")
-            check(
-                "the audience names this deployment's MCP resource",
-                True,
-                str(claims.get("aud", "")).startswith(f"{BASE}/mcp"),
-            )
-            check(
-                "and names the client holding it",
-                client_id,
-                claims.get("client_id"),
-            )
-
-            # --- 10 and 11 --------------------------------------------------
-            status, _, text = fetch(
-                f"{BASE}/mcp",
-                method="POST",
-                body={
-                    "jsonrpc": "2.0",
-                    "id": 1,
-                    "method": "initialize",
-                    "params": {
-                        "protocolVersion": "2025-06-18",
-                        "capabilities": {},
-                        "clientInfo": {"name": "flow-check", "version": "0"},
-                    },
-                },
-                headers={
-                    "content-type": "application/json",
-                    "accept": "application/json, text/event-stream",
-                    "authorization": f"Bearer {access}",
-                },
-            )
-            check("the token opens /mcp", True, status == 200)
-
-            # --- 12 -------------------------------------------------------
-            if refresh:
-                status, _, text = fetch(
-                    server.get("token_endpoint", ""),
-                    method="POST",
-                    body={
-                        "grant_type": "refresh_token",
-                        "refresh_token": refresh,
-                        "client_id": client_id,
-                    },
-                )
-                check("refreshing returns a new token", 200, status)
-
-            note("revoke this connection from Forma's Agents page")
-            note("then confirm it can no longer refresh or reconnect")
-    else:
-        note("the exchange, the tool call, refresh and revocation")
-else:
-    note("everything past registration")
 
 print(f"\n{passed} passed, {failed} failed, {manual} for a person")
 sys.exit(1 if failed else 0)
