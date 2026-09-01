@@ -195,6 +195,36 @@ Reproduced and tested here, unlike the Caddy fix: a test starts the real binary
 without `FORMA_DOMAIN` and asserts 403 for a public Host, then with it and
 asserts the handshake, and a second test asserts loopback still works.
 
+## Phase 11.5, and what has been checked against the real provider
+
+Hosted identity is built and **not yet deployed** — the machine still runs a
+binary from before any of it. What has been verified here, against the actual
+Supabase project rather than its documentation:
+
+| | |
+| --- | --- |
+| `forma-server` starts in `FORMA_AUTH_MODE=supabase` and reads the live JWKS | verified here ✅ |
+| The signing key is ES256 / P-256, one key, no symmetric entry | verified here ✅ |
+| A real session token's claims — `aud`, `sub`, `email_verified` | verified here ✅ |
+| The access-token hook promotes `email_verified` to the top level | verified here ✅ |
+| `/mcp` answers 401 with `WWW-Authenticate: … resource_metadata=…` | verified here ✅ |
+| Protected Resource Metadata names the resource and the real issuer | verified here ✅ |
+| The authorization server advertises PKCE S256 and a registration endpoint | verified here ✅ |
+| Client registration, consent, code exchange, refresh, revocation | **not run** — needs the deployment and a person |
+| Claude connector end to end | **not run** — §2.2 keeps it manual |
+
+`scripts/oauth-flow.py` is what runs the remaining rows. It follows the URL the
+deployment advertises rather than composing one, so it cannot be exercised
+without the proxy in front; its first two checks pass locally and the rest wait.
+
+**One bug came out of running it rather than reading it.** `reqwest` was
+configured with `default-features = false` and no TLS backend, which had never
+mattered because the only thing it did was talk to `forma-server` over loopback
+HTTP. Reading the provider's JWKS is the first HTTPS request Forma has ever
+made, and it failed as "the identity provider could not be reached" — a message
+that reads like somebody else's outage. A mocked key source would never have
+found it.
+
 ## What is still open
 
 **[runbook.md](runbook.md)** covers all of it: redeploying (idempotent, one

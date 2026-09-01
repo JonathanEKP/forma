@@ -52,7 +52,15 @@ sqlx = { version = "0.8", default-features = false, features = ["sqlite", "runti
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "io-std", "process", "signal", "time"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-reqwest = { version = "0.12", default-features = false, features = ["json"] }
+# `rustls-tls`, not `native-tls`: the deploy cross-compiles to aarch64 and
+# OpenSSL there needs a C toolchain, which is how a cross build breaks. The same
+# reasoning picked `rust_crypto` for jsonwebtoken.
+#
+# TLS is not optional any more. It was, while the only thing reqwest did was
+# talk to forma-server over loopback HTTP; reading the provider's JWKS is the
+# first HTTPS request Forma has ever made, and without a backend it fails with
+# "could not be reached" — which reads like a network problem and is not one.
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 rmcp = { version = "3.1", features = [
     "server",
     "macros",
