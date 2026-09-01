@@ -80,6 +80,16 @@ struct ErrorBody {
 #[derive(Clone)]
 pub(crate) struct BearerCredential(String);
 
+/// What the verifier said (plan sections 109.2 and 115).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Admission {
+    Yes,
+    /// The credential is not good.
+    No,
+    /// The credential is good and belongs to nobody here yet.
+    NoAccount,
+}
+
 impl BearerCredential {
     pub(crate) fn new(value: impl Into<String>) -> Self {
         Self(value.into())
@@ -231,24 +241,35 @@ impl ServerClient {
 }
 
 impl ServerClient {
-    /// Whether `forma-server` accepts this credential.
+    /// What `forma-server` says about this credential.
     ///
-    /// The single verifier answers, and this process only relays the question
-    /// (plan section 109.2). `/api/v1/status` is used because it is behind the
-    /// credential and cheap; what is read is the status code, not the body.
-    ///
-    /// A server that cannot be reached answers "no". Failing closed is the only
-    /// safe direction here: the alternative is serving the tool surface to
-    /// whoever asks whenever the backend is briefly down.
-    pub async fn accepts(&self, credential: &str) -> bool {
-        self.http
+    /// The single verifier answers and this process relays the question (plan
+    /// section 109.2). `/api/v1/status` is used because it is behind the
+    /// credential and cheap; what is read is the status, not the body.
+    pub async fn admits(&self, credential: &str) -> Admission {
+        let answer = self
+            .http
             .get(format!("{}/api/v1/status", self.base_url))
             .bearer_auth(credential)
             .header("x-forma-entry", "mcp")
             .timeout(std::time::Duration::from_secs(10))
             .send()
-            .await
-            .map(|response| response.status().is_success())
-            .unwrap_or(false)
+            .await;
+
+        match answer {
+            Ok(response) if response.status().is_success() => Admission::Yes,
+            // A verified identity that owns no Forma account. Kept distinct
+            // because the two need opposite things from the caller, and saying
+            // 401 here would send a client to authenticate again — which cannot
+            // help, because signing in a second time does not create an account.
+            Ok(response) if response.status() == reqwest::StatusCode::FORBIDDEN => {
+                Admission::NoAccount
+            }
+            Ok(_) => Admission::No,
+            // A server that cannot be reached answers no. Failing closed is the
+            // only safe direction: the alternative is serving the tool surface
+            // to whoever asks whenever the backend is briefly down.
+            Err(_) => Admission::No,
+        }
     }
 }

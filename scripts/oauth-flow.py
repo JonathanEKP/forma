@@ -202,7 +202,16 @@ def exchange(redirected):
             "authorization": f"Bearer {access}",
         },
     )
-    check("the token opens /mcp", 200, status)
+    if status == 403:
+        # The credential is good and belongs to nobody here yet. Distinguished
+        # because it is the one refusal a person can act on, and because
+        # authenticating again cannot fix it.
+        note(
+            "no Forma account for this identity",
+            "sign in and claim the workspace, then re-run",
+        )
+    else:
+        check("the token opens /mcp", 200, status)
 
     if refresh:
         status, _, text = fetch(
@@ -227,7 +236,8 @@ def exchange(redirected):
                     "authorization": f"Bearer {renewed}",
                 },
             )
-            check("and the refreshed one still opens /mcp", 200, status)
+            if status != 403:
+                check("and the refreshed one still opens /mcp", 200, status)
 
     note("revoke this connection from Forma's Agents page")
     note("then re-run the first half: it must not reconnect without a new approval")

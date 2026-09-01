@@ -18,7 +18,7 @@ use axum::routing::get;
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
 
-use crate::client::{BearerCredential, ServerClient};
+use crate::client::{Admission, BearerCredential, ServerClient};
 use crate::server::FormaMcp;
 
 const PROTECTED_RESOURCE_PATH: &str = "/.well-known/oauth-protected-resource/mcp";
@@ -159,9 +159,17 @@ async fn require_bearer(
         // A server that cannot be reached answers no. Failing closed is the only
         // safe direction: the alternative is serving that surface to whoever
         // asks whenever the backend is briefly down.
-        if auth.server.accepts(credential.as_str()).await {
-            request.extensions_mut().insert(credential);
-            return next.run(request).await;
+        match auth.server.admits(credential.as_str()).await {
+            Admission::Yes => {
+                request.extensions_mut().insert(credential);
+                return next.run(request).await;
+            }
+            // Answered as itself, not as a 401. A client told to authenticate
+            // again will do exactly that, and come back with the same identity
+            // and the same absence of an account — a loop that never ends and
+            // never explains itself.
+            Admission::NoAccount => return no_account(),
+            Admission::No => {}
         }
     }
 
@@ -184,6 +192,23 @@ async fn require_bearer(
         .headers_mut()
         .insert(header::WWW_AUTHENTICATE, challenge);
     response
+}
+
+/// A verified identity with no Forma account (plan section 115).
+///
+/// 403 rather than 401, and it says what to do. The credential is fine, so
+/// telling a client to authenticate again would send it round a loop that
+/// cannot end: it comes back with the same identity and the same absence of an
+/// account, and nothing in the message explains why.
+fn no_account() -> Response {
+    (
+        StatusCode::FORBIDDEN,
+        [(header::CONTENT_TYPE, "application/json")],
+        Body::from(
+            r#"{"error":{"code":"ACCOUNT_REQUIRED","message":"this identity has no Forma account yet","hint":"Sign in to Forma in a browser and create an account, or claim the existing workspace, then connect again."}}"#,
+        ),
+    )
+        .into_response()
 }
 
 async fn protected_resource_metadata(State(auth): State<HttpAuth>) -> Response {
