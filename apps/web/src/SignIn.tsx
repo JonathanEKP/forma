@@ -13,7 +13,7 @@ import { useEffect, useState } from "react";
 import { ApiError, claimWorkspace, createAccount, getOnboarding, type Onboarding } from "./api";
 import { sendMagicLink, signOut } from "./identity";
 
-export function SignIn() {
+export function SignIn({ returnTo }: { returnTo?: string } = {}) {
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -24,7 +24,7 @@ export function SignIn() {
     setPending(true);
     setError(null);
     try {
-      await sendMagicLink(email.trim());
+      await sendMagicLink(email.trim(), returnTo);
       setSent(true);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "the link could not be sent");

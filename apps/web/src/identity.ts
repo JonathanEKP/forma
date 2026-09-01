@@ -41,16 +41,81 @@ export async function currentSession(): Promise<Session | null> {
   return data.session;
 }
 
-/** Sends the magic link. The person continues in their inbox. */
-export async function sendMagicLink(email: string): Promise<void> {
+/**
+ * Sends the magic link. The person continues in their inbox.
+ *
+ * `returnTo` exists for the consent page: a provider sends someone there with an
+ * `authorization_id`, and coming back to the site root instead would lose the
+ * authorization they were in the middle of.
+ */
+export async function sendMagicLink(email: string, returnTo?: string): Promise<void> {
   if (!supabase) throw new Error("this Forma has no identity provider configured");
   const { error } = await supabase.auth.signInWithOtp({
     email,
-    options: { emailRedirectTo: `${window.location.origin}/` },
+    options: { emailRedirectTo: returnTo ?? `${window.location.origin}/` },
   });
   if (error) throw new Error(error.message);
 }
 
 export async function signOut(): Promise<void> {
   await supabase?.auth.signOut();
+}
+
+// --- the OAuth server, from the consent page's side --------------------------
+
+export type ConsentDetails = {
+  authorization_id: string;
+  redirect_uri: string;
+  client: { id: string; name: string; uri: string; logo_uri: string };
+  user: { id: string; email: string };
+  scope: string;
+};
+
+/**
+ * What the provider says about an authorization request.
+ *
+ * Two shapes, not one: a person who has already consented to these scopes is
+ * sent straight back to the client, and showing them a consent screen again
+ * would be asking a question that was already answered. The library narrows on
+ * `authorization_id` being present, and so does this.
+ */
+export type Consent =
+  | { kind: "decide"; details: ConsentDetails }
+  | { kind: "already"; redirectUrl: string };
+
+function client() {
+  if (!supabase) throw new Error("this Forma has no identity provider configured");
+  return supabase;
+}
+
+export async function authorizationDetails(authorizationId: string): Promise<Consent> {
+  const { data, error } = await client().auth.oauth.getAuthorizationDetails(authorizationId);
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("the provider returned no authorization");
+
+  return "authorization_id" in data
+    ? { kind: "decide", details: data }
+    : { kind: "already", redirectUrl: data.redirect_url };
+}
+
+/**
+ * Approve or deny, and hand back where to send the person.
+ *
+ * `skipBrowserRedirect` is on so the redirect is ours to make and therefore
+ * ours to observe: the library would navigate on its own, which works and which
+ * no test can watch. The URL is used exactly as returned — never composed here,
+ * because the code and state in it are the provider's to decide.
+ */
+export async function decide(
+  authorizationId: string,
+  allow: boolean,
+): Promise<string> {
+  const api = client().auth.oauth;
+  const { data, error } = allow
+    ? await api.approveAuthorization(authorizationId, { skipBrowserRedirect: true })
+    : await api.denyAuthorization(authorizationId, { skipBrowserRedirect: true });
+
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("the provider returned no redirect");
+  return data.redirect_url;
 }

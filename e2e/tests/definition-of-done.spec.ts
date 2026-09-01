@@ -50,7 +50,9 @@ test("every hosted SPA entry point reaches the application shell", async ({ page
   for (const [path, heading] of [
     ["/", "Give visual ideas a form."],
     ["/login", "Sign in to Forma"],
-    ["/oauth/consent?authorization_id=request-1", "Authorize an agent"],
+    // Local has no provider, so the consent page says that rather than
+    // offering a sign-in that could never complete.
+    ["/oauth/consent?authorization_id=request-1", "This authorization cannot be shown"],
     ["/agents", "Agent connections"],
   ]) {
     const response = await page.goto(path);

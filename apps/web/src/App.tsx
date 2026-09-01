@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { Agents } from "./Agents";
 import { ApiError, getIdentity, listProjects } from "./api";
+import { Consent } from "./Consent";
 import { Editor } from "./editor/Editor";
 import { currentSession } from "./identity";
 import { Onboard, SignIn } from "./SignIn";
@@ -74,12 +75,7 @@ export function App() {
     case "/login":
       return <SignIn />;
     case "/oauth/consent":
-      return (
-        <Placeholder
-          title="Authorize an agent"
-          detail="This page will show the requesting agent and ask you to allow or deny access."
-        />
-      );
+      return <Consent />;
     case "/agents":
       return <Agents />;
     case "/":

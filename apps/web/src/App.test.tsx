@@ -92,13 +92,27 @@ describe("public entry points", () => {
 
   it.each([
     ["/login", "Sign in to Forma"],
-    ["/oauth/consent?authorization_id=request-1", "Authorize an agent"],
     ["/agents", "Agent connections"],
   ])("renders %s without starting the editor", (path, heading) => {
     window.history.replaceState({}, "", path);
     renderApp();
 
     expect(screen.getByRole("heading", { name: heading })).toBeTruthy();
+  });
+
+  /// The consent page used to be a placeholder with a fixed heading. It is a
+  /// real page now, so what is worth asserting is that it needs a session
+  /// before it will show anyone an authorization — with none, it asks for one
+  /// rather than starting the editor. Its own decisions are covered in
+  /// `Consent.test.tsx`.
+  it("asks an anonymous visitor to sign in before showing an authorization", async () => {
+    vi.stubGlobal("fetch", mockFetch({ "/api/v1/identity": { required: true } }));
+    window.history.replaceState({}, "", "/oauth/consent?authorization_id=request-1");
+    renderApp();
+
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "Sign in to Forma" })).toBeTruthy(),
+    );
   });
 });
 
