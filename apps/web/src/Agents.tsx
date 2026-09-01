@@ -29,6 +29,12 @@ export function Agents() {
           Forma
         </div>
         <h1 className="text-4xl font-medium tracking-tight">Agent connections</h1>
+        <a
+          href="/"
+          className="mt-2 inline-block text-xs text-faint underline underline-offset-4 hover:text-muted"
+        >
+          ← Projects
+        </a>
         <p className="mt-3 max-w-2xl text-sm leading-6 text-muted">
           Connect an OAuth-capable agent with Forma&apos;s MCP URL. Use a personal
           access token only for command-line and automation clients that need a

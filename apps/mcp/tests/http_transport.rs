@@ -15,7 +15,16 @@ use tokio::process::{Child, Command};
 const TOKEN: &str = "a-token-with-enough-entropy-to-be-worth-something";
 
 /// forma-server, guarded by the same token, on an ephemeral port.
-fn start_server(dir: &std::path::Path) -> String {
+/// Starts forma-server and **waits until it answers**.
+///
+/// The port arrives over a channel as soon as it is bound, which is not the same
+/// as the server being ready to serve. That gap was harmless while forma-mcp
+/// answered every credential question itself; now it asks forma-server, so a
+/// request that lands in the gap is refused for the wrong reason and the test
+/// fails once in a while — the flaky layer everybody learns to ignore.
+///
+/// Waits on liveness answering, never on a clock.
+async fn start_server(dir: &std::path::Path) -> String {
     let dir = dir.to_path_buf();
     let (tx, rx) = std::sync::mpsc::channel();
 
@@ -49,7 +58,22 @@ fn start_server(dir: &std::path::Path) -> String {
         });
     });
 
-    format!("http://127.0.0.1:{}", rx.recv().expect("server port"))
+    let base = format!("http://127.0.0.1:{}", rx.recv().expect("server port"));
+
+    let health = format!("{base}/api/v1/health");
+    let http = reqwest::Client::new();
+    for _ in 0..200 {
+        if http
+            .get(&health)
+            .send()
+            .await
+            .is_ok_and(|response| response.status().is_success())
+        {
+            return base;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    panic!("forma-server never answered {health}");
 }
 
 fn free_port() -> u16 {
@@ -164,7 +188,7 @@ async fn http_mode_refuses_to_start_without_a_token() {
 #[tokio::test]
 async fn an_unauthenticated_caller_gets_the_envelope_and_nothing_else() {
     let dir = tempfile::tempdir().unwrap();
-    let base_url = start_server(dir.path());
+    let base_url = start_server(dir.path()).await;
     let mcp = start_mcp(&base_url, Some(TOKEN)).await;
 
     let response = initialize(&mcp.url, None).await;
@@ -202,7 +226,7 @@ async fn an_unauthenticated_caller_gets_the_envelope_and_nothing_else() {
 #[tokio::test]
 async fn an_authorized_host_can_speak_mcp_and_the_token_travels_onward() {
     let dir = tempfile::tempdir().unwrap();
-    let base_url = start_server(dir.path());
+    let base_url = start_server(dir.path()).await;
     let mcp = start_mcp(&base_url, Some(TOKEN)).await;
 
     let response = initialize(&mcp.url, Some(TOKEN)).await;
@@ -262,7 +286,7 @@ async fn configured_oauth_discovery_is_public_and_named_in_the_challenge() {
     const ISSUER: &str = "https://project.supabase.co/auth/v1";
 
     let dir = tempfile::tempdir().unwrap();
-    let base_url = start_server(dir.path());
+    let base_url = start_server(dir.path()).await;
     let mcp = start_mcp_with_discovery(&base_url, Some(TOKEN), Some(DOMAIN), Some(ISSUER)).await;
 
     let unauthorized = initialize(&mcp.url, None).await;
@@ -309,7 +333,7 @@ fn caddy_forwards_the_canonical_discovery_path_without_rewriting_it() {
 #[tokio::test]
 async fn a_public_host_is_refused_until_the_deployment_names_itself() {
     let dir = tempfile::tempdir().unwrap();
-    let base_url = start_server(dir.path());
+    let base_url = start_server(dir.path()).await;
 
     let anonymous = start_mcp_for(&base_url, Some(TOKEN), None).await;
     let refused = reqwest::Client::new()
@@ -363,7 +387,7 @@ async fn a_public_host_is_refused_until_the_deployment_names_itself() {
 #[tokio::test]
 async fn naming_a_public_host_keeps_loopback_working() {
     let dir = tempfile::tempdir().unwrap();
-    let base_url = start_server(dir.path());
+    let base_url = start_server(dir.path()).await;
     let mcp = start_mcp_for(&base_url, Some(TOKEN), Some("forma.example.org")).await;
 
     let response = initialize(&mcp.url, Some(TOKEN)).await;
@@ -377,7 +401,7 @@ async fn naming_a_public_host_keeps_loopback_working() {
 #[tokio::test]
 async fn status_says_which_deployment_you_reached() {
     let dir = tempfile::tempdir().unwrap();
-    let base_url = start_server(dir.path());
+    let base_url = start_server(dir.path()).await;
     let mcp = start_mcp_for(&base_url, Some(TOKEN), Some("forma.example.org")).await;
 
     let response = initialize(&mcp.url, Some(TOKEN)).await;

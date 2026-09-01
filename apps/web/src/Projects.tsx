@@ -30,8 +30,22 @@ export function Projects({ onOpen }: { onOpen: (designId: string) => void }) {
   return (
     <div className="mx-auto w-full max-w-4xl px-6 py-12">
       <header className="mb-10">
-        <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-signal">
-          Forma
+        <div className="mb-2 flex items-baseline justify-between gap-4">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-signal">
+            Forma
+          </div>
+          {/*
+            The Agents page existed and nothing led to it, so the only way there
+            was to know the URL. A page that cannot be reached by navigating is
+            a page most people do not have — the same failure as a skill no host
+            scans for.
+          */}
+          <a
+            href="/agents"
+            className="text-xs text-faint underline underline-offset-4 hover:text-muted"
+          >
+            Connect an agent
+          </a>
         </div>
         <h1 className="text-4xl font-medium tracking-tight">Give visual ideas a form.</h1>
         {status.data && (

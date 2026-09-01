@@ -88,6 +88,18 @@ async function createDesign(page: Page, name: string) {
   await expect(page.getByRole("button", { name: "← Projects" })).toBeVisible();
 }
 
+/// A page nothing links to is a page most people do not have.
+test("the agents page can be reached by navigating, not only by knowing its URL", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("link", { name: "Connect an agent" }).click();
+  await expect(page.getByRole("heading", { name: "Agent connections" })).toBeVisible();
+
+  await page.getByRole("link", { name: "← Projects" }).click();
+  await expect(page.getByRole("heading", { name: "Give visual ideas a form." })).toBeVisible();
+});
+
 test("a new user gets from an empty Forma to a PNG on disk", async ({ page }) => {
   const cspViolations = watchForCspViolations(page);
   await createProjectWithBrand(page, "Launch");
