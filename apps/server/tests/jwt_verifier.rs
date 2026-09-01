@@ -331,3 +331,46 @@ fn the_fixture_has_the_shape_the_provider_publishes() {
         "a symmetric key here would make the confusion test meaningless"
     );
 }
+
+/// The shapes a real provider token actually has, which the fixtures above did
+/// not: `aud` arrives as an array, and `email_verified` lives inside
+/// `user_metadata` unless a hook promotes it.
+#[tokio::test]
+async fn the_real_token_shape_is_read_correctly() {
+    let (verifier, _) = verifier();
+    let mut header = Header::new(Algorithm::ES256);
+    header.kid = Some(KID.into());
+
+    let as_issued = serde_json::json!({
+        "sub": "7bd7bcdc-8177-4962-ae51-71362df2e744",
+        "iss": ISSUER,
+        // An array, which is how Supabase issues it and how the JWT spec allows.
+        "aud": ["authenticated"],
+        "exp": now() + 3600,
+        "email": "someone@example.com",
+        "role": "authenticated",
+        // Writable by the subject through `auth.updateUser`, so it must not be
+        // read: a self-asserted verification is not a verification.
+        "user_metadata": { "email_verified": true },
+    });
+
+    let identity = verifier
+        .verify(&encode(&header, &as_issued, &EncodingKey::from_ec_der(SIGNING_KEY)).expect("mint"))
+        .await
+        .expect("an array audience must verify");
+
+    assert!(
+        !identity.email_verified,
+        "user_metadata is the subject's own to write; believing it there would \
+         let anyone register as an invited address"
+    );
+
+    // With the hook installed, the claim is at the top level and auth-managed.
+    let mut hooked = as_issued.clone();
+    hooked["email_verified"] = serde_json::Value::Bool(true);
+    let identity = verifier
+        .verify(&encode(&header, &hooked, &EncodingKey::from_ec_der(SIGNING_KEY)).expect("mint"))
+        .await
+        .expect("verify");
+    assert!(identity.email_verified);
+}

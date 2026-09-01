@@ -19,6 +19,8 @@ as $$
 declare
   claims    jsonb := event -> 'claims';
   client_id text;
+  subject   uuid;
+  verified  boolean;
 begin
   -- Read both places it might live. The documented examples are the HTTP
   -- variant, where `client_id` is a top-level field; the Postgres event's shape
@@ -37,6 +39,26 @@ begin
       to_jsonb('https://forma.hintly.online/mcp/' || client_id)
     );
   end if;
+
+  -- A trustworthy `email_verified`, which the token does not otherwise carry.
+  --
+  -- Supabase puts one in `user_metadata`, and that is exactly where it must not
+  -- be read from: `raw_user_meta_data` is writable by the authenticated user
+  -- through `auth.updateUser`, so a claim taken from there is a claim the
+  -- subject can set about themselves. Forma's invite gate matches on an email
+  -- address, and reading a self-asserted verification would let anyone register
+  -- as an invited address and walk in.
+  --
+  -- `auth.users.email_confirmed_at` is auth-managed and not user-writable, so it
+  -- is the only honest source. Promoted to a top-level claim here because a hook
+  -- is the one place that can put it there.
+  subject := coalesce(event ->> 'user_id', claims ->> 'sub')::uuid;
+  select u.email_confirmed_at is not null
+    into verified
+    from auth.users u
+   where u.id = subject;
+
+  claims := jsonb_set(claims, '{email_verified}', to_jsonb(coalesce(verified, false)));
 
   return jsonb_build_object('claims', claims);
 end;

@@ -75,6 +75,16 @@ pub struct VerifiedIdentity {
     ///
     /// The invite gate of plan 107.3 matches on the address, so it is only a
     /// gate if the address was proven. Never trust `email` without this.
+    ///
+    /// **Read from the top level only, and never from `user_metadata`.** A real
+    /// Supabase token carries `email_verified` inside `user_metadata`, which is
+    /// writable by the subject through `auth.updateUser` — a claim they can set
+    /// about themselves. Reading it there would let anyone register as an
+    /// invited address and walk in, which is precisely what this gate exists to
+    /// stop. `deploy/supabase/access-token-hook.sql` promotes the auth-managed
+    /// `email_confirmed_at` to a top-level claim so there is something honest
+    /// here to read; without that hook installed this is `false` and the gate
+    /// refuses everyone, which is the right way for it to be missing.
     pub email_verified: bool,
     /// Present when an OAuth client obtained the token; null for a direct user
     /// session. That difference is what separates a browser credential from an
