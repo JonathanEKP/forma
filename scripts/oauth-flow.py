@@ -82,6 +82,20 @@ def fetch(url, *, method="GET", body=None, headers=None, timeout=20):
         return 0, {}, str(error)
 
 
+def header(headers, name):
+    """Case-insensitive lookup.
+
+    HTTP header names are case-insensitive and every layer here disagrees about
+    which case to use: Caddy sends `www-authenticate`, urllib normalises it to
+    `Www-Authenticate`, and a plain dict remembers whichever it was given. This
+    script spelled two of the three and reported the deployment broken when the
+    fault was its own — a failure in the pessimistic direction, which is less
+    dangerous than the other one and still a lie.
+    """
+    wanted = name.lower()
+    return next((value for key, value in headers.items() if key.lower() == wanted), "")
+
+
 def as_json(text, default=None):
     try:
         return json.loads(text)
@@ -101,7 +115,7 @@ status, headers, _ = fetch(
 )
 check("an unauthenticated /mcp is refused", 401, status)
 
-challenge = headers.get("WWW-Authenticate") or headers.get("www-authenticate") or ""
+challenge = header(headers, "www-authenticate")
 check(
     "and the refusal says where to authenticate",
     True,
