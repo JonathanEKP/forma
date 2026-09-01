@@ -9,7 +9,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use forma_server::jwt::{JwksSource, JwtError, Verifier};
+use forma_server::jwt::{Accepts, JwksSource, JwtError, Verifier};
 use jsonwebtoken::jwk::JwkSet;
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 use serde::Serialize;
@@ -100,7 +100,7 @@ fn verifier() -> (Verifier, Arc<AtomicUsize>) {
 async fn a_good_token_verifies_and_reports_what_forma_acts_on() {
     let (verifier, _) = verifier();
     let identity = verifier
-        .verify(&mint(&Claims::valid(), es256_header()))
+        .verify(&mint(&Claims::valid(), es256_header()), Accepts::Either)
         .await
         .expect("a valid token");
 
@@ -135,7 +135,7 @@ async fn a_token_cannot_choose_its_own_algorithm() {
 
     assert!(
         matches!(
-            verifier.verify(&forged).await,
+            verifier.verify(&forged, Accepts::Either).await,
             Err(JwtError::WrongAlgorithm { .. })
         ),
         "HS256 must be refused before the signature is considered"
@@ -159,7 +159,7 @@ async fn a_token_cannot_choose_its_own_algorithm() {
         b64(b"not-a-signature")
     );
     assert!(matches!(
-        verifier.verify(&hand_rolled).await,
+        verifier.verify(&hand_rolled, Accepts::Either).await,
         Err(JwtError::WrongAlgorithm { .. })
     ));
 }
@@ -171,14 +171,18 @@ async fn expiry_and_not_before_are_enforced() {
     let mut expired = Claims::valid();
     expired.exp = now() - 3600;
     assert!(matches!(
-        verifier.verify(&mint(&expired, es256_header())).await,
+        verifier
+            .verify(&mint(&expired, es256_header()), Accepts::Either)
+            .await,
         Err(JwtError::Invalid)
     ));
 
     let mut future = Claims::valid();
     future.nbf = Some(now() + 3600);
     assert!(matches!(
-        verifier.verify(&mint(&future, es256_header())).await,
+        verifier
+            .verify(&mint(&future, es256_header()), Accepts::Either)
+            .await,
         Err(JwtError::Invalid)
     ));
 }
@@ -190,7 +194,9 @@ async fn the_issuer_and_audience_must_be_ours() {
     let mut elsewhere = Claims::valid();
     elsewhere.iss = "https://someone-elses.supabase.co/auth/v1".into();
     assert!(matches!(
-        verifier.verify(&mint(&elsewhere, es256_header())).await,
+        verifier
+            .verify(&mint(&elsewhere, es256_header()), Accepts::Either)
+            .await,
         Err(JwtError::Invalid)
     ));
 
@@ -200,9 +206,9 @@ async fn the_issuer_and_audience_must_be_ours() {
     other_resource.aud = "some-other-audience".into();
     assert!(matches!(
         verifier
-            .verify(&mint(&other_resource, es256_header()))
+            .verify(&mint(&other_resource, es256_header()), Accepts::Either)
             .await,
-        Err(JwtError::Invalid)
+        Err(JwtError::WrongAudience)
     ));
 }
 
@@ -213,7 +219,9 @@ async fn a_subject_that_is_not_a_uuid_is_refused() {
     let mut odd = Claims::valid();
     odd.sub = "not-a-uuid".into();
     assert!(matches!(
-        verifier.verify(&mint(&odd, es256_header())).await,
+        verifier
+            .verify(&mint(&odd, es256_header()), Accepts::Either)
+            .await,
         Err(JwtError::BadSubject)
     ));
 }
@@ -234,7 +242,7 @@ async fn a_tampered_signature_does_not_verify() {
     parts.push(flipped);
 
     assert!(matches!(
-        verifier.verify(&parts.join(".")).await,
+        verifier.verify(&parts.join("."), Accepts::Either).await,
         Err(JwtError::Invalid)
     ));
 }
@@ -245,7 +253,9 @@ async fn a_token_naming_no_key_is_refused() {
 
     let bare = Header::new(Algorithm::ES256);
     assert!(matches!(
-        verifier.verify(&mint(&Claims::valid(), bare)).await,
+        verifier
+            .verify(&mint(&Claims::valid(), bare), Accepts::Either)
+            .await,
         Err(JwtError::NoKeyId)
     ));
 }
@@ -260,7 +270,7 @@ async fn an_unknown_key_refreshes_once_and_then_refuses() {
 
     assert!(matches!(
         verifier
-            .verify(&mint(&Claims::valid(), header.clone()))
+            .verify(&mint(&Claims::valid(), header.clone()), Accepts::Either)
             .await,
         Err(JwtError::UnknownKey)
     ));
@@ -269,7 +279,7 @@ async fn an_unknown_key_refreshes_once_and_then_refuses() {
     // The floor is what stops invented kids becoming outbound traffic.
     for _ in 0..20 {
         let _ = verifier
-            .verify(&mint(&Claims::valid(), header.clone()))
+            .verify(&mint(&Claims::valid(), header.clone()), Accepts::Either)
             .await;
     }
     assert_eq!(
@@ -294,7 +304,7 @@ async fn a_failed_refresh_keeps_the_keys_that_already_worked() {
     );
     verifier.warm().await.expect("warm");
     assert!(verifier
-        .verify(&mint(&Claims::valid(), es256_header()))
+        .verify(&mint(&Claims::valid(), es256_header()), Accepts::Either)
         .await
         .is_ok());
 
@@ -355,7 +365,10 @@ async fn the_real_token_shape_is_read_correctly() {
     });
 
     let identity = verifier
-        .verify(&encode(&header, &as_issued, &EncodingKey::from_ec_der(SIGNING_KEY)).expect("mint"))
+        .verify(
+            &encode(&header, &as_issued, &EncodingKey::from_ec_der(SIGNING_KEY)).expect("mint"),
+            Accepts::Either,
+        )
         .await
         .expect("an array audience must verify");
 
@@ -369,8 +382,163 @@ async fn the_real_token_shape_is_read_correctly() {
     let mut hooked = as_issued.clone();
     hooked["email_verified"] = serde_json::Value::Bool(true);
     let identity = verifier
-        .verify(&encode(&header, &hooked, &EncodingKey::from_ec_der(SIGNING_KEY)).expect("mint"))
+        .verify(
+            &encode(&header, &hooked, &EncodingKey::from_ec_der(SIGNING_KEY)).expect("mint"),
+            Accepts::Either,
+        )
         .await
         .expect("verify");
     assert!(identity.email_verified);
+}
+
+// ---------------------------------------------------------------------------
+// The two audiences (plan §111.4 and §112)
+// ---------------------------------------------------------------------------
+
+const RESOURCE: &str = "https://forma.example.org/mcp";
+
+fn with_resource() -> Verifier {
+    let source = Fixture {
+        body: JWKS.to_string(),
+        fetches: Arc::new(AtomicUsize::new(0)),
+        fail: false,
+    };
+    Verifier::new(ISSUER, AUDIENCE, Box::new(source)).for_resource(RESOURCE)
+}
+
+/// The audience an agent's token carries, written by the access-token hook.
+fn agent_claims(client: &str, audience: &str) -> serde_json::Value {
+    serde_json::json!({
+        "sub": "1b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bed",
+        "iss": ISSUER,
+        "aud": audience,
+        "exp": now() + 3600,
+        "client_id": client,
+        "email": "someone@example.com",
+        "email_verified": true,
+    })
+}
+
+fn sign(claims: &serde_json::Value) -> String {
+    let mut header = Header::new(Algorithm::ES256);
+    header.kid = Some(KID.into());
+    encode(&header, claims, &EncodingKey::from_ec_der(SIGNING_KEY)).expect("mint")
+}
+
+/// The separation §112 exists for: a token that is merely available in
+/// somebody's browser is not an agent credential.
+#[tokio::test]
+async fn a_browser_session_is_not_an_agent_credential() {
+    let verifier = with_resource();
+    let session = mint(&Claims::valid(), es256_header());
+
+    assert!(
+        verifier.verify(&session, Accepts::Either).await.is_ok(),
+        "a session is exactly what /api/v1/* is for"
+    );
+    assert!(
+        matches!(
+            verifier.verify(&session, Accepts::AgentOnly).await,
+            Err(JwtError::WrongAudience)
+        ),
+        "and it must not be spendable at /mcp"
+    );
+}
+
+#[tokio::test]
+async fn an_agent_token_is_accepted_at_both_doors() {
+    let verifier = with_resource();
+    let token = sign(&agent_claims(
+        "mcp-claude",
+        &format!("{RESOURCE}/mcp-claude"),
+    ));
+
+    assert!(verifier.verify(&token, Accepts::AgentOnly).await.is_ok());
+    // Per the §112 amendment: reaching REST directly is the same account with
+    // the same permissions, and one verifier answers for both.
+    let identity = verifier
+        .verify(&token, Accepts::Either)
+        .await
+        .expect("REST accepts an agent");
+    assert_eq!(identity.client_id.as_deref(), Some("mcp-claude"));
+}
+
+/// Without this the suffix is decoration: one client's grant would be spendable
+/// as another's, and revoking a connection would not stop its tokens.
+#[tokio::test]
+async fn the_audience_must_name_the_client_that_holds_the_token() {
+    let verifier = with_resource();
+
+    let borrowed = sign(&agent_claims(
+        "mcp-claude",
+        &format!("{RESOURCE}/mcp-someone-else"),
+    ));
+    assert!(matches!(
+        verifier.verify(&borrowed, Accepts::AgentOnly).await,
+        Err(JwtError::WrongAudience)
+    ));
+
+    // And an audience with no client at all is not the agent form.
+    let bare = sign(&agent_claims("mcp-claude", RESOURCE));
+    assert!(matches!(
+        verifier.verify(&bare, Accepts::AgentOnly).await,
+        Err(JwtError::WrongAudience)
+    ));
+}
+
+#[tokio::test]
+async fn another_deployments_resource_is_refused() {
+    let verifier = with_resource();
+    let elsewhere = sign(&agent_claims(
+        "mcp-claude",
+        "https://someone-elses.example.org/mcp/mcp-claude",
+    ));
+    assert!(matches!(
+        verifier.verify(&elsewhere, Accepts::AgentOnly).await,
+        Err(JwtError::WrongAudience)
+    ));
+}
+
+/// A deployment that names no resource cannot accept an agent at all. That is
+/// the honest failure: with nothing to demand, accepting anything would make the
+/// check decoration.
+#[tokio::test]
+async fn no_configured_resource_means_no_agent_is_accepted() {
+    let (verifier, _) = verifier();
+    let token = sign(&agent_claims(
+        "mcp-claude",
+        &format!("{RESOURCE}/mcp-claude"),
+    ));
+    assert!(matches!(
+        verifier.verify(&token, Accepts::AgentOnly).await,
+        Err(JwtError::WrongAudience)
+    ));
+}
+
+/// Both shapes, because this project issues both — which one depends on whether
+/// the access-token hook is installed.
+#[tokio::test]
+async fn the_audience_may_be_a_string_or_an_array() {
+    let verifier = with_resource();
+
+    let many = sign(&serde_json::json!({
+        "sub": "1b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bed",
+        "iss": ISSUER,
+        "aud": ["something-else", format!("{RESOURCE}/mcp-claude")],
+        "exp": now() + 3600,
+        "client_id": "mcp-claude",
+    }));
+    assert!(verifier.verify(&many, Accepts::AgentOnly).await.is_ok());
+
+    // An empty list names nothing, and nothing is not us.
+    let none = sign(&serde_json::json!({
+        "sub": "1b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bed",
+        "iss": ISSUER,
+        "aud": [],
+        "exp": now() + 3600,
+    }));
+    assert!(matches!(
+        verifier.verify(&none, Accepts::Either).await,
+        Err(JwtError::WrongAudience)
+    ));
 }

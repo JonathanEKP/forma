@@ -62,6 +62,10 @@ pub struct Config {
     /// would have been a hole; this one is a lockout, which is the right way
     /// for an unverified assumption to break.
     pub supabase_audience: String,
+    /// The MCP resource an agent's token must be addressed to (plan §114.1),
+    /// e.g. `https://forma.hintly.online/mcp`. The access-token hook appends the
+    /// OAuth client id, so this is the prefix.
+    pub mcp_resource_url: Option<String>,
 }
 
 /// An environment value that is absent when unset or blank.
@@ -96,6 +100,7 @@ impl Config {
             supabase_issuer: optional("FORMA_SUPABASE_ISSUER"),
             supabase_jwks_url: optional("FORMA_SUPABASE_JWKS_URL"),
             supabase_audience: env_or("FORMA_SUPABASE_AUDIENCE", "authenticated"),
+            mcp_resource_url: optional("FORMA_MCP_RESOURCE_URL"),
             remote_token: std::env::var("FORMA_REMOTE_TOKEN")
                 .ok()
                 .map(|token| token.trim().to_string())

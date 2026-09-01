@@ -183,11 +183,22 @@ async fn main() -> anyhow::Result<()> {
             anyhow::bail!("hosted mode needs FORMA_SUPABASE_ISSUER and FORMA_SUPABASE_JWKS_URL");
         };
 
-        let verifier = std::sync::Arc::new(forma_server::jwt::Verifier::new(
+        let mut verifier = forma_server::jwt::Verifier::new(
             issuer.clone(),
             config.supabase_audience.clone(),
             Box::new(forma_server::jwt::HttpJwks::new(jwks.clone())),
-        ));
+        );
+        if let Some(resource) = &config.mcp_resource_url {
+            verifier = verifier.for_resource(resource.trim_end_matches('/'));
+        } else {
+            // Without it no agent token can be accepted at all, which is right:
+            // an unconfigured resource means there is no audience to demand, and
+            // accepting anything in its place would make the check decoration.
+            tracing::warn!(
+                "FORMA_MCP_RESOURCE_URL is not set, so agent tokens cannot be accepted at /mcp"
+            );
+        }
+        let verifier = std::sync::Arc::new(verifier);
 
         // Fetched once here rather than on somebody's first request, so a JWKS
         // URL that is wrong is a startup failure instead of an outage that only

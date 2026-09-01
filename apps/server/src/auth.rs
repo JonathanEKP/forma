@@ -67,6 +67,12 @@ fn is_open(path: &str) -> bool {
     !path.starts_with("/api/")
 }
 
+/// Set by `forma-mcp` on every request it forwards, and by nothing else.
+///
+/// See where it is read for why trusting it is safe: it only ever narrows what
+/// is accepted.
+pub const MCP_ENTRY_HEADER: &str = "x-forma-entry";
+
 /// Paths a verified identity may reach *before* it owns an account.
 ///
 /// Everything else under `/api/` answers `ACCOUNT_REQUIRED` without one, which
@@ -181,7 +187,23 @@ pub async fn require_bearer(
             return Ok(request.into_response(refusal()));
         };
 
-        let identity = match verifier.verify(token).await {
+        // Which door this arrived at decides which credential classes are
+        // acceptable (plan section 112). `forma-mcp` marks its own requests;
+        // everything else is a browser or a script talking to REST directly.
+        //
+        // **The marker can only ever tighten the check**, and that is what makes
+        // it safe to trust for a security decision. Setting it on a direct call
+        // to `/api/v1/*` demands a *stricter* credential — an agent audience
+        // instead of either — so forging it buys an attacker nothing. And it
+        // cannot be stripped from a real MCP request, because `forma-mcp` is
+        // what adds it, on the loopback hop that the internet cannot reach.
+        let accepts = if request.headers().contains_key(MCP_ENTRY_HEADER) {
+            crate::jwt::Accepts::AgentOnly
+        } else {
+            crate::jwt::Accepts::Either
+        };
+
+        let identity = match verifier.verify(token, accepts).await {
             Ok(identity) => identity,
             Err(crate::jwt::JwtError::ProviderUnreachable) => {
                 // Distinguished from a bad token on purpose: this one is ours to

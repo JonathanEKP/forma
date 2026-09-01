@@ -41,6 +41,22 @@ const LEEWAY_SECONDS: u64 = 5;
 /// of service against the provider, paid for by someone who did nothing.
 const REFRESH_FLOOR: Duration = Duration::from_secs(60);
 
+/// Which credential class a token is allowed to be (plan sections 111.4, 112).
+///
+/// The audience is the only thing separating a browser session from an agent's
+/// token, so which ones are acceptable is a property of the door the request
+/// came through, not of the token.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Accepts {
+    /// `/api/v1/*`: a browser session, or an agent reaching REST through
+    /// `forma-mcp`. Per the §112 amendment a PAT-or-agent credential here is
+    /// the same account with the same permissions.
+    Either,
+    /// `/mcp`: an agent, and never a session that merely exists in somebody's
+    /// browser tab.
+    AgentOnly,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum JwtError {
     #[error("the token is malformed")]
@@ -56,6 +72,8 @@ pub enum JwtError {
     UnknownKey,
     #[error("the token did not verify")]
     Invalid,
+    #[error("the token is not addressed to this resource")]
+    WrongAudience,
     #[error("the subject is missing or is not a uuid")]
     BadSubject,
     #[error("the identity provider could not be reached")]
@@ -92,9 +110,21 @@ pub struct VerifiedIdentity {
     pub client_id: Option<String>,
 }
 
+/// `aud` is a string or an array of strings, and this project issues both
+/// depending on whether the access-token hook is installed. Assuming one shape
+/// is how a deployment works until somebody edits a hook.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum Audience {
+    One(String),
+    Many(Vec<String>),
+}
+
 #[derive(Debug, Deserialize)]
 struct Claims {
     sub: String,
+    #[serde(default)]
+    aud: Option<Audience>,
     #[serde(default)]
     email: Option<String>,
     #[serde(default)]
@@ -150,7 +180,11 @@ struct Cache {
 
 pub struct Verifier {
     issuer: String,
-    audience: String,
+    /// What the provider issues for a direct user session.
+    session_audience: String,
+    /// What the access-token hook writes for an OAuth client, without the
+    /// client id it ends with.
+    agent_audience_prefix: String,
     source: Box<dyn JwksSource>,
     cache: RwLock<Cache>,
 }
@@ -158,19 +192,33 @@ pub struct Verifier {
 impl Verifier {
     pub fn new(
         issuer: impl Into<String>,
-        audience: impl Into<String>,
+        session_audience: impl Into<String>,
         source: Box<dyn JwksSource>,
     ) -> Self {
         Self {
             issuer: issuer.into(),
-            audience: audience.into(),
+            session_audience: session_audience.into(),
+            agent_audience_prefix: String::new(),
             source,
             cache: RwLock::new(Cache::default()),
         }
     }
 
+    /// The resource an agent's token must be addressed to, e.g.
+    /// `https://forma.hintly.online/mcp`. The client id is appended by the hook,
+    /// so this is matched as a prefix and the suffix is checked against the
+    /// token's own `client_id`.
+    pub fn for_resource(mut self, prefix: impl Into<String>) -> Self {
+        self.agent_audience_prefix = prefix.into();
+        self
+    }
+
     /// Verifies a token, or says why it will not.
-    pub async fn verify(&self, token: &str) -> Result<VerifiedIdentity, JwtError> {
+    pub async fn verify(
+        &self,
+        token: &str,
+        accepts: Accepts,
+    ) -> Result<VerifiedIdentity, JwtError> {
         // Read the header only to refuse it. The signature is not considered
         // until the algorithm this deployment accepts is the one declared.
         //
@@ -208,7 +256,11 @@ impl Verifier {
         // accepted without touching this line.
         validation.algorithms = vec![ALGORITHM];
         validation.set_issuer(&[&self.issuer]);
-        validation.set_audience(&[&self.audience]);
+        // Checked below instead of here. The agent form ends in a client id that
+        // cannot be enumerated ahead of time, so it is matched as a prefix — and
+        // one place doing the whole check, in both shapes, beats a library check
+        // for one form and ours for the other.
+        validation.validate_aud = false;
         validation.validate_exp = true;
         validation.validate_nbf = true;
         validation.leeway = LEEWAY_SECONDS;
@@ -216,6 +268,8 @@ impl Verifier {
             HashSet::from(["exp".into(), "iss".into(), "aud".into(), "sub".into()]);
 
         let data = decode::<Claims>(token, &key, &validation).map_err(|_| JwtError::Invalid)?;
+
+        self.audience_is_ours(&data.claims, accepts)?;
 
         let subject = uuid::Uuid::parse_str(&data.claims.sub)
             .map(AuthUserId)
@@ -227,6 +281,46 @@ impl Verifier {
             email_verified: data.claims.email_verified.unwrap_or(false),
             client_id: data.claims.client_id,
         })
+    }
+
+    /// Whether this token was addressed to us, and to the right door.
+    ///
+    /// `aud` may be a string or an array — this project issues both, and which
+    /// one depends on whether the access-token hook is installed, so neither
+    /// shape can be assumed. Every entry is considered; one acceptable value is
+    /// enough.
+    fn audience_is_ours(&self, claims: &Claims, accepts: Accepts) -> Result<(), JwtError> {
+        let candidates: Vec<&str> = match &claims.aud {
+            Some(Audience::One(value)) => vec![value.as_str()],
+            Some(Audience::Many(values)) => values.iter().map(String::as_str).collect(),
+            None => return Err(JwtError::WrongAudience),
+        };
+
+        let session_allowed = accepts == Accepts::Either;
+
+        let acceptable = candidates.iter().any(|value| {
+            if session_allowed && *value == self.session_audience {
+                return true;
+            }
+
+            if self.agent_audience_prefix.is_empty() {
+                return false;
+            }
+
+            // The agent form is `<resource>/<client_id>`, and the suffix must be
+            // the client the token itself names. Without that the suffix is
+            // decoration: one client's grant would be spendable as another's,
+            // and revoking a connection would not stop its tokens.
+            match value.strip_prefix(&self.agent_audience_prefix) {
+                Some(rest) => {
+                    let named = rest.strip_prefix('/').unwrap_or(rest);
+                    !named.is_empty() && Some(named) == claims.client_id.as_deref()
+                }
+                None => false,
+            }
+        });
+
+        acceptable.then_some(()).ok_or(JwtError::WrongAudience)
     }
 
     fn cached(&self, kid: &str) -> Option<DecodingKey> {

@@ -596,3 +596,55 @@ async fn onboarding_says_which_doors_are_open() {
     assert_eq!(body["claimable"], false);
     assert_eq!(body["invited"], false);
 }
+
+/// The door decides which credential is acceptable (plan §112).
+///
+/// `forma-mcp` marks its requests, and the marker only ever narrows what is
+/// accepted — which is what makes trusting a header for this safe. Forging it
+/// on a direct REST call demands a stricter credential, not a weaker one.
+#[actix_web::test]
+async fn a_browser_session_is_refused_at_the_mcp_door() {
+    let (state, _dir) = hosted().await;
+    let accounts = SqliteAccountRepository::new(state.pool.clone());
+    let user = AuthUserId::new();
+    accounts
+        .grant(
+            accounts.bootstrap().await.unwrap().id,
+            user,
+            "someone@example.com",
+            AccountRole::Owner,
+        )
+        .await
+        .expect("grant");
+
+    let app = serve!(state);
+    let session = session_for(user);
+
+    // Through the front door it is exactly what it should be.
+    let rest = test::call_service(
+        &app,
+        TestRequest::get()
+            .uri("/api/v1/projects")
+            .insert_header(bearer(&session))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(rest.status(), StatusCode::OK);
+
+    // Marked as arriving through MCP, the same token is refused: an agent
+    // credential is required there, and a session is not one.
+    let as_agent = test::call_service(
+        &app,
+        TestRequest::get()
+            .uri("/api/v1/projects")
+            .insert_header(bearer(&session))
+            .insert_header((forma_server::auth::MCP_ENTRY_HEADER, "mcp"))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(
+        as_agent.status(),
+        StatusCode::UNAUTHORIZED,
+        "forging the marker must only ever demand more, never less"
+    );
+}

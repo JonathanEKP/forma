@@ -186,6 +186,11 @@ impl ServerClient {
         let response = self
             .authorized(self.http.get(self.url(path)), credential)
             .header("x-forma-tool", tool)
+            // Says which door this came through, so `forma-server` knows to
+            // require an agent credential rather than accepting a session that
+            // merely exists in somebody's browser (plan section 112). It only
+            // narrows what is accepted, which is what makes it safe to send.
+            .header("x-forma-entry", "mcp")
             .header("x-request-id", &request_id)
             .send()
             .await
@@ -211,6 +216,11 @@ impl ServerClient {
             .authorized(self.http.post(self.url(path)), credential)
             .header("x-forma-actor", actor)
             .header("x-forma-tool", tool)
+            // Says which door this came through, so `forma-server` knows to
+            // require an agent credential rather than accepting a session that
+            // merely exists in somebody's browser (plan section 112). It only
+            // narrows what is accepted, which is what makes it safe to send.
+            .header("x-forma-entry", "mcp")
             .header("x-request-id", &request_id)
             .json(body)
             .send()

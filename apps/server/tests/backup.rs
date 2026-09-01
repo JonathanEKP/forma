@@ -25,6 +25,7 @@ fn config(data_dir: &Path) -> Config {
         supabase_issuer: None,
         supabase_jwks_url: None,
         supabase_audience: "authenticated".to_string(),
+        mcp_resource_url: None,
     }
 }
 
