@@ -27,43 +27,29 @@ fn handler(base_url: String, public_host: Option<String>) -> FormaMcp {
     FormaMcp::for_http(ServerClient::new(base_url)).on_deployment(public_host)
 }
 
-/// The bearer every remote caller must present (plan section 57).
+/// The bearer a caller presented, if any.
 ///
-/// Kept as a hash so a comparison cannot be walked one byte at a time, the same
-/// way `forma-server` holds it. `blake3::Hash` compares in constant time.
-#[derive(Clone)]
-struct Guard(Vec<blake3::Hash>);
-
-impl Guard {
-    fn new(token: &str) -> Self {
-        Self(vec![blake3::hash(token.as_bytes())])
+/// **Not judged here.** `forma-server` is the single verifier (plan section
+/// 109.2) — it holds the deployment token, the personal access tokens and the
+/// provider's keys — and two verifiers can disagree about who someone is. This
+/// process asks it, in `require_bearer` below.
+///
+/// This used to compare against the deployment token and refuse anything else,
+/// which was right when that was the only credential there was. It silently made
+/// OAuth impossible: an agent's token never matched, so it was refused here and
+/// never reached the half of Forma that could have verified it. Found by running
+/// the real flow against a token whose audience and client were both correct.
+fn presented(headers: &HeaderMap) -> Option<BearerCredential> {
+    let raw = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())?;
+    let (scheme, value) = raw.trim().split_once(' ')?;
+    if !scheme.eq_ignore_ascii_case("bearer") {
+        return None;
     }
 
-    #[cfg(test)]
-    fn for_test(tokens: &[&str]) -> Self {
-        Self(
-            tokens
-                .iter()
-                .map(|token| blake3::hash(token.as_bytes()))
-                .collect(),
-        )
-    }
-
-    fn credential(&self, headers: &HeaderMap) -> Option<BearerCredential> {
-        let raw = headers
-            .get(header::AUTHORIZATION)
-            .and_then(|value| value.to_str().ok())?;
-        let (scheme, presented) = raw.trim().split_once(' ')?;
-        if !scheme.eq_ignore_ascii_case("bearer") {
-            return None;
-        }
-
-        let presented = presented.trim();
-        self.0
-            .iter()
-            .any(|expected| *expected == blake3::hash(presented.as_bytes()))
-            .then(|| BearerCredential::new(presented))
-    }
+    let value = value.trim();
+    (!value.is_empty()).then(|| BearerCredential::new(value))
 }
 
 /// Everything an OAuth-capable client may learn before it has a credential.
@@ -128,19 +114,24 @@ impl ProtectedResource {
 
 #[derive(Clone)]
 struct HttpAuth {
-    guard: Guard,
     protected_resource: Option<ProtectedResource>,
+    /// Where to ask whether a credential is good.
+    ///
+    /// `forma-server` is the single verifier and this process relays the
+    /// question, so there is one answer to "who is this" rather than two that
+    /// can drift apart.
+    server: std::sync::Arc<ServerClient>,
 }
 
 impl HttpAuth {
     fn from_config(
-        guard: Guard,
         public_host: Option<&str>,
         issuer: Option<&str>,
+        server: std::sync::Arc<ServerClient>,
     ) -> anyhow::Result<Self> {
         Ok(Self {
-            guard,
             protected_resource: ProtectedResource::from_config(public_host, issuer)?,
+            server,
         })
     }
 }
@@ -156,9 +147,22 @@ async fn require_bearer(
         return next.run(request).await;
     }
 
-    if let Some(credential) = auth.guard.credential(request.headers()) {
-        request.extensions_mut().insert(credential);
-        return next.run(request).await;
+    if let Some(credential) = presented(request.headers()) {
+        // Ask before serving anything.
+        //
+        // One loopback request per call, and it buys the thing that matters:
+        // `initialize` and `tools/list` are answered by rmcp inside this process
+        // and never reach the REST API. Without asking here, a caller holding any
+        // bearer at all would complete the handshake and read the whole tool
+        // surface; letting the first tool call fail would be too late.
+        //
+        // A server that cannot be reached answers no. Failing closed is the only
+        // safe direction: the alternative is serving that surface to whoever
+        // asks whenever the backend is briefly down.
+        if auth.server.accepts(credential.as_str()).await {
+            request.extensions_mut().insert(credential);
+            return next.run(request).await;
+        }
     }
 
     // Nothing about why. A caller learning whether the header was missing,
@@ -203,7 +207,6 @@ async fn protected_resource_metadata(State(auth): State<HttpAuth>) -> Response {
 
 fn router(
     base_url: String,
-    guard: Guard,
     public_host: Option<String>,
     issuer: Option<String>,
 ) -> anyhow::Result<axum::Router> {
@@ -227,7 +230,10 @@ fn router(
     }
     tracing::info!(?allowed, "accepting these Host headers");
 
-    let auth = HttpAuth::from_config(guard, public_host.as_deref(), issuer.as_deref())?;
+    // The same base URL the tool handlers use, so what is asked here and what
+    // is called there cannot drift to different servers.
+    let server = std::sync::Arc::new(ServerClient::new(base_url.clone()));
+    let auth = HttpAuth::from_config(public_host.as_deref(), issuer.as_deref(), server)?;
     let named = public_host;
     let mcp = StreamableHttpService::new(
         move || Ok(handler(base_url.clone(), named.clone())),
@@ -258,14 +264,23 @@ pub async fn serve(
     public_host: Option<String>,
     issuer: Option<String>,
 ) -> anyhow::Result<()> {
-    let Some(token) = token else {
+    // The value is not used here any more, and the requirement is not vestigial.
+    //
+    // This process no longer judges credentials — `forma-server` does. But in
+    // local auth mode `forma-server` only requires one *because* this variable
+    // is set; unset, it accepts everything, and this process would faithfully
+    // relay "yes" for any bearer at all. So refusing to start without it is how
+    // an open MCP port in front of an open server is prevented, one layer away
+    // from where the check now lives.
+    if token.is_none() {
         anyhow::bail!(
             "--transport http needs FORMA_REMOTE_TOKEN. An HTTP port is reachable by anything \
-             that can route to it, unlike stdio, so there is no unauthenticated mode here."
+             that can route to it, unlike stdio, so there is no unauthenticated mode here — and \
+             without it forma-server would accept every caller this process forwards."
         );
-    };
+    }
 
-    let app = router(base_url, Guard::new(&token), public_host, issuer)?;
+    let app = router(base_url, public_host, issuer)?;
 
     let listener = tokio::net::TcpListener::bind(listen)
         .await
@@ -407,10 +422,8 @@ mod tests {
             .route("/api/v1/status", get(record_credential))
             .with_state(seen_tx);
         let (upstream_url, upstream_task) = start(upstream).await;
-
-        let guard = Guard::for_test(&["credential-a", "credential-b"]);
         let (mcp_url, mcp_task) =
-            start(router(upstream_url, guard, None, None).expect("HTTP router")).await;
+            start(router(upstream_url, None, None).expect("HTTP router")).await;
         let http = reqwest::Client::new();
 
         let (session_a, session_b) = tokio::join!(

@@ -229,3 +229,26 @@ impl ServerClient {
         Self::read(response).await
     }
 }
+
+impl ServerClient {
+    /// Whether `forma-server` accepts this credential.
+    ///
+    /// The single verifier answers, and this process only relays the question
+    /// (plan section 109.2). `/api/v1/status` is used because it is behind the
+    /// credential and cheap; what is read is the status code, not the body.
+    ///
+    /// A server that cannot be reached answers "no". Failing closed is the only
+    /// safe direction here: the alternative is serving the tool surface to
+    /// whoever asks whenever the backend is briefly down.
+    pub async fn accepts(&self, credential: &str) -> bool {
+        self.http
+            .get(format!("{}/api/v1/status", self.base_url))
+            .bearer_auth(credential)
+            .header("x-forma-entry", "mcp")
+            .timeout(std::time::Duration::from_secs(10))
+            .send()
+            .await
+            .map(|response| response.status().is_success())
+            .unwrap_or(false)
+    }
+}
