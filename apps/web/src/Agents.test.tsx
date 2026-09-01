@@ -85,7 +85,7 @@ describe("agent credentials", () => {
   it("shows a new token once and can revoke its safe list entry", async () => {
     renderAgents();
 
-    const oauth = screen.getByRole("heading", { name: "OAuth connections" });
+    const oauth = screen.getByRole("heading", { name: "Use Forma with your favourite AI" });
     const pats = screen.getByRole("heading", { name: "Personal access tokens" });
     expect(oauth.compareDocumentPosition(pats) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 

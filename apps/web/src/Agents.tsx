@@ -1,5 +1,7 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
+import { getIdentity } from "./api";
+import { listGrants, revokeGrant, supabase, type Grant } from "./identity";
 import { useApiKeys, useCreateApiKey, useRevokeApiKey } from "./queries";
 
 export function Agents() {
@@ -8,6 +10,7 @@ export function Agents() {
   const revoke = useRevokeApiKey();
   const [name, setName] = useState("");
   const mcpUrl = `${window.location.origin}/mcp`;
+  const grants = useGrants();
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -34,15 +37,69 @@ export function Agents() {
       </header>
 
       <section className="mb-10 rounded-2xl border border-edge bg-surface p-5">
-        <h2 className="text-lg font-medium">OAuth connections</h2>
+        <h2 className="text-lg font-medium">Use Forma with your favourite AI</h2>
         <p className="mt-2 text-sm leading-6 text-muted">
-          Provider authorization and connected-application management will appear
-          here when hosted identity is configured.
+          Most hosts need nothing but this URL. They open Forma&apos;s sign-in, you approve the
+          connection once, and the host handles the credential itself.
         </p>
-        <div className="mt-4 rounded-lg bg-surface-2 px-3 py-2 font-mono text-xs text-paper">
-          {mcpUrl}
-        </div>
+        <CopyableUrl url={mcpUrl} />
+
+        <dl className="mt-5 space-y-4 text-sm">
+          <Host name="Claude">
+            Add a custom connector and paste the URL. Claude completes the authorization in your
+            browser. <strong className="text-paper">Do not paste a token</strong> — it does not
+            need one.
+          </Host>
+          <Host name="ChatGPT and Codex">
+            Connect through the provider&apos;s own MCP app flow, with the same URL. These hosts
+            accept OAuth or nothing at all, so a personal access token will not work there.
+          </Host>
+          <Host name="Codex CLI · Claude Code · Gemini CLI">
+            Command-line hosts cannot open a browser for you. Create a personal access token
+            below and give it to them as a bearer credential.
+          </Host>
+        </dl>
       </section>
+
+      {grants.available && (
+        <section className="mb-10 rounded-2xl border border-edge bg-surface p-5">
+          <h2 className="text-lg font-medium">Connected applications</h2>
+          <p className="mt-2 text-sm leading-6 text-muted">
+            Applications you have authorized. Disconnecting one ends its access immediately, and
+            leaves your other connections and access tokens working.
+          </p>
+
+          <div className="mt-5 space-y-2">
+            {grants.error && <p className="text-sm text-danger">{grants.error}</p>}
+            {grants.list?.length === 0 && (
+              <p className="text-sm text-muted">No applications connected yet.</p>
+            )}
+            {grants.list?.map((grant) => (
+              <div
+                key={grant.client.id}
+                className="flex items-center justify-between gap-4 rounded-xl border border-edge
+                           bg-surface-2 px-4 py-3"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm text-paper">{grant.client.name}</p>
+                  <p className="mt-1 font-mono text-[11px] text-faint">
+                    connected {grant.granted_at.slice(0, 10)}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={grants.pending === grant.client.id}
+                  onClick={() => void grants.disconnect(grant.client.id)}
+                  className="rounded-lg border border-edge px-3 py-1.5 text-xs text-muted
+                             hover:border-danger/50 hover:text-danger disabled:opacity-45"
+                >
+                  Disconnect
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="rounded-2xl border border-edge bg-surface p-5">
         <h2 className="text-lg font-medium">Personal access tokens</h2>
@@ -136,5 +193,98 @@ export function Agents() {
         </div>
       </section>
     </main>
+  );
+}
+
+/**
+ * The provider's grants, when there is a provider.
+ *
+ * `available` is false on a local Forma, where nothing can have been authorized
+ * because there is nobody to authorize it — and the section is not drawn at all
+ * rather than drawn empty, which would look like a connection that failed.
+ */
+function useGrants() {
+  const [list, setList] = useState<Grant[] | null>(null);
+  const [available, setAvailable] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState<string | null>(null);
+
+  const load = () => {
+    listGrants()
+      .then(setList)
+      .catch((cause: unknown) =>
+        setError(cause instanceof Error ? cause.message : "connections could not be read"),
+      );
+  };
+
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      // The server decides whether this deployment has identity, not the
+      // bundle's configuration: a build can carry provider values while the
+      // server serving it runs in local mode.
+      const hosted = (await getIdentity().catch(() => ({ required: false }))).required;
+      if (!live || !hosted || !supabase) return;
+      setAvailable(true);
+      load();
+    })();
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  async function disconnect(clientId: string) {
+    setPending(clientId);
+    setError(null);
+    try {
+      await revokeGrant(clientId);
+      load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "the connection could not be ended");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  return { list, available, error, pending, disconnect };
+}
+
+function Host({ name, children }: { name: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <dt className="text-sm text-paper">{name}</dt>
+      <dd className="mt-1 text-sm leading-6 text-muted">{children}</dd>
+    </div>
+  );
+}
+
+/**
+ * The URL, and a way to take it that is not "select carefully and hope".
+ *
+ * Clipboard access can be refused or absent, so the failure is shown rather
+ * than swallowed — a copy button that silently does nothing is worse than no
+ * button, because the person believes they have the URL.
+ */
+function CopyableUrl({ url }: { url: string }) {
+  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+
+  return (
+    <div className="mt-4 flex items-center gap-2">
+      <code className="min-w-0 flex-1 overflow-x-auto rounded-lg bg-surface-2 px-3 py-2 font-mono text-xs text-paper">
+        {url}
+      </code>
+      <button
+        type="button"
+        onClick={() => {
+          navigator.clipboard
+            ?.writeText(url)
+            .then(() => setState("copied"))
+            .catch(() => setState("failed"));
+        }}
+        className="shrink-0 rounded-lg border border-edge px-3 py-2 text-xs text-muted hover:border-edge-strong"
+      >
+        {state === "copied" ? "Copied" : state === "failed" ? "Copy failed" : "Copy"}
+      </button>
+    </div>
   );
 }

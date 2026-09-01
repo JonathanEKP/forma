@@ -119,3 +119,35 @@ export async function decide(
   if (!data) throw new Error("the provider returned no redirect");
   return data.redirect_url;
 }
+
+export type Grant = {
+  client: { id: string; name: string; uri: string; logo_uri: string };
+  scopes: string[];
+  granted_at: string;
+};
+
+/**
+ * The applications this person has authorized.
+ *
+ * Read from the provider, which owns them. Forma keeps no second grant
+ * database: two records of who is connected is two records that can disagree,
+ * and the one that would be wrong is ours.
+ */
+export async function listGrants(): Promise<Grant[]> {
+  const { data, error } = await client().auth.oauth.listGrants();
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
+/**
+ * Disconnects an application, immediately.
+ *
+ * The provider marks the consent revoked, deletes that client's active sessions
+ * and invalidates its refresh tokens — so this is not a request that takes
+ * effect eventually. Nothing else is touched: other grants, personal access
+ * tokens and this browser's own session all keep working.
+ */
+export async function revokeGrant(clientId: string): Promise<void> {
+  const { error } = await client().auth.oauth.revokeGrant({ clientId });
+  if (error) throw new Error(error.message);
+}
