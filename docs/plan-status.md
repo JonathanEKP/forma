@@ -29,7 +29,7 @@ passes" is not enough — Phase 6's acceptance passed with two panels missing.
 | 9 — Agent skill | 15 | Complete. |
 | 10 — Hardening | 9 | Complete. |
 | 11 — Remote deploy | 9 | Complete. Deployed and accepted: `smoke-remote.py` reports 15/15 against `https://forma.hintly.online`. See item 9 below and [deploy/status.md](deploy/status.md). |
-| 11.5 — Hosted identity | — | Slice 1 complete: account-scoped persistence and routes, admission/recovery CLI, local auth context, and per-request MCP credentials. Slice 2 is not started. |
+| 11.5 — Hosted identity | — | Built and deployed. Account boundary, hosted sign-in, invites and the legacy claim, OAuth for agents, PATs, and the Agents page. Verified against the real provider on the live domain; `scripts/oauth-flow.py` reports 8/8. See [deploy/status.md](deploy/status.md) for the rows that are still weaker than they look. |
 | 12 — Supabase adapter | 5 | Not started. The plan marks it optional and only after 11. |
 
 ## Open, with the section that asks for it
