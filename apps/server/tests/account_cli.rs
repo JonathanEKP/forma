@@ -180,3 +180,59 @@ async fn command_failures_are_nonzero_and_actionable() {
         assert!(error.contains(expected), "{args:?}: {error}");
     }
 }
+
+/// Minting a token on the machine (plan §112.1), which is what a smoke test or
+/// an automation holds once the deployment token stops being a credential.
+#[tokio::test]
+async fn api_key_prints_the_token_once_and_stores_only_its_hash() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let out = run(dir.path(), &["api-key", "Smoke test"]).await;
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // stdout carries the value alone, so a shell can capture it without the
+    // surrounding words; the explanation goes to stderr.
+    let token = String::from_utf8(out.stdout)
+        .expect("utf-8")
+        .trim()
+        .to_string();
+    assert!(token.starts_with("forma_pat_"), "got {token:?}");
+    assert!(token.len() > 40);
+
+    let (_, pool) = accounts(dir.path()).await;
+    let keys = persistence::SqliteApiKeyRepository::new(pool.clone());
+
+    // It authenticates, and what was stored is not the token.
+    let found = persistence::ApiKeyRepository::authenticate(&keys, &token)
+        .await
+        .expect("authenticate")
+        .expect("the key it just minted");
+    assert_eq!(found.name, "Smoke test");
+    assert_eq!(found.account_id.to_string(), BOOTSTRAP_ACCOUNT);
+    assert!(!found.is_revoked());
+
+    let stored: String = sqlx::query_scalar("SELECT token_hash FROM api_keys WHERE id = ?")
+        .bind(found.id.to_string())
+        .fetch_one(&pool)
+        .await
+        .expect("the row");
+    assert!(
+        !stored.contains(&token),
+        "the token itself must not be stored"
+    );
+}
+
+#[tokio::test]
+async fn api_key_needs_a_name_worth_reading_later() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    for args in [vec!["api-key"], vec!["api-key", "   "]] {
+        let out = run(dir.path(), &args).await;
+        assert!(
+            !out.status.success(),
+            "a nameless key is one nobody can decide to revoke"
+        );
+    }
+}

@@ -246,6 +246,15 @@ made, and it failed as "the identity provider could not be reached" — a messag
 that reads like somebody else's outage. A mocked key source would never have
 found it.
 
+**The deployment token is retired on claim**, as §113.1 says. It opens an
+unclaimed deployment and stops the moment somebody walks through: it belongs to
+nobody, records no actor, reaches an account without a membership, and cannot be
+revoked without rotating every other holder. Automation uses
+`forma-server api-key <name>`; recovery uses `forma-server grant-owner`, behind
+shell access rather than a header. `scripts/smoke-remote.py` now presents a
+personal access token, which is also the door a real command-line agent uses —
+it was testing a path nobody walks any more.
+
 ## What is still open
 
 **[runbook.md](runbook.md)** covers all of it: redeploying (idempotent, one

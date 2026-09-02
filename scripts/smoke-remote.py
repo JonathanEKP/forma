@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 """External acceptance for the remote deploy, run from off the machine.
 
-    FORMA_REMOTE_TOKEN=... ./scripts/smoke-remote.py https://forma.hintly.online
+    FORMA_SMOKE_TOKEN=forma_pat_... ./scripts/smoke-remote.py https://forma.hintly.online
 
-Fetch the token without printing it:
+Mint one on the machine, printed once:
 
-    export FORMA_REMOTE_TOKEN=$(ssh -i ~/.ssh/id_rsa2 ubuntu@HOST \\
-        "sudo sed -n 's/^FORMA_REMOTE_TOKEN=//p' /etc/forma/forma.env")
+    export FORMA_SMOKE_TOKEN=$(ssh -i ~/.ssh/id_rsa2 ubuntu@HOST \\
+        "sudo -u forma /opt/forma/forma-server api-key 'smoke test'")
+
+A personal access token, not the deployment token. Plan section 113.1 retires
+that one as a credential once the workspace is claimed, and a smoke test holding
+something no real client uses any more is a smoke test of a path nobody walks.
+A PAT is what a command-line agent presents, so this exercises the same door.
 
 Plan section 77's acceptance for phase 11 is "an authorized remote MCP host can
 create/render a piece", so that is what this does -- over the real domain, over
@@ -24,7 +29,7 @@ import urllib.error
 import urllib.request
 
 BASE = (sys.argv[1] if len(sys.argv) > 1 else "").rstrip("/")
-TOKEN = os.environ.get("FORMA_REMOTE_TOKEN", "")
+TOKEN = os.environ.get("FORMA_SMOKE_TOKEN", "")
 
 if not BASE or not TOKEN:
     print(__doc__.strip().splitlines()[2].strip(), file=sys.stderr)

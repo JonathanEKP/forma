@@ -430,7 +430,9 @@ FORMA_LOG=info
 # §110-§112 and not built yet, so the server refuses to start with it.
 FORMA_AUTH_MODE=local
 
-# Remote only (plan §57). Unset locally.
+# Remote only (plan §57). Unset locally. **A migration secret, not a credential**:
+# once the workspace is claimed (§113.1) it stops being accepted, and automation
+# uses a personal access token instead — `forma-server api-key <name>`.
 FORMA_REMOTE_TOKEN=
 FORMA_MCP_BIND=127.0.0.1:4766
 FORMA_SERVER_URL=http://127.0.0.1:4765

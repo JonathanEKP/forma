@@ -120,6 +120,35 @@ pub async fn require_bearer(
         .zip(credential.as_deref())
         .is_some_and(|(expected, value)| expected.accepts(value));
 
+    // Once the workspace has been claimed, the deployment token stops being a
+    // credential (plan section 113.1). It becomes a migration secret: the thing
+    // that proved you run the machine, spent once to hand the workspace to a
+    // person.
+    //
+    // Keeping it would keep the weakest link the whole phase set out to retire —
+    // a shared secret that belongs to nobody, records no actor, cannot be
+    // revoked without rotating every other holder, and reaches an account
+    // without passing through a membership. Personal access tokens replace it
+    // for automation, and `forma-server grant-owner` replaces it for recovery,
+    // behind shell access rather than a header.
+    //
+    // Only asked when the token is what was presented, so nothing else pays for
+    // the read.
+    let remote_matches = if remote_matches {
+        match state.as_ref() {
+            Some(state) => match state.accounts.bootstrap().await {
+                Ok(account) => account.is_claimable(),
+                // Unreadable is not a reason to widen. Everything else is
+                // refused when the database is unreachable; this is not the
+                // exception.
+                Err(_) => false,
+            },
+            None => false,
+        }
+    } else {
+        false
+    };
+
     let auth = if remote_matches {
         state
             .as_ref()

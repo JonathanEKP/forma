@@ -6,6 +6,7 @@ use actix_web::{dev::fn_service, http::header, middleware::DefaultHeaders, web, 
 use anyhow::Context;
 use design_core::{AccountRole, AuthUserId};
 use forma_server::{auth, backup, routes, telemetry, AppState, Config};
+use persistence::ApiKeyRepository;
 use persistence::{AccountRepository, DesignRepository};
 use renderer::{FontRegistry, RenderCache};
 use tracing_subscriber::EnvFilter;
@@ -67,6 +68,45 @@ async fn main() -> anyhow::Result<()> {
 
             println!("invite open for {}", invite.email);
             println!("created {}", invite.created_at);
+            return Ok(());
+        }
+        Some("api-key") => {
+            let usage = "forma-server api-key <name>";
+            let Some(name) = args.next().filter(|value| !value.trim().is_empty()) else {
+                anyhow::bail!("usage: {usage}");
+            };
+            reject_extra(&mut args, usage)?;
+
+            let pool = persistence::connect(&config.database_url, &config.data_dir)
+                .await
+                .context("could not open the Forma database to mint an access token")?;
+            let accounts = persistence::SqliteAccountRepository::new(pool.clone());
+            let keys = persistence::SqliteApiKeyRepository::new(pool.clone());
+
+            // The bootstrap account, because that is the one a machine-local
+            // command can name without asking who is running it. A key for
+            // somebody else's account is theirs to create, from the browser.
+            let account = accounts
+                .bootstrap()
+                .await
+                .context("could not read the account to mint a token for")?;
+
+            let created = keys
+                .create(account.id, None, name.trim())
+                .await
+                .with_context(|| format!("could not mint an access token named {name:?}"))?;
+
+            persistence::checkpoint_and_close(&pool)
+                .await
+                .context("the token was written, but the database could not close cleanly")?;
+
+            // Once, and to stdout alone, so a shell can capture it without it
+            // reaching a log. Forma keeps only the hash.
+            println!("{}", created.token);
+            eprintln!(
+                "minted {:?} for account {}. This is the only time the value is shown.",
+                created.key.name, created.key.account_id
+            );
             return Ok(());
         }
         Some("grant-owner") => {
@@ -146,6 +186,9 @@ async fn main() -> anyhow::Result<()> {
             );
             println!(
                 "forma-server invites                              list invites, showing which are claimed"
+            );
+            println!(
+                "forma-server api-key <name>                       mint a personal access token, printed once"
             );
             return Ok(());
         }

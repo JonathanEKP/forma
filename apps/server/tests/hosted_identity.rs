@@ -648,3 +648,98 @@ async fn a_browser_session_is_refused_at_the_mcp_door() {
         "forging the marker must only ever demand more, never less"
     );
 }
+
+/// Plan §113.1: the deployment token is a migration secret, not a credential.
+///
+/// It opens the door until somebody walks through it, and then it does not.
+/// Keeping it would keep the one credential that belongs to nobody, records no
+/// actor, and cannot be revoked without rotating every other holder.
+#[actix_web::test]
+async fn the_deployment_token_stops_working_once_the_workspace_is_claimed() {
+    let (state, _dir) = hosted().await;
+    let accounts = SqliteAccountRepository::new(state.pool.clone());
+
+    let app = test::init_service(
+        App::new()
+            .wrap(actix_web::middleware::from_fn(
+                forma_server::auth::require_bearer,
+            ))
+            .app_data(web::Data::new(state))
+            .app_data(web::Data::new(forma_server::auth::RemoteToken::new(
+                "the-deployment-token",
+            )))
+            .configure(routes::configure),
+    )
+    .await;
+
+    let ask = || {
+        TestRequest::get()
+            .uri("/api/v1/projects")
+            .insert_header(bearer("the-deployment-token"))
+            .to_request()
+    };
+
+    // Before: it is how an unclaimed deployment is reached at all.
+    assert_eq!(
+        test::call_service(&app, ask()).await.status(),
+        StatusCode::OK
+    );
+
+    accounts
+        .claim_bootstrap(AuthUserId::new(), "owner@example.com")
+        .await
+        .expect("claim")
+        .expect("the first claim succeeds");
+
+    // After: the same token, refused.
+    assert_eq!(
+        test::call_service(&app, ask()).await.status(),
+        StatusCode::UNAUTHORIZED,
+        "a claimed workspace must not still answer to the migration secret"
+    );
+}
+
+/// And what replaces it keeps working, because otherwise retiring it would just
+/// be locking the door with everyone outside.
+#[actix_web::test]
+async fn a_personal_access_token_outlives_the_claim() {
+    use persistence::{ApiKeyRepository, SqliteApiKeyRepository};
+
+    let (state, _dir) = hosted().await;
+    let accounts = SqliteAccountRepository::new(state.pool.clone());
+    let keys = SqliteApiKeyRepository::new(state.pool.clone());
+
+    let account = accounts.bootstrap().await.unwrap().id;
+    let minted = keys
+        .create(account, None, "Smoke test")
+        .await
+        .expect("mint");
+
+    accounts
+        .claim_bootstrap(AuthUserId::new(), "owner@example.com")
+        .await
+        .expect("claim");
+
+    let app = test::init_service(
+        App::new()
+            .wrap(actix_web::middleware::from_fn(
+                forma_server::auth::require_bearer,
+            ))
+            .app_data(web::Data::new(state))
+            .app_data(web::Data::new(forma_server::auth::RemoteToken::new(
+                "the-deployment-token",
+            )))
+            .configure(routes::configure),
+    )
+    .await;
+
+    let response = test::call_service(
+        &app,
+        TestRequest::get()
+            .uri("/api/v1/projects")
+            .insert_header(bearer(&minted.token))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+}

@@ -34,4 +34,5 @@ ssh "${SSH_ARGS[@]}" -t "$HOST" "sudo bash $STAGE/install.sh $STAGE"
 
 say "done. Caddy issues the certificate on the first request to the name."
 say "Then, from here:"
-say "  FORMA_REMOTE_TOKEN=... ./scripts/smoke-remote.py https://<domain>"
+say "  FORMA_SMOKE_TOKEN=\$(ssh <host> \"sudo -u forma /opt/forma/forma-server api-key smoke\") \\"
+say "    ./scripts/smoke-remote.py https://<domain>"
