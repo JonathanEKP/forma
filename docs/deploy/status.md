@@ -213,13 +213,22 @@ Supabase project rather than its documentation:
 | Client registration, PKCE authorization, consent, code exchange | verified here ✅ |
 | The audience names this resource **and** the client holding the token | verified here ✅ |
 | An agent token opens `/mcp`, and so does a refreshed one | verified here ✅ |
-| Revoking a connection, and failing to reconnect without approval | **not run** — the two remaining manual steps |
+| Disconnecting from the Agents page clears the consent | verified here ✅ — the same client is asked again |
+| A revoked refresh token stops refreshing | **not run** — see below |
 | Claude connector end to end | **not run** — §2.2 keeps it manual |
 
 `scripts/oauth-flow.py` runs those rows: **8 passed, 0 failed** against
 `https://forma.hintly.online`, in two halves either side of a person approving
 in a browser. It follows the URL the deployment advertises rather than composing
 one, so it cannot be exercised without the proxy in front.
+
+**One row is still weaker than it looks.** Revocation was checked by its
+observable consequence — re-authorizing the same client asks for consent again,
+where before it would have been auto-approved — and not by the mechanism, which
+is that the revoked refresh token stops working. The run that would have proved
+that did not keep its refresh token; the script does now, so the next revocation
+can be checked directly. Re-running the first half proves nothing here, because
+it registers a *new* client: `--again` reuses the one that was disconnected.
 
 Three bugs came out of running it, and none of them could have been found by
 reading it or by any test in the suite. `forma-mcp` was a second verifier and

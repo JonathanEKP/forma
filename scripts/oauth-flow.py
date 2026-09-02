@@ -54,6 +54,13 @@ STATE_FILE = os.environ.get(
 )
 RESUME = sys.argv[2] if len(sys.argv) > 2 else ""
 
+# Re-authorize the client already in the saved state instead of registering a
+# new one. That is what makes revocation checkable: a fresh registration would
+# be a different client and would prove nothing about the one just disconnected.
+REAUTHORIZE = RESUME == "--again"
+if REAUTHORIZE:
+    RESUME = ""
+
 if not BASE:
     print(__doc__.strip().splitlines()[2].strip(), file=sys.stderr)
     print(
@@ -234,6 +241,12 @@ def exchange(redirected):
         check("the token opens /mcp", 200, status)
 
     if refresh:
+        # Kept so revocation is checkable without another trip through consent:
+        # a revoked grant must stop refreshing, and that cannot be observed
+        # without the token it revoked.
+        saved["refresh_token"] = refresh
+        save(saved)
+
         status, _, text = fetch(
             saved["token_endpoint"],
             method="POST",
@@ -329,7 +342,14 @@ registration = server.get("registration_endpoint")
 redirect_uri = "http://127.0.0.1:9876/callback"
 client_id = None
 
-if registration:
+if REAUTHORIZE:
+    # The client that was just disconnected, not a new one.
+    previous = load() or {}
+    client_id = previous.get("client_id")
+    redirect_uri = previous.get("redirect_uri", redirect_uri)
+    check("the previous client is remembered", True, bool(client_id))
+    print(f"          reusing: {client_id}")
+elif registration:
     status, _, text = fetch(
         registration,
         method="POST",
