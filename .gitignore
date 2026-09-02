@@ -36,3 +36,7 @@ apps/*/node_modules/
 # --- end-to-end ---
 e2e/test-results/
 e2e/playwright-report/
+
+# The half-finished OAuth flow of scripts/oauth-flow.py: a PKCE verifier and
+# the state it is paired with, both single-use and neither ours to publish.
+/.oauth-flow.json

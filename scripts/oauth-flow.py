@@ -43,8 +43,14 @@ BASE = (sys.argv[1] if len(sys.argv) > 1 else "").rstrip("/")
 # step and is useless afterwards if the process that made it is gone -- so the
 # authorization URL dies with it, and the only symptom is a code that cannot be
 # exchanged.
-STATE_FILE = os.path.join(
-    os.environ.get("TMPDIR", "/tmp"), "forma-oauth-flow.json"
+# Beside the repository rather than in a temporary directory. The gap between
+# the two halves is however long a person takes in a browser, and /tmp is swept
+# on a schedule nobody here controls -- losing the verifier there costs another
+# round trip through a consent screen to find out. Gitignored; override with
+# FORMA_OAUTH_STATE.
+STATE_FILE = os.environ.get(
+    "FORMA_OAUTH_STATE",
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".oauth-flow.json"),
 )
 RESUME = sys.argv[2] if len(sys.argv) > 2 else ""
 
@@ -153,6 +159,8 @@ def as_json(text, default=None):
 def save(state):
     with open(STATE_FILE, "w", encoding="utf-8") as handle:
         json.dump(state, handle)
+    os.chmod(STATE_FILE, 0o600)
+    print(f"          saved to {STATE_FILE}")
 
 
 def load():

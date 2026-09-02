@@ -210,12 +210,24 @@ Supabase project rather than its documentation:
 | `/mcp` answers 401 with `WWW-Authenticate: … resource_metadata=…` | verified here ✅ |
 | Protected Resource Metadata names the resource and the real issuer | verified here ✅ |
 | The authorization server advertises PKCE S256 and a registration endpoint | verified here ✅ |
-| Client registration, consent, code exchange, refresh, revocation | **not run** — needs the deployment and a person |
+| Client registration, PKCE authorization, consent, code exchange | verified here ✅ |
+| The audience names this resource **and** the client holding the token | verified here ✅ |
+| An agent token opens `/mcp`, and so does a refreshed one | verified here ✅ |
+| Revoking a connection, and failing to reconnect without approval | **not run** — the two remaining manual steps |
 | Claude connector end to end | **not run** — §2.2 keeps it manual |
 
-`scripts/oauth-flow.py` is what runs the remaining rows. It follows the URL the
-deployment advertises rather than composing one, so it cannot be exercised
-without the proxy in front; its first two checks pass locally and the rest wait.
+`scripts/oauth-flow.py` runs those rows: **8 passed, 0 failed** against
+`https://forma.hintly.online`, in two halves either side of a person approving
+in a browser. It follows the URL the deployment advertises rather than composing
+one, so it cannot be exercised without the proxy in front.
+
+Three bugs came out of running it, and none of them could have been found by
+reading it or by any test in the suite. `forma-mcp` was a second verifier and
+refused every agent token before `forma-server` could see one. It then answered
+`401` to an identity that had simply never claimed a workspace, which sends a
+client round a loop that cannot end. And `reqwest` carried no TLS backend at
+all, so the first HTTPS request Forma ever made failed as though somebody else
+were down.
 
 **One bug came out of running it rather than reading it.** `reqwest` was
 configured with `default-features = false` and no TLS backend, which had never
