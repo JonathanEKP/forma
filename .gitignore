@@ -40,3 +40,10 @@ e2e/playwright-report/
 # The half-finished OAuth flow of scripts/oauth-flow.py: a PKCE verifier and
 # the state it is paired with, both single-use and neither ours to publish.
 /.oauth-flow.json
+
+# Cross-compiled output for the deploy, rebuilt by scripts/build-aarch64.sh.
+# Tracked by mistake once: it is ~28 MB of binaries that churn on every deploy,
+# so every deploy dirtied the tree and any `git add -A` swept a new copy in.
+# The blobs already in history stay there — removing those is a rewrite, and
+# that is the repository owner's call.
+/dist/
