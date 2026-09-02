@@ -337,7 +337,13 @@ fn refusal() -> actix_web::HttpResponse {
     ApiError::unauthorized(
         "UNAUTHORIZED",
         "this server requires a valid bearer credential",
-        "Send a valid deployment token or unrevoked Forma personal access token.",
+        // Deliberately does not name the deployment token. On a claimed
+        // workspace that credential is spent for good (§113.1), and pointing
+        // somebody at it would send them to look for a value that cannot work —
+        // the most expensive kind of wrong hint, because it looks like an
+        // answer.
+        "Sign in to Forma, or present an unrevoked personal access token. \
+         Create one with `forma-server api-key <name>` on the machine.",
     )
     .error_response()
 }
