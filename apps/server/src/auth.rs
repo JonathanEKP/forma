@@ -81,10 +81,7 @@ pub const MCP_ENTRY_HEADER: &str = "x-forma-entry";
 /// handlers work from the `VerifiedIdentity` rather than an `AuthContext` —
 /// there is no account yet for a context to name.
 fn is_onboarding(path: &str) -> bool {
-    matches!(
-        path,
-        "/api/v1/onboarding" | "/api/v1/accounts" | "/api/v1/bootstrap/claim"
-    )
+    matches!(path, "/api/v1/onboarding" | "/api/v1/accounts")
 }
 
 /// Resolves a deployment token, a PAT or a provider session into the request's
@@ -137,7 +134,7 @@ pub async fn require_bearer(
     let remote_matches = if remote_matches {
         match state.as_ref() {
             Some(state) => match state.accounts.bootstrap().await {
-                Ok(account) => account.is_claimable(),
+                Ok(account) => account.is_unowned(),
                 // Unreadable is not a reason to widen. Everything else is
                 // refused when the database is unreachable; this is not the
                 // exception.

@@ -7,7 +7,13 @@ export type Account = { id: AccountId, name: string,
  */
 bootstrap: boolean, 
 /**
- * When a signed-in user claimed it. `None` means unclaimed, which is what
- * stops the legacy workspace falling to whoever signs up first.
+ * When this account first got an owner. `None` means nobody does yet.
+ *
+ * Set by the first membership rather than by a ritual: an account with a
+ * member has an owner, and the relation is the ownership. There used to be
+ * a claim endpoint that asked a person to paste the deployment's own token
+ * into a browser, because accounts did not exist when the deployed
+ * database did; now they do, and the account a person creates *is* their
+ * workspace.
  */
 claimed_at?: string | null, created_at: string, updated_at: string, };

@@ -10,7 +10,7 @@
 
 import { useEffect, useState } from "react";
 
-import { ApiError, claimWorkspace, createAccount, getOnboarding, type Onboarding } from "./api";
+import { ApiError, createAccount, getOnboarding, type Onboarding } from "./api";
 import { sendMagicLink, signOut } from "./identity";
 
 export function SignIn({ returnTo }: { returnTo?: string } = {}) {
@@ -80,14 +80,20 @@ export function SignIn({ returnTo }: { returnTo?: string } = {}) {
 /**
  * A verified identity that owns nothing yet.
  *
- * Two doors, and never a third: creating an account needs an invitation, and
- * claiming the pre-identity workspace needs the deployment's own token. Without
- * either, this says so plainly rather than looking broken — an invite-only
- * deployment refusing a stranger is working correctly.
+ * One door: an invitation. Creating an account *is* getting a workspace —
+ * an account owns projects, and that relation is the ownership, so there is
+ * nothing separate left to claim.
+ *
+ * There used to be a second door asking a person to paste the deployment's own
+ * token into a browser field. It existed because accounts did not, when the
+ * deployed database was made; they do now, so it had become a toll on the way to
+ * something the account already gives you.
+ *
+ * Without an invitation this says so plainly rather than looking broken: an
+ * invite-only deployment refusing a stranger is working correctly.
  */
 export function Onboard({ onReady }: { onReady: () => void }) {
   const [state, setState] = useState<Onboarding | null>(null);
-  const [token, setToken] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -134,32 +140,6 @@ export function Onboard({ onReady }: { onReady: () => void }) {
           This Forma is invite-only, and there is no open invitation for this address. Ask whoever
           runs it for one.
         </p>
-      )}
-
-      {state?.claimable && (
-        <div className="mt-6 border-t border-edge pt-5">
-          <p className="text-xs leading-5 text-faint">
-            Existing deployment? Claim the workspace that was here before anyone signed in. This
-            works once, and needs the server&rsquo;s own token.
-          </p>
-          <input
-            type="password"
-            value={token}
-            onChange={(event) => setToken(event.target.value)}
-            placeholder="Deployment token"
-            aria-label="Deployment token"
-            autoComplete="off"
-            className="mt-3 w-full rounded-xl border border-edge bg-surface px-3.5 py-2.5 text-sm outline-none placeholder:text-faint focus:border-edge-strong"
-          />
-          <button
-            type="button"
-            disabled={pending || token.trim().length === 0}
-            onClick={() => void attempt(() => claimWorkspace(token.trim()))}
-            className="mt-2.5 w-full rounded-xl border border-edge px-3.5 py-2.5 text-sm disabled:opacity-40"
-          >
-            Claim existing workspace
-          </button>
-        </div>
       )}
 
       {error && (

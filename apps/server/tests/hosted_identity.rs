@@ -450,82 +450,6 @@ async fn an_invitation_belongs_to_the_address_it_names() {
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
 }
 
-/// The claim needs both halves: the token proves you run the machine, the
-/// session says who to hand it to.
-#[actix_web::test]
-async fn claiming_the_workspace_needs_the_token_and_a_session() {
-    let (state, _dir) = hosted().await;
-    let app = test::init_service(
-        App::new()
-            .wrap(actix_web::middleware::from_fn(
-                forma_server::auth::require_bearer,
-            ))
-            .app_data(web::Data::new(state))
-            .app_data(web::Data::new(forma_server::auth::RemoteToken::new(
-                "the-deployment-token",
-            )))
-            .configure(routes::configure),
-    )
-    .await;
-
-    let user = AuthUserId::new();
-    let session = session_for_email(user, "owner@example.com", true);
-
-    // The session, and the wrong token.
-    let wrong = test::call_service(
-        &app,
-        TestRequest::post()
-            .uri("/api/v1/bootstrap/claim")
-            .insert_header(bearer(&session))
-            .set_json(serde_json::json!({ "token": "not-it" }))
-            .to_request(),
-    )
-    .await;
-    assert_eq!(wrong.status(), StatusCode::UNAUTHORIZED);
-
-    // The token, and no session at all.
-    let anonymous = test::call_service(
-        &app,
-        TestRequest::post()
-            .uri("/api/v1/bootstrap/claim")
-            .set_json(serde_json::json!({ "token": "the-deployment-token" }))
-            .to_request(),
-    )
-    .await;
-    assert_eq!(anonymous.status(), StatusCode::UNAUTHORIZED);
-
-    // Both.
-    let claimed = test::call_service(
-        &app,
-        TestRequest::post()
-            .uri("/api/v1/bootstrap/claim")
-            .insert_header(bearer(&session))
-            .set_json(serde_json::json!({ "token": "the-deployment-token" }))
-            .to_request(),
-    )
-    .await;
-    assert_eq!(claimed.status(), StatusCode::OK);
-
-    // And never twice, which is what stops the workspace falling to whoever
-    // signs up second.
-    let again = test::call_service(
-        &app,
-        TestRequest::post()
-            .uri("/api/v1/bootstrap/claim")
-            .insert_header(bearer(&session_for_email(
-                AuthUserId::new(),
-                "someone.else@example.com",
-                true,
-            )))
-            .set_json(serde_json::json!({ "token": "the-deployment-token" }))
-            .to_request(),
-    )
-    .await;
-    assert_eq!(again.status(), StatusCode::BAD_REQUEST);
-    let body: serde_json::Value = test::read_body_json(again).await;
-    assert_eq!(body["error"]["code"], "LEGACY_ACCOUNT_ALREADY_CLAIMED");
-}
-
 /// The editor asks this before it draws anything, and it must answer to someone
 /// holding nothing at all.
 #[actix_web::test]
@@ -572,14 +496,12 @@ async fn onboarding_says_which_doors_are_open() {
     )
     .await;
     assert_eq!(body["invited"], true);
-    assert_eq!(body["claimable"], true);
     assert_eq!(body["email"], "invited@example.com");
 
-    // Once claimed, that door closes.
-    accounts
-        .claim_bootstrap(AuthUserId::new(), "owner@example.com")
-        .await
-        .expect("claim");
+    // One door, and it is the invitation. Nothing here asks anyone to paste the
+    // deployment's own token into a browser: an account owns projects, and that
+    // relation is the ownership.
+    assert!(body.get("claimable").is_none());
 
     let body: serde_json::Value = test::call_and_read_body_json(
         &app,
@@ -593,7 +515,6 @@ async fn onboarding_says_which_doors_are_open() {
             .to_request(),
     )
     .await;
-    assert_eq!(body["claimable"], false);
     assert_eq!(body["invited"], false);
 }
 
@@ -651,11 +572,11 @@ async fn a_browser_session_is_refused_at_the_mcp_door() {
 
 /// Plan §113.1: the deployment token is a migration secret, not a credential.
 ///
-/// It opens the door until somebody walks through it, and then it does not.
+/// It opens the door until somebody owns the workspace, and then it does not.
 /// Keeping it would keep the one credential that belongs to nobody, records no
 /// actor, and cannot be revoked without rotating every other holder.
 #[actix_web::test]
-async fn the_deployment_token_stops_working_once_the_workspace_is_claimed() {
+async fn the_deployment_token_stops_working_once_somebody_owns_the_workspace() {
     let (state, _dir) = hosted().await;
     let accounts = SqliteAccountRepository::new(state.pool.clone());
 
@@ -686,23 +607,27 @@ async fn the_deployment_token_stops_working_once_the_workspace_is_claimed() {
     );
 
     accounts
-        .claim_bootstrap(AuthUserId::new(), "owner@example.com")
+        .grant(
+            accounts.bootstrap().await.unwrap().id,
+            AuthUserId::new(),
+            "owner@example.com",
+            AccountRole::Owner,
+        )
         .await
-        .expect("claim")
-        .expect("the first claim succeeds");
+        .expect("the workspace gets an owner");
 
     // After: the same token, refused.
     assert_eq!(
         test::call_service(&app, ask()).await.status(),
         StatusCode::UNAUTHORIZED,
-        "a claimed workspace must not still answer to the migration secret"
+        "an owned workspace must not still answer to the migration secret"
     );
 }
 
 /// And what replaces it keeps working, because otherwise retiring it would just
 /// be locking the door with everyone outside.
 #[actix_web::test]
-async fn a_personal_access_token_outlives_the_claim() {
+async fn a_personal_access_token_outlives_the_handover() {
     use persistence::{ApiKeyRepository, SqliteApiKeyRepository};
 
     let (state, _dir) = hosted().await;
@@ -716,9 +641,14 @@ async fn a_personal_access_token_outlives_the_claim() {
         .expect("mint");
 
     accounts
-        .claim_bootstrap(AuthUserId::new(), "owner@example.com")
+        .grant(
+            account,
+            AuthUserId::new(),
+            "owner@example.com",
+            AccountRole::Owner,
+        )
         .await
-        .expect("claim");
+        .expect("the workspace gets an owner");
 
     let app = test::init_service(
         App::new()

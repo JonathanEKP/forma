@@ -9,11 +9,6 @@ export type Onboarding = {
  */
 invited: boolean, 
 /**
- * Whether the pre-identity workspace is still unclaimed. The claim door is
- * shown only while this is true (plan 113.1).
- */
-claimable: boolean, 
-/**
  * The address the provider proved, echoed so the page can say which
  * invitation it is looking for.
  */

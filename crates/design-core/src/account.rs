@@ -30,8 +30,14 @@ pub struct Account {
     pub name: String,
     /// Whether this is the pre-identity account. Exactly one row may set it.
     pub bootstrap: bool,
-    /// When a signed-in user claimed it. `None` means unclaimed, which is what
-    /// stops the legacy workspace falling to whoever signs up first.
+    /// When this account first got an owner. `None` means nobody does yet.
+    ///
+    /// Set by the first membership rather than by a ritual: an account with a
+    /// member has an owner, and the relation is the ownership. There used to be
+    /// a claim endpoint that asked a person to paste the deployment's own token
+    /// into a browser, because accounts did not exist when the deployed
+    /// database did; now they do, and the account a person creates *is* their
+    /// workspace.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub claimed_at: Option<String>,
     pub created_at: String,
@@ -39,9 +45,13 @@ pub struct Account {
 }
 
 impl Account {
-    /// Whether this account can still be claimed with the bootstrap credential.
-    pub fn is_claimable(&self) -> bool {
-        self.bootstrap && self.claimed_at.is_none()
+    /// Whether nobody owns this account yet.
+    ///
+    /// While that is true of the bootstrap account, the deployment token still
+    /// opens the deployment — it is the only way in before anyone has an
+    /// account at all. The moment somebody does, it is spent (plan §113.1).
+    pub fn is_unowned(&self) -> bool {
+        self.claimed_at.is_none()
     }
 }
 

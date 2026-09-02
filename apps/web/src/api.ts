@@ -353,5 +353,3 @@ export const getOnboarding = () => request<Onboarding>("/onboarding");
 
 export const createAccount = () => request<unknown>("/accounts", { method: "POST" });
 
-export const claimWorkspace = (token: string) =>
-  request<unknown>("/bootstrap/claim", { method: "POST", body: { token } });

@@ -5,9 +5,9 @@
 //! an identity with no account behind it.
 
 use actix_web::{get, post, web, HttpMessage, HttpRequest, HttpResponse};
-use design_core::{AccountRole, BOOTSTRAP_ACCOUNT};
+use design_core::AccountRole;
 use persistence::AccountRepository;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use ts_rs::TS;
 
 use crate::config::AuthMode;
@@ -43,9 +43,6 @@ async fn status(state: web::Data<AppState>) -> HttpResponse {
 pub struct Onboarding {
     /// Whether an unclaimed invite exists for this address.
     pub invited: bool,
-    /// Whether the pre-identity workspace is still unclaimed. The claim door is
-    /// shown only while this is true (plan 113.1).
-    pub claimable: bool,
     /// The address the provider proved, echoed so the page can say which
     /// invitation it is looking for.
     pub email: Option<String>,
@@ -96,18 +93,7 @@ async fn onboarding(
         None => false,
     };
 
-    let claimable = state
-        .accounts
-        .bootstrap()
-        .await
-        .map_err(storage)?
-        .is_claimable();
-
-    Ok(HttpResponse::Ok().json(Onboarding {
-        invited,
-        claimable,
-        email,
-    }))
+    Ok(HttpResponse::Ok().json(Onboarding { invited, email }))
 }
 
 /// Creating an account, behind the invite gate of plan 107.3.
@@ -178,77 +164,10 @@ async fn create(
     Ok(HttpResponse::Created().json(account))
 }
 
-#[derive(Deserialize, TS)]
-#[ts(export)]
-pub struct ClaimRequest {
-    /// The deployment's own token, which stops being a credential once this
-    /// succeeds (plan 113.1).
-    pub token: String,
-}
-
-/// Claiming the workspace that existed before anyone signed in.
-///
-/// Requires **both** a verified session and the deployment token, so neither
-/// alone is enough: the token proves you run the machine, the session says who
-/// to hand it to.
-#[post("/bootstrap/claim")]
-async fn claim(
-    request: HttpRequest,
-    state: web::Data<AppState>,
-    body: web::Json<ClaimRequest>,
-    expected: Option<web::Data<crate::auth::RemoteToken>>,
-) -> Result<HttpResponse, ApiError> {
-    let identity = identity_of(&request)?;
-
-    let Some(expected) = expected else {
-        return Err(ApiError::bad_request(
-            "INVALID_BOOTSTRAP_TOKEN",
-            "this deployment has no bootstrap token configured",
-            "There is nothing to claim with; create an account with an invite instead.",
-        ));
-    };
-
-    if !expected.accepts(body.token.trim()) {
-        return Err(ApiError::unauthorized(
-            "INVALID_BOOTSTRAP_TOKEN",
-            "that is not this deployment's token",
-            "It is the value of FORMA_REMOTE_TOKEN on the machine running Forma.",
-        ));
-    }
-
-    let email = proven_email(&identity).unwrap_or_default().to_string();
-
-    match state
-        .accounts
-        .claim_bootstrap(identity.subject, &email)
-        .await
-        .map_err(storage)?
-    {
-        Some(_) => {
-            let account = state
-                .accounts
-                .get(design_core::AccountId(
-                    uuid::Uuid::parse_str(BOOTSTRAP_ACCOUNT).expect("a constant uuid"),
-                ))
-                .await
-                .map_err(storage)?;
-            Ok(HttpResponse::Ok().json(account))
-        }
-        None => Err(ApiError::bad_request(
-            "LEGACY_ACCOUNT_ALREADY_CLAIMED",
-            "this workspace has already been claimed",
-            "Create your own account with an invitation instead.",
-        )),
-    }
-}
-
 fn storage(error: persistence::PersistenceError) -> ApiError {
     ApiError::internal("STORAGE_ERROR", error.to_string())
 }
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
-    cfg.service(status)
-        .service(onboarding)
-        .service(create)
-        .service(claim);
+    cfg.service(status).service(onboarding).service(create);
 }

@@ -97,7 +97,7 @@ describe("the first screen", () => {
     await waitFor(() => expect(screen.getByText(/Sign in to Forma/i)).toBeTruthy());
   });
 
-  it("offers the two doors to a session that owns no account", async () => {
+  it("offers the invitation to a session that owns no account", async () => {
     session.current = { access_token: "a-session" };
     vi.stubGlobal(
       "fetch",
@@ -109,20 +109,24 @@ describe("the first screen", () => {
         },
         "/api/v1/onboarding": {
           status: 200,
-          body: { invited: true, claimable: true, email: "invited@example.com" },
+          body: { invited: true, email: "invited@example.com" },
         },
       }),
     );
 
     renderApp();
 
-    // Wait on the doors themselves, not on the frame around them: the frame
-    // renders before the second request that decides what goes in it, so
-    // waiting on the title is waiting on the wrong condition.
+    // Wait on the door itself, not on the frame around it: the frame renders
+    // before the second request that decides what goes in it, so waiting on the
+    // title is waiting on the wrong condition.
     await waitFor(() => expect(screen.getByText(/Create my workspace/i)).toBeTruthy());
     expect(screen.getByText(/One more step/i)).toBeTruthy();
-    expect(screen.getByText(/Claim existing workspace/i)).toBeTruthy();
     expect(screen.getByText(/invited@example.com/)).toBeTruthy();
+
+    // The workspace is the account. Nothing asks anyone to paste the
+    // deployment's own token into a browser any more.
+    expect(screen.queryByText(/Claim existing workspace/i)).toBeNull();
+    expect(screen.queryByLabelText(/Deployment token/i)).toBeNull();
   });
 
   it("says so plainly when there is no invitation, rather than looking broken", async () => {
@@ -137,7 +141,7 @@ describe("the first screen", () => {
         },
         "/api/v1/onboarding": {
           status: 200,
-          body: { invited: false, claimable: false, email: "stranger@example.com" },
+          body: { invited: false, email: "stranger@example.com" },
         },
       }),
     );
@@ -146,7 +150,5 @@ describe("the first screen", () => {
 
     await waitFor(() => expect(screen.getByText(/invite-only/i)).toBeTruthy());
     expect(screen.queryByText(/Create my workspace/i)).toBeNull();
-    // Nothing to claim, so that door is not offered either.
-    expect(screen.queryByText(/Claim existing workspace/i)).toBeNull();
   });
 });

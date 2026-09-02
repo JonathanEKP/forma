@@ -1,8 +1,5 @@
 use async_trait::async_trait;
-use design_core::{
-    Account, AccountId, AccountInvite, AccountMembership, AccountRole, AuthUserId,
-    BOOTSTRAP_ACCOUNT,
-};
+use design_core::{Account, AccountId, AccountInvite, AccountMembership, AccountRole, AuthUserId};
 use sqlx::{Row, SqlitePool};
 
 use crate::error::{PersistenceError, Result};
@@ -161,34 +158,24 @@ impl AccountRepository for SqliteAccountRepository {
         .execute(&self.pool)
         .await?;
 
-        Ok(membership)
-    }
-
-    async fn claim_bootstrap(
-        &self,
-        user: AuthUserId,
-        email: &str,
-    ) -> Result<Option<AccountMembership>> {
-        // Guarded like the optimistic UPDATE of section 27: the condition is in
-        // the statement, so two simultaneous claims cannot both see it unclaimed
-        // and both proceed.
-        let claimed = sqlx::query(
+        // An account with a member has an owner, and that is what `claimed_at`
+        // records. Stamped here rather than by a caller so the fact and the
+        // event that causes it cannot come apart: it is what retires the
+        // deployment token (plan §113.1), and a caller that forgot would leave
+        // a shared secret working forever.
+        //
+        // Guarded on NULL, so a second grant does not move the date.
+        sqlx::query(
             "UPDATE accounts SET claimed_at = ?, updated_at = ?
-             WHERE bootstrap = 1 AND claimed_at IS NULL",
+             WHERE id = ? AND claimed_at IS NULL",
         )
-        .bind(now())
-        .bind(now())
+        .bind(&membership.created_at)
+        .bind(&membership.created_at)
+        .bind(membership.account_id.to_string())
         .execute(&self.pool)
         .await?;
 
-        if claimed.rows_affected() == 0 {
-            return Ok(None);
-        }
-
-        let account = AccountId(parse_uuid(BOOTSTRAP_ACCOUNT)?);
-        self.grant(account, user, email, AccountRole::Owner)
-            .await
-            .map(Some)
+        Ok(membership)
     }
 
     async fn invite(&self, email: &str) -> Result<AccountInvite> {

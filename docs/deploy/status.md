@@ -246,9 +246,13 @@ made, and it failed as "the identity provider could not be reached" — a messag
 that reads like somebody else's outage. A mocked key source would never have
 found it.
 
-**The deployment token is retired on claim, and that is live**: presented to
+**The deployment token is retired once somebody owns the workspace, and that is
+live**: presented to
 `/api/v1/projects` on the deployed machine it answers 401, and the smoke suite
-passes 16/16 holding a personal access token instead. As §113.1 says. It opens an
+passes 16/16 holding a personal access token instead. As §113.1 says, amended: the claim endpoint is gone, and the handover is
+`forma-server grant-owner <email>` on the machine. Pasting the server's own
+secret into a browser field was designed before accounts existed; an account
+owns projects, and that relation is the ownership. It opens an
 unclaimed deployment and stops the moment somebody walks through: it belongs to
 nobody, records no actor, reaches an account without a membership, and cannot be
 revoked without rotating every other holder. Automation uses

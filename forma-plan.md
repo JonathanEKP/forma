@@ -4962,13 +4962,30 @@ not be assigned to the first person who signs up.**
 1. create one account row marked legacy
 2. assign every existing Project to it
 3. create no membership for it automatically
-4. keep FORMA_REMOTE_TOKEN as a one-time bootstrap claim credential
-5. a signed-in user claims it through POST /api/v1/bootstrap/claim,
-   which requires a valid Supabase session AND that token
-6. on success: create the owner membership, mark it claimed,
-   reject every later claim, and stop accepting FORMA_REMOTE_TOKEN
-   as general REST or MCP authentication
+4. keep FORMA_REMOTE_TOKEN as the way in while nobody owns the workspace
+5. the operator hands it to a person with
+   `forma-server grant-owner <email>`, on the machine
+6. the first membership marks the account owned, and the token stops
+   being accepted as general REST or MCP authentication
 ```
+
+**Amended while implementing.** Steps 5 and 6 first specified a
+`POST /api/v1/bootstrap/claim` that took a valid session *and* the deployment
+token, so a person pasted the server's own secret into a browser field. That was
+designed before accounts existed; once they do, it is a toll on the way to
+something the account already gives. **An account owns projects, and that
+relation is the ownership** — there is nothing separate left to claim.
+
+So the handover moved to `grant-owner`, which was already built as §113.3's
+recovery path. It is the better shape for the same job: its boundary is shell
+access on the machine rather than a secret that travels through a browser and
+into somebody's clipboard.
+
+`claimed_at` survives and means what it always meant, set by the first
+membership rather than by a ritual — and it is still what retires the token, so
+§113.1's actual guarantee is unchanged. Recording it there rather than at a call
+site is deliberate: a caller who forgot would leave a shared secret working
+forever.
 
 The old token becomes a migration secret, not the new long-term credential.
 

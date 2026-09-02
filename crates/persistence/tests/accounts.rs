@@ -69,37 +69,55 @@ fn brand_kit(project_id: design_core::ProjectId) -> BrandKit {
 }
 
 #[tokio::test]
-async fn the_migration_leaves_one_unclaimed_bootstrap_account() {
+async fn the_migration_leaves_one_bootstrap_account_that_nobody_owns() {
     let harness = Harness::start().await;
     let account = harness.accounts().bootstrap().await.expect("bootstrap");
 
     assert_eq!(account.id.to_string(), BOOTSTRAP_ACCOUNT);
     assert!(account.bootstrap);
-    assert!(account.is_claimable(), "nobody has claimed it yet");
+    assert!(account.is_unowned(), "nobody has a membership in it yet");
 }
 
+/// Ownership is the membership, not a ritual (plan §113.1, as amended).
+///
+/// The first member marks the account owned, and that is what retires the
+/// deployment token. There is no separate claim to make: an account owns
+/// projects, and the relation *is* the ownership.
 #[tokio::test]
-async fn the_bootstrap_account_is_claimable_exactly_once() {
+async fn the_first_membership_marks_the_account_owned() {
     let harness = Harness::start().await;
     let accounts = harness.accounts();
 
     let first = accounts
-        .claim_bootstrap(AuthUserId::new(), "First@Example.com ")
+        .grant(
+            accounts.bootstrap().await.unwrap().id,
+            AuthUserId::new(),
+            "First@Example.com ",
+            AccountRole::Owner,
+        )
         .await
-        .expect("the claim");
-    let first = first.expect("the first claim succeeds");
+        .expect("grant");
     assert_eq!(first.role, AccountRole::Owner);
     assert_eq!(first.email, "first@example.com", "addresses are normalized");
 
-    // The whole point of plan 113.1: a second person must not walk into the
-    // workspace behind the first.
-    let second = accounts
-        .claim_bootstrap(AuthUserId::new(), "second@example.com")
-        .await
-        .expect("the second claim");
-    assert!(second.is_none(), "a legacy account is claimed once");
+    let owned = accounts.bootstrap().await.unwrap();
+    assert!(!owned.is_unowned());
+    let stamped = owned.claimed_at.clone().expect("a date");
 
-    assert!(!accounts.bootstrap().await.unwrap().is_claimable());
+    // A second member does not move the date: the first one is what decided.
+    accounts
+        .grant(
+            owned.id,
+            AuthUserId::new(),
+            "second@example.com",
+            AccountRole::Owner,
+        )
+        .await
+        .expect("grant");
+    assert_eq!(
+        accounts.bootstrap().await.unwrap().claimed_at.as_deref(),
+        Some(stamped.as_str())
+    );
 }
 
 #[tokio::test]

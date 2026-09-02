@@ -27,6 +27,10 @@ pub trait AccountRepository: Send + Sync {
 
     /// Attaches a user to an account, or updates the email of an existing
     /// membership so an account can be rebound to a fresh subject (plan 113.3).
+    ///
+    /// The first membership marks the account owned, which is what retires the
+    /// deployment token (§113.1). Done there rather than here, because a caller
+    /// who forgot would leave a shared secret working forever.
     async fn grant(
         &self,
         account: AccountId,
@@ -34,17 +38,6 @@ pub trait AccountRepository: Send + Sync {
         email: &str,
         role: AccountRole,
     ) -> Result<AccountMembership>;
-
-    /// Claims the bootstrap account exactly once.
-    ///
-    /// Returns `None` when it has already been claimed. That is the whole
-    /// mechanism of plan 113.1: a second attempt must not succeed, and the
-    /// decision cannot live in a caller that might forget to check first.
-    async fn claim_bootstrap(
-        &self,
-        user: AuthUserId,
-        email: &str,
-    ) -> Result<Option<AccountMembership>>;
 
     async fn invite(&self, email: &str) -> Result<AccountInvite>;
     async fn list_invites(&self) -> Result<Vec<AccountInvite>>;
