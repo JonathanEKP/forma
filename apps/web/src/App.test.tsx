@@ -3,6 +3,27 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
+
+/**
+ * A Forma with no identity provider, which is what a local build is and what CI
+ * builds — `apps/web/.env` is gitignored, so `VITE_SUPABASE_*` is absent there.
+ *
+ * Declared rather than inherited. Without this the file's behaviour depends on
+ * whether the machine running it happens to have that file, which is how a test
+ * passes for one person and fails for everybody else.
+ */
+vi.mock("./identity", () => ({
+  supabase: null,
+  accessToken: () => Promise.resolve(null),
+  currentSession: () => Promise.resolve(null),
+  sendMagicLink: () => Promise.resolve(),
+  signOut: () => Promise.resolve(),
+  listGrants: () => Promise.resolve([]),
+  revokeGrant: () => Promise.resolve(),
+  authorizationDetails: () => Promise.reject(new Error("no provider")),
+  decide: () => Promise.reject(new Error("no provider")),
+}));
+
 import { ApiError, conflictDetails } from "./api";
 
 /**
@@ -101,17 +122,21 @@ describe("public entry points", () => {
   });
 
   /// The consent page used to be a placeholder with a fixed heading. It is a
-  /// real page now, so what is worth asserting is that it needs a session
-  /// before it will show anyone an authorization — with none, it asks for one
-  /// rather than starting the editor. Its own decisions are covered in
-  /// `Consent.test.tsx`.
-  it("asks an anonymous visitor to sign in before showing an authorization", async () => {
-    vi.stubGlobal("fetch", mockFetch({ "/api/v1/identity": { required: true } }));
+  /// real page now, and on a Forma with no identity provider — a local one, and
+  /// the one CI builds — an authorization cannot mean anything, so it says so
+  /// rather than offering a sign-in that could never complete.
+  ///
+  /// The provider-configured paths are covered in `Consent.test.tsx`, which
+  /// mocks one.
+  it("says an authorization means nothing where there is no provider", async () => {
+    vi.stubGlobal("fetch", mockFetch({ "/api/v1/identity": { required: false } }));
     window.history.replaceState({}, "", "/oauth/consent?authorization_id=request-1");
     renderApp();
 
     await waitFor(() =>
-      expect(screen.getByRole("heading", { name: "Sign in to Forma" })).toBeTruthy(),
+      expect(
+        screen.getByRole("heading", { name: "This authorization cannot be shown" }),
+      ).toBeTruthy(),
     );
   });
 });

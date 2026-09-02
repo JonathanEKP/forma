@@ -4,6 +4,27 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
 
+/**
+ * A Forma with no identity provider, which is what a local build is and what CI
+ * builds — `apps/web/.env` is gitignored, so `VITE_SUPABASE_*` is absent there.
+ *
+ * Declared rather than inherited. Without this the file's behaviour depends on
+ * whether the machine running it happens to have that file, which is how a test
+ * passes for one person and fails for everybody else.
+ */
+vi.mock("./identity", () => ({
+  supabase: null,
+  accessToken: () => Promise.resolve(null),
+  currentSession: () => Promise.resolve(null),
+  sendMagicLink: () => Promise.resolve(),
+  signOut: () => Promise.resolve(),
+  listGrants: () => Promise.resolve([]),
+  revokeGrant: () => Promise.resolve(),
+  authorizationDetails: () => Promise.reject(new Error("no provider")),
+  decide: () => Promise.reject(new Error("no provider")),
+}));
+
+
 const TOKEN = `forma_pat_${"a".repeat(64)}`;
 const KEY = {
   id: "11111111-1111-4111-8111-111111111111",
