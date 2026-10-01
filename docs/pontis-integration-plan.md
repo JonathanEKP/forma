@@ -424,9 +424,9 @@ into `bindings/generated/`, and `scripts/check-bindings.sh` already fails CI whe
 descriptor generated from the same Rust source that defines `DesignOperation` would make one
 definition enforceable rather than aspirational.
 
-That is Forma-internal architecture, so it is mine to recommend rather than the owner's to
-adjudicate, and it is not a Pontis requirement. It is recorded as a vetoable recommendation:
-§10(b) D5.
+That is Forma-internal architecture, so it is mine to decide rather than the owner's to
+adjudicate, and it is not a Pontis requirement. It is decided in §10(b) D5 and scheduled as part of
+step 6.
 
 ---
 
@@ -575,6 +575,35 @@ named header, verified by the same `Verifier`") fits that structure; growing the
 credential check is where the class separation starts to blur. The sidecar must also **not** set
 `x-forma-entry` on that call, since a browser session token is verified with `Accepts::Either`.
 
+**D5 — One definition across Forma's two agent surfaces, generated from one Rust source.**
+
+Pontis was asked directly and answered that two independently authored catalogs — one Rust/MCP, one
+Pontis TypeScript — are not compatible with "define once". That reading is stronger than the text
+supports. ADR-023 Decision 3 says "one canonical **Pontis** capability definition per operation it
+chooses to expose", and the same decision then permits an application to keep operating another MCP
+server, stating that Pontis "neither adapts it nor treats its catalog as authoritative". The scope
+of define-once is the Pontis catalog. How Forma keeps its own two surfaces aligned is Forma's
+problem, exactly as this entry originally said.
+
+The recommendation is adopted anyway, on the engineering argument rather than the contractual one:
+nineteen operations authored twice by hand will drift, and a drifting agent contract is worse than
+no contract because the agent follows it confidently and is wrong. That is the documented reason
+`apps/mcp/tests/skill_matches_the_code.rs` exists, and the same reasoning applies here with more
+surface area.
+
+So: one descriptor source in Rust — id, description, input schema, kind, risk, presentation
+metadata — with `forma-mcp` and the generated sidecar descriptor both deriving from it, and a
+conformance test failing CI when either drifts. `authorize`/`execute` bindings stay hand-written in
+the sidecar; they are genuinely application code. Pontis does not validate how the generation works,
+and does not need to.
+
+The disagreement is recorded rather than escalated because it changes no built artifact. If Pontis
+later holds the stronger reading as contractual, this implementation already satisfies it.
+
+*Schedule effect:* `apps/mcp/src/server.rs` authors the catalog today — name and description in each
+`#[tool(...)]` attribute, schema derived from its `Parameters<T>` struct, fourteen times. Re-pointing
+it at the registry is real work and belongs in step 6 rather than beside it.
+
 #### Still open
 
 **D3 — Whether `design.delete` becomes a capability. Not required by PV-1.**
@@ -587,14 +616,6 @@ PV-1's approval-requiring mutation is already satisfied by `design.apply_operati
 **D4 — Whether Forma grows a second role. Not required by PV-1.**
 See §5. PV-1's isolation evidence is bounded to what the app supports. If it is ever built it will
 be for Forma's own product reasons, not to satisfy a gate.
-
-**D5 — One definition across Forma's two agent surfaces. A recommendation, vetoable.**
-Pontis requires one canonical definition per operation (`docs/06`) and says nothing about how a host
-keeps its *own* surfaces synchronized — `forma-mcp` and the Pontis capabilities are both Forma's.
-I recommend generating capability descriptors from the same Rust source that defines
-`DesignOperation`, reusing the `ts-rs` plus `scripts/check-bindings.sh` machinery that already fails
-CI on drift. That is a host-side engineering preference, not a Pontis requirement and not an
-architectural blocker. Say no and I author them in TypeScript with a weaker guard.
 
 **D6 — A host-side invocation ledger. Newly identified; blocks PV-1's idempotency evidence.**
 ADR-023 Decision 2 requires the hop to carry idempotency identifiers, and
@@ -685,14 +706,21 @@ bounds what the finished thing can be claimed to do.
    result on replay and refusing a different payload under the same key.
 5. **Cancellation on the operations Boundary F can abort**, starting with `design.validate`, which
    is the cheapest to call and the most expensive to serve.
-6. **The capability descriptors and their Boundary F bindings**, with the error mapping and its
-   tests.
+6. **The descriptor registry in Rust** (D5), then the capability descriptors and their Boundary F
+   bindings, with the error mapping and its tests. Re-pointing `apps/mcp` at the registry and its
+   drift guard are part of this step, not a follow-up.
 7. **The sidecar composition** and its local run against `FakeProvider`.
 8. **`ApplicationAgentGuidance`** drafted for review, with its drift guard.
 9. **The UI capability handlers** in the editor.
 10. **The device panel and in-app chat** replacing the Agents page.
-11. **The real Codex `0.156.1` local run.**
+11. **The real Codex local run**, against whichever release the evidence matrix accepts when this
+    step is reached. `0.156.1` is the only accepted row today and the owner tracks releases ahead of
+    it, so the version is settled with Pontis rather than fixed here.
 12. **PV-1 evidence** in this repository; sanitized platform outcomes to Pontis.
 
 Steps 1 to 5 are all `forma-server` work in Rust and none of them needs the sidecar to exist, so
-they are testable before any TypeScript is written. Nothing starts until this plan is approved.
+they are testable before any TypeScript is written.
+
+The scenarios that prove each step are in [pontis-pv1-e2e.md](pontis-pv1-e2e.md). S11 — the base
+product with Pontis absent — is written first, ahead of step 1: it needs nothing from this plan and
+it guards a promise Forma is already making.
