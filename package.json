@@ -5,8 +5,8 @@
   "scripts": {
     "dev": "pnpm --filter forma-web dev",
     "build": "pnpm --filter forma-web build",
-    "lint": "pnpm --filter forma-web lint",
-    "typecheck": "pnpm --filter forma-web typecheck",
+    "lint": "pnpm --filter forma-web --filter forma-e2e lint",
+    "typecheck": "pnpm --filter forma-web --filter forma-e2e typecheck",
     "test": "pnpm --filter forma-web test",
     "e2e": "pnpm --filter forma-e2e test",
     "e2e:install": "pnpm --filter forma-e2e install-browser"

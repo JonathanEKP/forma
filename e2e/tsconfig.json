@@ -1,0 +1,28 @@
+{
+  // Playwright transpiles specs with esbuild, which strips types without
+  // checking them, so without this a type error in a spec is invisible until it
+  // throws mid-run. Nothing here is emitted; `pnpm typecheck` is its only use.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "allowJs": true,
+    "checkJs": true,
+    "types": ["node", "@playwright/test"],
+    // The same mapping apps/web uses, and for the same reason: a spec that
+    // reads the API asserts its JSON against the generated binding rather than
+    // a hand-written duplicate. Resolved relative to this file — no `baseUrl`.
+    "paths": {
+      "@forma/bindings/*": ["../bindings/generated/*"]
+    }
+  },
+  "include": ["tests", "scripts", "playwright.config.ts"]
+}

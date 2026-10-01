@@ -1,5 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 import { fileURLToPath } from "node:url";
+import type { DesignRecord } from "@forma/bindings/DesignRecord";
+import type { DesignSummary } from "@forma/bindings/DesignSummary";
+import type { Project } from "@forma/bindings/Project";
 
 /**
  * The Definition of Done of plan section 79, walked in a browser.
@@ -188,7 +191,7 @@ test("an edit made elsewhere is explained, not silently lost", async ({ page, re
   const before = await readVersion(page);
 
   // Somebody else — an agent over MCP — moves the design on underneath us.
-  const design = await (await request.get(`/api/v1/designs/${designId}`)).json();
+  const design = (await (await request.get(`/api/v1/designs/${designId}`)).json()) as DesignRecord;
   const pageId = design.document.pages[0].id;
   const elsewhere = await request.post(`/api/v1/designs/${designId}/operations`, {
     headers: { "x-forma-actor": "agent:claude" },
@@ -219,9 +222,9 @@ async function readVersion(page: Page): Promise<number> {
 }
 
 async function currentDesignId(request: import("@playwright/test").APIRequestContext) {
-  const projects = await (await request.get("/api/v1/projects")).json();
-  const designs = await (
+  const projects = (await (await request.get("/api/v1/projects")).json()) as Project[];
+  const designs = (await (
     await request.get(`/api/v1/projects/${projects[0].id}/designs`)
-  ).json();
-  return designs[0].id as string;
+  ).json()) as DesignSummary[];
+  return designs[0].id;
 }

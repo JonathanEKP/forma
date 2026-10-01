@@ -25,6 +25,11 @@ fi
 
 if [[ "$target" == "all" || "$target" == "--web" ]]; then
     run pnpm install --frozen-lockfile
+    # Both cover apps/web and e2e/: Playwright strips types without checking
+    # them, so this is the only place an e2e spec is typechecked or linted
+    # before it runs. They need no browser, so unlike the walkthrough below they
+    # are never skipped. The root scripts carry the filters, which is how CI's
+    # own `pnpm lint` and `pnpm typecheck` steps get the same coverage.
     run pnpm lint
     run pnpm typecheck
     run pnpm test
