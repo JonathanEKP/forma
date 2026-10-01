@@ -35,6 +35,9 @@ pub struct AppState {
     pub api_keys: Arc<SqliteApiKeyRepository>,
     /// The Pontis sidecar's credentials: deployment-scoped, not per account.
     pub service_credentials: Arc<SqliteServiceCredentialRepository>,
+    /// Boundary F's throttle on validate, shared by every worker so the bound
+    /// is per process rather than per thread.
+    pub pontis_validations: Arc<crate::routes::pontis::ValidationGate>,
     /// The account every request in this process resolves to.
     ///
     /// Slice one is local mode (plan 117.8): one account, no identity, and the
@@ -67,6 +70,7 @@ impl AppState {
             accounts: Arc::new(SqliteAccountRepository::new(pool.clone())),
             api_keys: Arc::new(SqliteApiKeyRepository::new(pool.clone())),
             service_credentials: Arc::new(SqliteServiceCredentialRepository::new(pool.clone())),
+            pontis_validations: Arc::default(),
             account: AccountId(
                 uuid::Uuid::parse_str(design_core::BOOTSTRAP_ACCOUNT).expect("a constant uuid"),
             ),

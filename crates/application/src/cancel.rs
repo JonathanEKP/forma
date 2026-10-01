@@ -35,6 +35,7 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll};
+use std::time::Instant;
 
 use crate::error::{ApplicationError, Result};
 
@@ -43,9 +44,16 @@ use crate::error::{ApplicationError, Result};
 /// Clones share one flag, so the transport keeps a clone to fire and hands a
 /// reference to the use case. One that is never fired costs an atomic load per
 /// checkpoint.
+///
+/// It can also carry a deadline, which counts as fired once it passes. That is
+/// the same signal read a second way, not a second mechanism, and it is read
+/// at the checkpoint rather than set by a timer on purpose: the checkpoint's
+/// yield re-queues the task straight away, so on a current-thread executor a
+/// timer is only serviced every few dozen polls — seconds of rendering late.
 #[derive(Debug, Clone, Default)]
 pub struct Cancellation {
     fired: Arc<AtomicBool>,
+    deadline: Option<Instant>,
 }
 
 impl Cancellation {
@@ -53,12 +61,28 @@ impl Cancellation {
         Self::default()
     }
 
+    /// A signal that also fires itself at `deadline`.
+    pub fn with_deadline(deadline: Instant) -> Self {
+        Self {
+            fired: Arc::default(),
+            deadline: Some(deadline),
+        }
+    }
+
     pub fn cancel(&self) {
         self.fired.store(true, Ordering::Release);
     }
 
     pub fn is_cancelled(&self) -> bool {
-        self.fired.load(Ordering::Acquire)
+        self.fired.load(Ordering::Acquire) || self.deadline_passed()
+    }
+
+    /// Whether the deadline, rather than an explicit `cancel`, is what may have
+    /// stopped the work — so a transport can answer "timed out" instead of
+    /// "abandoned".
+    pub fn deadline_passed(&self) -> bool {
+        self.deadline
+            .is_some_and(|deadline| Instant::now() >= deadline)
     }
 
     /// Fires this signal when the returned guard is dropped.
@@ -134,6 +158,18 @@ mod tests {
         }
         assert!(held_elsewhere.is_cancelled());
         assert_eq!(held_elsewhere.check().unwrap_err().code(), "CANCELLED");
+    }
+
+    #[test]
+    fn a_passed_deadline_counts_as_fired() {
+        let late = Cancellation::with_deadline(Instant::now());
+        assert!(late.deadline_passed());
+        assert_eq!(late.check().unwrap_err().code(), "CANCELLED");
+
+        let early =
+            Cancellation::with_deadline(Instant::now() + std::time::Duration::from_secs(3600));
+        assert!(!early.is_cancelled());
+        assert!(early.check().is_ok());
     }
 
     #[test]

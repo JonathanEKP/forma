@@ -121,14 +121,14 @@ impl ApiError {
         }
     }
 
-    fn hint(&self) -> &str {
+    pub(crate) fn hint(&self) -> &str {
         match self {
             Self::Application(e) => e.hint(),
             Self::Request { hint, .. } => hint,
         }
     }
 
-    fn details(&self) -> Option<serde_json::Value> {
+    pub(crate) fn details(&self) -> Option<serde_json::Value> {
         match self {
             Self::Application(e) => e.details(),
             Self::Request { .. } => None,
