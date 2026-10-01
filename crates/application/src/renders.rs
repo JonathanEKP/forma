@@ -17,6 +17,7 @@ use renderer::{
 };
 use validator::{AssetInfo, MeasuredLayer, TextContrast, ValidationContext, ValidationReport};
 
+use crate::cancel::Cancellation;
 use crate::error::{ApplicationError, Result};
 
 /// The colors `$brand.*` tokens resolve against.
@@ -190,6 +191,24 @@ pub fn render_png(
 /// shaped glyph bounds. A page that fails to render contributes no
 /// measurements rather than aborting the report: the failure has its own issue
 /// already, and an agent fixing a design wants the whole list (plan section 41).
+///
+/// # Cancellation
+///
+/// This is the first operation to honour a [`Cancellation`], and it goes first
+/// because it is safe to stop anywhere: it writes nothing — no version, no
+/// export, and no render-cache entry, since it holds no [`RenderCache`] at all —
+/// so an abandoned run loses only work. Do not hand it one to "warm the cache"
+/// while it renders every page: a page stored under a complete key by a run
+/// that then stopped would be served later as if it were the finished answer.
+///
+/// The checkpoints sit between the three costly steps of each page — loading
+/// its images, rendering it, sampling its contrast — so a fired signal waits at
+/// most for one of those. Each is a single synchronous call into usvg or resvg,
+/// which offer no way to stop part-way; splitting them further would mean
+/// checkpoints inside the renderer around steps that are already cheap, while
+/// the expensive part (parsing, decoding, rasterizing) stays one opaque call.
+/// Measured in release on a Story page holding a 25 MB image, the upload
+/// ceiling, rendering took ~0.25s and sampling ~0.35s.
 pub async fn validate(
     account: AccountId,
     record: &DesignRecord,
@@ -197,18 +216,25 @@ pub async fn validate(
     fonts: &FontRegistry,
     assets: &dyn AssetRepository,
     store: &dyn ObjectStore,
+    cancel: &Cancellation,
 ) -> Result<ValidationReport> {
     let document = &record.document;
+    cancel.checkpoint().await?;
     let asset_infos = asset_report(assets, store, account, document).await;
 
     let mut measurements: HashMap<LayerId, MeasuredLayer> = HashMap::new();
     for page in &document.pages {
+        // Outside the `let ... else` below on purpose: a page that fails to load
+        // is skipped, and a cancellation must never be skipped with it.
+        cancel.checkpoint().await?;
         let Ok(loaded) = load_page_assets(assets, store, account, document, page.id).await else {
             continue;
         };
+        cancel.checkpoint().await?;
         let Ok(rendered) = render(document, page.id, brand, fonts, &loaded) else {
             continue;
         };
+        cancel.checkpoint().await?;
 
         // What is behind each text layer, from the same render authority that
         // shaped it. A page that cannot be sampled contributes no contrast and
@@ -250,5 +276,8 @@ pub async fn validate(
     }
     context.measurements = measurements;
 
+    // A signal fired during the last page's sampling still means the caller is
+    // gone; report that rather than a result nobody asked to keep.
+    cancel.check()?;
     Ok(validator::validate(&context))
 }

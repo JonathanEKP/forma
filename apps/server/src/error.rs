@@ -174,6 +174,10 @@ fn status_for(code: &str) -> StatusCode {
         "LIMIT_EXCEEDED" => StatusCode::UNPROCESSABLE_ENTITY,
         "PAYLOAD_TOO_LARGE" => StatusCode::PAYLOAD_TOO_LARGE,
 
+        // The caller abandoned the request; nginx's 499, since no standard code
+        // says that. Usually nobody reads it, but it must not log as our 500.
+        "CANCELLED" => StatusCode::from_u16(499).expect("499 is a valid status code"),
+
         // Fonts, rasterization and storage failures are ours, not the caller's.
         _ => StatusCode::INTERNAL_SERVER_ERROR,
     }

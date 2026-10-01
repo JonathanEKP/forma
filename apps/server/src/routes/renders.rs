@@ -81,6 +81,19 @@ async fn validate(
 ) -> Result<HttpResponse, ApiError> {
     let (record, brand) = context(&request, &state, design_id(&path)?).await?;
 
+    // Fired if actix drops this handler. Today the work runs inside this future,
+    // so the drop already stops it at the next checkpoint and the guard adds
+    // nothing; it is here so that stays true when the work moves off this task.
+    //
+    // A drop is not a reliable disconnect signal. actix-http 3.13 defaults
+    // `h1_allow_half_closed` to true, so a client that closes with a FIN — a
+    // normal close, and what Caddy sends upstream when its own client goes —
+    // only marks the read half closed and the handler runs to completion; the
+    // future is dropped only on an I/O error. A caller that needs to abort, as
+    // Boundary F does, needs an explicit signal rather than a hang-up.
+    let cancel = application::Cancellation::new();
+    let _abort_on_drop = cancel.cancel_on_drop();
+
     let report = application::renders::validate(
         crate::routes::auth(&request, &state).account_id,
         &record,
@@ -88,6 +101,7 @@ async fn validate(
         &state.fonts,
         &*state.assets,
         &*state.store,
+        &cancel,
     )
     .await?;
 

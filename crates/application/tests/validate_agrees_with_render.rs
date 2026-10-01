@@ -141,10 +141,17 @@ async fn a_design_reported_valid_can_actually_be_rendered() {
     let record = record(document_using_tokens());
     let page_id = record.document.pages[0].id;
 
-    let report =
-        application::renders::validate(account(), &record, Some(&brand), &fonts, &assets, &store)
-            .await
-            .unwrap();
+    let report = application::renders::validate(
+        account(),
+        &record,
+        Some(&brand),
+        &fonts,
+        &assets,
+        &store,
+        &application::Cancellation::new(),
+    )
+    .await
+    .unwrap();
     assert!(report.valid, "unexpected issues: {:?}", report.issues);
 
     // The promise the report just made has to hold.
@@ -173,9 +180,17 @@ async fn tokens_without_a_brand_kit_are_reported_rather_than_failing_at_render()
     );
 
     // So validation must say so, instead of reporting the design as exportable.
-    let report = application::renders::validate(account(), &record, None, &fonts, &assets, &store)
-        .await
-        .unwrap();
+    let report = application::renders::validate(
+        account(),
+        &record,
+        None,
+        &fonts,
+        &assets,
+        &store,
+        &application::Cancellation::new(),
+    )
+    .await
+    .unwrap();
 
     assert!(
         !report.valid,

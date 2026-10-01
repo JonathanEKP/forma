@@ -29,6 +29,12 @@ pub enum ApplicationError {
         message: String,
         hint: &'static str,
     },
+
+    /// The caller abandoned the operation and it stopped before finishing.
+    /// Nothing it would have returned exists, so there is nothing to retry
+    /// against; a caller that still wants the result asks again.
+    #[error("the operation was cancelled before it finished")]
+    Cancelled,
 }
 
 impl ApplicationError {
@@ -47,6 +53,7 @@ impl ApplicationError {
             Self::Persistence(e) => e.code(),
             Self::Render(e) => e.code(),
             Self::Rejected { code, .. } => code,
+            Self::Cancelled => "CANCELLED",
         }
     }
 
@@ -56,6 +63,7 @@ impl ApplicationError {
             Self::Persistence(e) => e.hint(),
             Self::Render(e) => e.hint(),
             Self::Rejected { hint, .. } => hint,
+            Self::Cancelled => "Nothing was kept. Ask again if the result is still wanted.",
         }
     }
 

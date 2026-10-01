@@ -6,6 +6,7 @@
 
 pub mod asset_requests;
 pub mod assets;
+pub mod cancel;
 pub mod designs;
 pub mod error;
 pub mod exports;
@@ -13,4 +14,5 @@ pub mod projects;
 pub mod renders;
 pub mod templates;
 
+pub use cancel::Cancellation;
 pub use error::{ApplicationError, Result};
