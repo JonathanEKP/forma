@@ -21,12 +21,20 @@ pub trait AccountRepository: Send + Sync {
 
     /// The account a user belongs to, if any.
     ///
+    /// At most one, enforced by the schema (migration 0005, decision D7 of the
+    /// Pontis plan): a user belongs to one account, so this answer is
+    /// deterministic and can be bound to a session. Multi-account membership
+    /// would need the caller to name the account, which is a different method.
+    ///
     /// `None` is not an error: a valid identity with no membership is the
     /// `ACCOUNT_REQUIRED` case of plan 115, and the caller decides what to say.
     async fn membership_of(&self, user: AuthUserId) -> Result<Option<AccountMembership>>;
 
     /// Attaches a user to an account, or updates the email of an existing
     /// membership so an account can be rebound to a fresh subject (plan 113.3).
+    ///
+    /// Refuses with `InvalidTransition` when the user already belongs to a
+    /// different account, rather than creating a second membership.
     ///
     /// The first membership marks the account owned, which is what retires the
     /// deployment token (§113.1). Done there rather than here, because a caller

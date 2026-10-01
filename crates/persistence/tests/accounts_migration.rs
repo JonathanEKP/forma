@@ -203,3 +203,80 @@ async fn foreign_keys_are_on_again_afterwards() {
     .await;
     assert!(orphan.is_err(), "and references must be enforced again");
 }
+
+/// Migration 0005 (decision D7) against a database that already broke the rule.
+///
+/// It must neither pick a winner nor lose a row: the migration fails loudly,
+/// its transaction rolls back, and both memberships are still there for a
+/// person to choose between.
+#[tokio::test]
+async fn one_account_per_user_refuses_to_pick_between_existing_memberships() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let pool = pre_accounts(dir.path()).await;
+
+    sqlx::raw_sql(include_str!("../../../migrations/sqlite/0004_accounts.sql"))
+        .execute(&pool)
+        .await
+        .expect("the accounts migration");
+
+    for sql in [
+        "INSERT INTO accounts (id, name, bootstrap, claimed_at, created_at, updated_at)
+         VALUES ('00000000-0000-4000-8000-000000000002', 'Second', 0, 't', 't', 't')",
+        "INSERT INTO account_memberships (account_id, user_id, email, role, created_at)
+         VALUES ('00000000-0000-4000-8000-000000000001', 'u1', 'a@example.com', 'owner', 't1')",
+        "INSERT INTO account_memberships (account_id, user_id, email, role, created_at)
+         VALUES ('00000000-0000-4000-8000-000000000002', 'u1', 'a@example.com', 'owner', 't2')",
+    ] {
+        sqlx::raw_sql(sql).execute(&pool).await.expect("seed");
+    }
+
+    // Applied the way sqlx applies it: inside a transaction.
+    let mut tx = pool.begin().await.expect("transaction");
+    let failed = sqlx::raw_sql(include_str!(
+        "../../../migrations/sqlite/0005_one_account_per_user.sql"
+    ))
+    .execute(&mut *tx)
+    .await;
+    let error = failed.expect_err("two memberships must stop the migration");
+    assert!(
+        error.to_string().contains("account_memberships.user_id"),
+        "and say which rule it hit: {error}"
+    );
+    tx.rollback().await.expect("rollback");
+
+    assert_eq!(
+        count(&pool, "account_memberships").await,
+        2,
+        "no membership is lost or chosen for the person"
+    );
+}
+
+/// And on clean data it applies and keeps every row.
+#[tokio::test]
+async fn one_account_per_user_applies_over_distinct_memberships() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let pool = pre_accounts(dir.path()).await;
+    seed(&pool).await;
+
+    sqlx::raw_sql(include_str!("../../../migrations/sqlite/0004_accounts.sql"))
+        .execute(&pool)
+        .await
+        .expect("the accounts migration");
+    sqlx::raw_sql(
+        "INSERT INTO account_memberships (account_id, user_id, email, role, created_at)
+         VALUES ('00000000-0000-4000-8000-000000000001', 'u1', 'a@example.com', 'owner', 't')",
+    )
+    .execute(&pool)
+    .await
+    .expect("seed");
+
+    sqlx::raw_sql(include_str!(
+        "../../../migrations/sqlite/0005_one_account_per_user.sql"
+    ))
+    .execute(&pool)
+    .await
+    .expect("the one-account-per-user migration");
+
+    assert_eq!(count(&pool, "account_memberships").await, 1);
+    assert_eq!(count(&pool, "designs").await, 1);
+}

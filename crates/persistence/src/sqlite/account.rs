@@ -117,6 +117,10 @@ impl AccountRepository for SqliteAccountRepository {
     }
 
     async fn membership_of(&self, user: AuthUserId) -> Result<Option<AccountMembership>> {
+        // `fetch_optional` with no ORDER BY would pick an arbitrary row if there
+        // could be two. There cannot: migration 0005 makes `user_id` unique,
+        // which is decision D7 and the reason this answer is safe to bind a
+        // session to. Do not relax that index without changing this signature.
         let row = sqlx::query(
             "SELECT account_id, user_id, email, role, created_at
              FROM account_memberships WHERE user_id = ?",
@@ -142,6 +146,19 @@ impl AccountRepository for SqliteAccountRepository {
             role,
             created_at: now(),
         };
+
+        // One user, one account (D7, migration 0005). The unique index is what
+        // guarantees it; this check is what turns hitting it into an answer a
+        // person can act on instead of a constraint error. Granting the same
+        // account again stays an upsert, which is how a subject is rebound.
+        if let Some(held) = self.membership_of(user).await? {
+            if held.account_id != account {
+                return Err(PersistenceError::InvalidTransition(format!(
+                    "user {user} already belongs to account {}; a user belongs to one account",
+                    held.account_id
+                )));
+            }
+        }
 
         sqlx::query(
             "INSERT INTO account_memberships (account_id, user_id, email, role, created_at)

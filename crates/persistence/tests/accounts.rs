@@ -593,3 +593,74 @@ async fn a_cross_account_save_is_not_found_rather_than_a_version_conflict() {
         Version::INITIAL
     );
 }
+
+/// Decision D7: the account a user resolves to cannot be an arbitrary winner,
+/// because there can only be one candidate. A session bound to the answer
+/// (Pontis ADR-024) keeps it for its whole life.
+#[tokio::test]
+async fn a_user_cannot_hold_a_second_account() {
+    let harness = Harness::start().await;
+    let accounts = harness.accounts();
+    let first = accounts.create("First").await.unwrap();
+    let second = accounts.create("Second").await.unwrap();
+    let user = AuthUserId::new();
+
+    accounts
+        .grant(first.id, user, "someone@example.com", AccountRole::Owner)
+        .await
+        .expect("the first membership");
+
+    let refused = accounts
+        .grant(second.id, user, "someone@example.com", AccountRole::Owner)
+        .await;
+    assert!(
+        matches!(refused, Err(PersistenceError::InvalidTransition(_))),
+        "a second account is the caller's mistake, not a storage fault: {refused:?}"
+    );
+
+    // Nothing was written, and the second account was not marked owned by it.
+    assert_eq!(
+        accounts
+            .membership_of(user)
+            .await
+            .unwrap()
+            .unwrap()
+            .account_id,
+        first.id
+    );
+    assert!(accounts.get(second.id).await.unwrap().is_unowned());
+}
+
+/// The schema, not `grant`'s check, is the guarantee: a writer that goes
+/// around the repository still cannot create the second row.
+#[tokio::test]
+async fn the_schema_refuses_a_second_membership_for_one_user() {
+    let harness = Harness::start().await;
+    let accounts = harness.accounts();
+    let first = accounts.create("First").await.unwrap();
+    let second = accounts.create("Second").await.unwrap();
+    let user = AuthUserId::new();
+
+    accounts
+        .grant(first.id, user, "someone@example.com", AccountRole::Owner)
+        .await
+        .unwrap();
+
+    let raw = sqlx::query(
+        "INSERT INTO account_memberships (account_id, user_id, email, role, created_at)
+         VALUES (?, ?, 'someone@example.com', 'owner', 't')",
+    )
+    .bind(second.id.to_string())
+    .bind(user.to_string())
+    .execute(&harness.pool)
+    .await;
+    assert!(raw.is_err(), "user_id must be unique across accounts");
+
+    let rows: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM account_memberships WHERE user_id = ?")
+            .bind(user.to_string())
+            .fetch_one(&harness.pool)
+            .await
+            .unwrap();
+    assert_eq!(rows, 1);
+}
