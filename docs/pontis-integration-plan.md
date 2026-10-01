@@ -530,6 +530,14 @@ records, rather than inheriting one.
 minting and revocation path, and churn in `bindings/generated/AuthKind.ts`. That cost is additive
 and local; option A's cost is a silent redefinition of a credential already in circulation.
 
+*Standing debt, not an objection to this decision.* Neither repository has settled its credential
+model — Forma's grew one class at a time and Pontis has not fixed its side either, so this is
+plumbed rather than designed, deliberately and with the owner's agreement. A fifth class added the
+same way is where the arms stop being obvious by reading. The pass that should eventually order it
+is recorded in [plan-status.md](plan-status.md) § *Credentials and identity need a deliberate pass*,
+scheduled after PV-1 so it is designed around the classes that turn out to be load-bearing rather
+than the ones predicted.
+
 *Two requirements, or this is worse than the alternative it replaced.* The service arm must **refuse**
 a request that carries no represented-user and context inputs, and must **refuse** one carrying
 `x-forma-entry`. Otherwise the credential alone is full account access, and `forma-mcp`'s `admits()`

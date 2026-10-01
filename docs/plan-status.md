@@ -46,6 +46,37 @@ Every phase of the V1 plan is closed, Phase 11 included. What remains from the
 plan itself is only the optional Phase 12 — and the items below that came out of
 using the product rather than from the plan.
 
+### Credentials and identity need a deliberate pass
+
+Known debt, recorded so it is not rediscovered. Forma's authentication grew one
+credential class at a time, each added for the case in front of us: the
+deployment token, then personal access tokens, then Supabase-issued JWTs for
+browsers and for OAuth agents. `AuthKind` has four variants and
+`require_bearer` dispatches on the credential's **prefix**, in mutually
+exclusive arms whose ordering is itself load-bearing. The Pontis integration
+([pontis-integration-plan.md](pontis-integration-plan.md) §10(b) D1) would add
+a fifth for the sidecar.
+
+None of that is wrong today and none of it is urgent. But it was plumbed rather
+than designed, on both sides — Pontis has not settled its side either — and a
+fifth class added the same way is the point where "which arm answers this
+string, and what does it then authorize" stops being obvious by reading.
+
+What a pass should settle, when it happens:
+
+- one table of credential classes with, for each, what it authenticates, what
+  it may assert about a user or an account, and what it must refuse;
+- whether prefix dispatch stays the mechanism, or the class becomes explicit;
+- what `AuthKind` records in §61's history for each class, rather than each
+  variant inheriting an answer;
+- a single revocation story, since each class currently has its own;
+- the blast radius of each class on leak, stated rather than inferred.
+
+**Not a blocker for PV-1.** The integration proceeds on the decisions already
+taken; this is the cleanup those decisions will have earned. It belongs after
+PV-1 has shown which classes are actually load-bearing — designing it before
+that would be guessing at the shape.
+
 ## What the three-model experiment settled
 
 Recorded because it changed the order below, and an order changed without a
