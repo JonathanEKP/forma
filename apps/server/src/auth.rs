@@ -91,6 +91,27 @@ pub const REPRESENTED_USER_HEADER: &str = "x-forma-represented-user";
 /// §5).
 pub const APPLICATION_CONTEXT_HEADER: &str = "x-forma-application-context";
 
+/// The provider session a resolve request asks about (Pontis plan §10(b) D2).
+///
+/// Read on [`RESOLVE_PATH`] and nowhere else. `Authorization` carries the
+/// sidecar's own credential on that call, so the token being asked about needs
+/// a slot of its own.
+pub const SUBJECT_TOKEN_HEADER: &str = "x-forma-subject-token";
+
+/// The one place a service credential is accepted without a represented user
+/// and an application context, because it is what discovers them.
+pub const RESOLVE_PATH: &str = "/api/v1/service/resolve";
+
+/// A subject token the sidecar asked about, verified, on the resolve path only.
+///
+/// Deliberately not an `AuthContext` and not a bare `VerifiedIdentity`: the
+/// request acts as nobody, so nothing that authorizes on either can find it,
+/// and only the resolve handler reads this.
+#[derive(Debug, Clone)]
+pub struct SubjectToResolve {
+    pub(crate) identity: crate::jwt::VerifiedIdentity,
+}
+
 /// Paths a verified identity may reach *before* it owns an account.
 ///
 /// Everything else under `/api/` answers `ACCOUNT_REQUIRED` without one, which
@@ -237,6 +258,16 @@ pub async fn require_bearer(
         // prefix is somebody else holding it.
         if request.headers().contains_key(MCP_ENTRY_HEADER) {
             return Ok(request.into_response(refusal()));
+        }
+
+        // **The single exception to the rule below**, and bounded by the path
+        // rather than by anything the caller says: resolving who a session
+        // token belongs to and which account they may enter is what produces a
+        // represented user and a context, so it cannot require them. It acts
+        // as nobody — no `AuthContext` is set — and its handler reaches no
+        // project, design, asset or template.
+        if request.path() == RESOLVE_PATH {
+            return resolve_subject(request, next, state, presented).await;
         }
 
         // **The credential alone is never account access.** It names no person
@@ -426,6 +457,93 @@ pub async fn require_bearer(
     Ok(next.call(request).await?.map_into_boxed_body())
 }
 
+/// The service arm on [`RESOLVE_PATH`] (Pontis plan §10(b) D2).
+///
+/// The sidecar's credential is checked first, so a caller without one learns
+/// nothing about the subject token and cannot spend the verifier's JWKS refresh.
+/// The subject token is then verified by the same `Verifier` as a browser
+/// session — never a second implementation — with `Accepts::Either`, which is
+/// why the caller has already been refused if it arrived marked as MCP.
+async fn resolve_subject(
+    request: ServiceRequest,
+    next: Next<impl MessageBody + 'static>,
+    state: &web::Data<crate::state::AppState>,
+    presented: &str,
+) -> Result<ServiceResponse<BoxBody>, Error> {
+    let service = match state.service_credentials.authenticate(presented).await {
+        Ok(Some(service)) => service,
+        Ok(None) => return Ok(request.into_response(refusal())),
+        Err(_) => {
+            return Ok(request.into_response(
+                ApiError::internal(
+                    "AUTH_STORAGE_ERROR",
+                    "the service credential could not be verified",
+                )
+                .error_response(),
+            ))
+        }
+    };
+
+    if service.is_revoked() {
+        return Ok(request.into_response(service_revoked_refusal()));
+    }
+
+    let Some(verifier) = state.verifier.clone() else {
+        return Ok(request.into_response(
+            ApiError::internal(
+                "IDENTITY_UNAVAILABLE",
+                "this deployment verifies no identity provider",
+            )
+            .error_response(),
+        ));
+    };
+
+    let token = request
+        .headers()
+        .get(SUBJECT_TOKEN_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let Some(token) = token else {
+        return Ok(request.into_response(subject_refusal()));
+    };
+
+    let identity = match verifier.verify(&token, crate::jwt::Accepts::Either).await {
+        Ok(identity) => identity,
+        Err(crate::jwt::JwtError::ProviderUnreachable) => {
+            return Ok(request.into_response(
+                ApiError::internal(
+                    "IDENTITY_UNAVAILABLE",
+                    "the identity provider could not be reached",
+                )
+                .error_response(),
+            ));
+        }
+        Err(_) => return Ok(request.into_response(subject_refusal())),
+    };
+
+    if state
+        .service_credentials
+        .touch_last_used(service.id)
+        .await
+        .is_err()
+    {
+        return Ok(request.into_response(
+            ApiError::internal(
+                "AUTH_STORAGE_ERROR",
+                "the service credential's last use could not be recorded",
+            )
+            .error_response(),
+        ));
+    }
+
+    request
+        .extensions_mut()
+        .insert(SubjectToResolve { identity });
+    Ok(next.call(request).await?.map_into_boxed_body())
+}
+
 fn presented(request: &ServiceRequest) -> Option<String> {
     let raw = request
         .headers()
@@ -487,6 +605,21 @@ fn revoked_refusal() -> actix_web::HttpResponse {
         "API_KEY_REVOKED",
         "this personal access token has been revoked",
         "Create a new personal access token and replace the revoked credential.",
+    )
+    .error_response()
+}
+
+/// The sidecar authenticated, and the session it asked about did not.
+///
+/// Its own code because the two failures send the sidecar different ways: this
+/// one means the person signs in again, `UNAUTHORIZED` means the sidecar is
+/// misconfigured. Absent, malformed, expired and foreign tokens are one answer,
+/// for the same reason `refusal` is.
+fn subject_refusal() -> actix_web::HttpResponse {
+    ApiError::unauthorized(
+        "SUBJECT_TOKEN_INVALID",
+        "the subject token is missing or did not verify",
+        "Have the person sign in again and resolve the new session token.",
     )
     .error_response()
 }

@@ -18,6 +18,7 @@ pub mod identity;
 pub mod meta;
 pub mod projects;
 pub mod renders;
+pub mod service;
 pub mod templates;
 
 mod helpers;
@@ -64,6 +65,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .configure(asset_requests::configure)
             .configure(exports::configure)
             .configure(templates::configure)
+            .configure(service::configure)
             // The static app deliberately falls back to index.html. Ending the
             // API scope here keeps a miss machine-readable instead of letting
             // an API typo escape into that browser-only fallback.
