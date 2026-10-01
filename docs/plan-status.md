@@ -46,6 +46,27 @@ Every phase of the V1 plan is closed, Phase 11 included. What remains from the
 plan itself is only the optional Phase 12 — and the items below that came out of
 using the product rather than from the plan.
 
+### Two CI-health items, found while chasing a flake
+
+Recorded so they are not rediscovered from scratch.
+
+**A rare `jwt_verifier` failure is unexplained.** It was seen once, in a full
+workspace run, while another suite was running. It binds no ports — its
+`JwksSource` is an in-memory fixture — so the port race fixed in the MCP
+transport tests does not cover it. Ruled out: token `exp`/`nbf` margins, which
+are ±3600s against a 5s leeway, and the JWKS refresh floor of 60s against the
+test's own verifications. No environment mutation or shared file was found.
+
+**`scripts/check-bindings.sh` suppresses output on failure**, which is how that
+sighting lost its panic text and why there is nothing more to say about it.
+Making it print the failing test's output is the next step for anyone picking
+this up, and it is a prerequisite rather than a nicety: without it, the next
+occurrence will be just as uninformative.
+
+Neither blocks anything. They are here because an unexplained flake that CI
+retries away is the kind of thing that stops being investigated once it stops
+being visible.
+
 ### Credentials and identity need a deliberate pass
 
 Known debt, recorded so it is not rediscovered. Forma's authentication grew one
