@@ -14,11 +14,12 @@ pub use local_fs::{asset_storage_key, export_storage_key, LocalObjectStore};
 pub use sqlite::{
     checkpoint_and_close, connect, SqliteAccountRepository, SqliteApiKeyRepository,
     SqliteAssetRepository, SqliteAssetRequestRepository, SqliteDesignRepository,
-    SqliteExportRepository, SqliteProjectRepository, SqliteServiceCredentialRepository,
-    SqliteTemplateRepository, PAT_PREFIX, SERVICE_PREFIX,
+    SqliteExportRepository, SqliteInvocationLedger, SqliteProjectRepository,
+    SqliteServiceCredentialRepository, SqliteTemplateRepository, PAT_PREFIX, SERVICE_PREFIX,
 };
 pub use traits::{
-    AccountRepository, ApiKeyRepository, AssetRepository, AssetRequestRepository, DesignRepository,
-    ExportRepository, ObjectStore, ProjectRepository, ServiceCredentialRepository,
-    TemplateRepository, VersionSummary,
+    AccountRepository, ApiKeyRepository, AssetRepository, AssetRequestRepository, Claim,
+    DesignRepository, ExportRepository, InvocationLedger, InvocationRecord, InvocationRequest,
+    ObjectStore, ProjectRepository, ServiceCredentialRepository, TemplateRepository,
+    VersionSummary,
 };

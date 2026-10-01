@@ -36,8 +36,8 @@ pub use error::DomainError;
 pub use export::{Export, ExportScope};
 pub use geometry::{Rect, Transform};
 pub use ids::{
-    AccountId, ApiKeyId, AssetId, AssetRequestId, AuthUserId, BrandId, DesignId, ExportId, LayerId,
-    PageId, ProjectId, ServiceCredentialId, TemplateId,
+    AccountId, ApiKeyId, AssetId, AssetRequestId, AuthUserId, BrandId, DesignId, ExportId,
+    InvalidInvocationId, InvocationId, LayerId, PageId, ProjectId, ServiceCredentialId, TemplateId,
 };
 pub use layer::{
     FocalPoint, ImageFit, ImageLayer, ImageOverlay, Layer, LayerCommon, LayerRole, OverlayEdge,
