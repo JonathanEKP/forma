@@ -8,10 +8,9 @@ use crate::error::{PersistenceError, Result};
 use crate::traits::ApiKeyRepository;
 
 use super::parse_uuid;
+use super::secret;
 
 pub const PAT_PREFIX: &str = "forma_pat_";
-const SECRET_HEX_LEN: usize = 64;
-const DISPLAY_PREFIX_LEN: usize = PAT_PREFIX.len() + 8;
 const LAST_USED_WRITE_INTERVAL_MINUTES: i64 = 5;
 
 pub struct SqliteApiKeyRepository {
@@ -43,15 +42,6 @@ fn api_key_from(row: &sqlx::sqlite::SqliteRow) -> Result<ApiKey> {
     })
 }
 
-fn candidate_prefix(presented: &str) -> Option<&str> {
-    let secret = presented.strip_prefix(PAT_PREFIX)?;
-    if secret.len() != SECRET_HEX_LEN || !secret.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return None;
-    }
-
-    presented.get(..DISPLAY_PREFIX_LEN)
-}
-
 fn timestamp_now() -> String {
     Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
 }
@@ -64,19 +54,7 @@ impl ApiKeyRepository for SqliteApiKeyRepository {
         created_by: Option<AuthUserId>,
         name: &str,
     ) -> Result<CreatedApiKey> {
-        // UUID v4 contributes 122 random bits after its fixed version/variant
-        // bits. Two draw 244 bits through getrandom without another dependency.
-        let token = format!(
-            "{PAT_PREFIX}{}{}",
-            Uuid::new_v4().simple(),
-            Uuid::new_v4().simple()
-        );
-        let token_prefix = token
-            .get(..DISPLAY_PREFIX_LEN)
-            .ok_or_else(|| {
-                PersistenceError::Storage("generated PAT was unexpectedly short".into())
-            })?
-            .to_string();
+        let (token, token_prefix) = secret::mint(PAT_PREFIX)?;
         let key = ApiKey {
             id: ApiKeyId::new(),
             account_id: account,
@@ -87,7 +65,7 @@ impl ApiKeyRepository for SqliteApiKeyRepository {
             last_used_at: None,
             revoked_at: None,
         };
-        let token_hash = blake3::hash(token.as_bytes()).to_hex().to_string();
+        let token_hash = secret::hash_hex(&token);
 
         sqlx::query(
             "INSERT INTO api_keys
@@ -124,7 +102,7 @@ impl ApiKeyRepository for SqliteApiKeyRepository {
     }
 
     async fn authenticate(&self, presented: &str) -> Result<Option<ApiKey>> {
-        let Some(prefix) = candidate_prefix(presented) else {
+        let Some(prefix) = secret::candidate_prefix(presented, PAT_PREFIX) else {
             return Ok(None);
         };
         let presented_hash = blake3::hash(presented.as_bytes());
@@ -136,14 +114,7 @@ impl ApiKeyRepository for SqliteApiKeyRepository {
         .await?;
 
         for row in rows {
-            let raw_hash: String = row.get("token_hash");
-            let stored_hash = blake3::Hash::from_hex(&raw_hash).map_err(|error| {
-                PersistenceError::Storage(format!("stored API key hash is invalid: {error}"))
-            })?;
-
-            // A prefix is only an index hint. The full BLAKE3 Hash comparison is
-            // constant-time, so a wrong secret cannot be found byte by byte.
-            if stored_hash == presented_hash {
+            if secret::stored_matches(row.get("token_hash"), &presented_hash)? {
                 return api_key_from(&row).map(Some);
             }
         }

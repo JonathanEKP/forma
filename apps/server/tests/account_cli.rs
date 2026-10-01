@@ -236,3 +236,62 @@ async fn api_key_needs_a_name_worth_reading_later() {
         );
     }
 }
+
+/// The sidecar's credential is minted, listed and revoked from the machine
+/// only (Pontis plan §10(b) D1), and revoking it is what a leak needs.
+#[tokio::test]
+async fn a_service_credential_is_minted_listed_and_revoked_from_the_shell() {
+    let dir = tempfile::tempdir().expect("temp dir");
+
+    let minted = run(dir.path(), &["service-credential", "pontis sidecar"]).await;
+    assert!(minted.status.success(), "{}", stderr(&minted));
+    let token = stdout(&minted).trim().to_string();
+    assert!(
+        token.starts_with(persistence::SERVICE_PREFIX),
+        "got {token:?}"
+    );
+
+    let (_, pool) = accounts(dir.path()).await;
+    let credentials = persistence::SqliteServiceCredentialRepository::new(pool.clone());
+    let found = persistence::ServiceCredentialRepository::authenticate(&credentials, &token)
+        .await
+        .expect("authenticate")
+        .expect("the credential it just minted");
+    assert!(!found.is_revoked());
+    pool.close().await;
+
+    let listed = run(dir.path(), &["service-credentials"]).await;
+    assert!(listed.status.success(), "{}", stderr(&listed));
+    let listing = stdout(&listed);
+    assert!(
+        listing.contains(&format!("active\t{}", found.id)),
+        "{listing}"
+    );
+    assert!(!listing.contains(&token), "a list never shows the secret");
+
+    let revoked = run(
+        dir.path(),
+        &["revoke-service-credential", &found.id.to_string()],
+    )
+    .await;
+    assert!(revoked.status.success(), "{}", stderr(&revoked));
+
+    let (_, pool) = accounts(dir.path()).await;
+    let credentials = persistence::SqliteServiceCredentialRepository::new(pool.clone());
+    assert!(
+        persistence::ServiceCredentialRepository::authenticate(&credentials, &token)
+            .await
+            .expect("authenticate")
+            .expect("still found")
+            .is_revoked()
+    );
+    pool.close().await;
+
+    for args in [
+        vec!["service-credential"],
+        vec!["service-credential", "  "],
+        vec!["revoke-service-credential", "not-a-uuid"],
+    ] {
+        assert!(!run(dir.path(), &args).await.status.success(), "{args:?}");
+    }
+}

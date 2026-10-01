@@ -7,4 +7,4 @@
  * V1 was built on, where the security boundary is the process that launched
  * Forma. It carries no user because there is none to carry.
  */
-export type AuthKind = "local" | "browser_user" | "mcp_o_auth" | "mcp_pat";
+export type AuthKind = "local" | "browser_user" | "mcp_o_auth" | "mcp_pat" | "service";

@@ -5,7 +5,7 @@ use design_core::AccountId;
 use persistence::{
     LocalObjectStore, SqliteAccountRepository, SqliteApiKeyRepository, SqliteAssetRepository,
     SqliteAssetRequestRepository, SqliteDesignRepository, SqliteExportRepository,
-    SqliteProjectRepository, SqliteTemplateRepository,
+    SqliteProjectRepository, SqliteServiceCredentialRepository, SqliteTemplateRepository,
 };
 use renderer::{FontRegistry, RenderCache};
 use sqlx::SqlitePool;
@@ -33,6 +33,8 @@ pub struct AppState {
     pub templates: Arc<SqliteTemplateRepository>,
     pub accounts: Arc<SqliteAccountRepository>,
     pub api_keys: Arc<SqliteApiKeyRepository>,
+    /// The Pontis sidecar's credentials: deployment-scoped, not per account.
+    pub service_credentials: Arc<SqliteServiceCredentialRepository>,
     /// The account every request in this process resolves to.
     ///
     /// Slice one is local mode (plan 117.8): one account, no identity, and the
@@ -64,6 +66,7 @@ impl AppState {
             templates: Arc::new(SqliteTemplateRepository::new(pool.clone())),
             accounts: Arc::new(SqliteAccountRepository::new(pool.clone())),
             api_keys: Arc::new(SqliteApiKeyRepository::new(pool.clone())),
+            service_credentials: Arc::new(SqliteServiceCredentialRepository::new(pool.clone())),
             account: AccountId(
                 uuid::Uuid::parse_str(design_core::BOOTSTRAP_ACCOUNT).expect("a constant uuid"),
             ),

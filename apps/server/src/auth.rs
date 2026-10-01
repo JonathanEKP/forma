@@ -1,16 +1,21 @@
 //! Bearer authentication at the server boundary (plan §§57 and 112.1).
 //!
-//! The deployment token and each PAT are stored only as hashes and compared as
-//! BLAKE3 `Hash` values, whose equality is constant-time. OAuth/JWT validation
-//! joins this same choke point in the provider-backed slice; it is deliberately
-//! absent here.
+//! The deployment token, each PAT and each service credential are stored only
+//! as hashes and compared as BLAKE3 `Hash` values, whose equality is
+//! constant-time. Provider sessions are verified by `jwt.rs` at this same choke
+//! point.
+//!
+//! The service credential (Pontis plan §10(b) D1) is the fifth class to arrive
+//! here, added in the existing idiom: its own prefix and its own arm. The pass
+//! that orders these deliberately is scheduled after PV-1 (plan-status.md,
+//! *Credentials and identity need a deliberate pass*).
 
 use actix_web::body::{BoxBody, MessageBody};
 use actix_web::dev::{ServiceRequest, ServiceResponse};
 use actix_web::middleware::Next;
 use actix_web::{web, Error, HttpMessage, ResponseError};
-use design_core::{AuthContext, AuthKind};
-use persistence::ApiKeyRepository;
+use design_core::{AccountId, AuthContext, AuthKind, AuthUserId};
+use persistence::{ApiKeyRepository, ServiceCredentialRepository};
 
 use persistence::AccountRepository;
 
@@ -73,6 +78,19 @@ fn is_open(path: &str) -> bool {
 /// is accepted.
 pub const MCP_ENTRY_HEADER: &str = "x-forma-entry";
 
+/// Who a service-credential request acts for: the represented user's subject.
+///
+/// Trusted only on the service arm, because only the sidecar can present that
+/// credential and the sidecar is what authenticated the person. Everywhere else
+/// it is ignored. Even there it is not taken on faith: the user must hold a
+/// membership in the named context, checked on every request (ADR-024).
+pub const REPRESENTED_USER_HEADER: &str = "x-forma-represented-user";
+
+/// The application context a service-credential request is bound to: an
+/// `AccountId`, which is what Forma maps `ApplicationContextId` to (Pontis plan
+/// §5).
+pub const APPLICATION_CONTEXT_HEADER: &str = "x-forma-application-context";
+
 /// Paths a verified identity may reach *before* it owns an account.
 ///
 /// Everything else under `/api/` answers `ACCOUNT_REQUIRED` without one, which
@@ -84,8 +102,8 @@ fn is_onboarding(path: &str) -> bool {
     matches!(path, "/api/v1/onboarding" | "/api/v1/accounts")
 }
 
-/// Resolves a deployment token, a PAT or a provider session into the request's
-/// `AuthContext` (plan sections 108 and 112).
+/// Resolves a deployment token, a PAT, a service credential or a provider
+/// session into the request's `AuthContext` (plan sections 108 and 112).
 pub async fn require_bearer(
     request: ServiceRequest,
     next: Next<impl MessageBody + 'static>,
@@ -196,6 +214,105 @@ pub async fn require_bearer(
             kind: AuthKind::McpPat,
             client_id: None,
             api_key_id: Some(key.id),
+            service_credential_id: None,
+        })
+    } else if let Some(presented) = credential
+        .as_deref()
+        .filter(|value| value.starts_with(persistence::SERVICE_PREFIX))
+    {
+        // The Pontis integration sidecar at Boundary F (Pontis plan §10(b) D1).
+        //
+        // Its prefix is disjoint from `forma_pat_`, so this arm and the PAT arm
+        // cannot both match, and neither can the provider-session arm below,
+        // which is only reached when neither prefix did.
+        let Some(state) = state.as_ref() else {
+            return Ok(request.into_response(refusal()));
+        };
+
+        // **Never at the MCP door.** `forma-mcp` marks every request it
+        // forwards, and its `admits()` probes `/api/v1/status` carrying the
+        // host's bearer and no represented user. A sidecar credential leaked to
+        // an MCP host must not open `/mcp`: the sidecar talks to REST directly
+        // and has no reason to arrive marked, so a marked request with this
+        // prefix is somebody else holding it.
+        if request.headers().contains_key(MCP_ENTRY_HEADER) {
+            return Ok(request.into_response(refusal()));
+        }
+
+        // **The credential alone is never account access.** It names no person
+        // and no workspace — that is what lets one sidecar serve many people —
+        // so a request without both is refused rather than given a default.
+        // Any default here would make this credential the deployment token
+        // again, with a longer name.
+        let Some((user, context)) = represented(&request) else {
+            return Ok(request.into_response(refusal()));
+        };
+
+        let service = match state.service_credentials.authenticate(presented).await {
+            Ok(Some(service)) => service,
+            Ok(None) => return Ok(request.into_response(refusal())),
+            Err(_) => {
+                return Ok(request.into_response(
+                    ApiError::internal(
+                        "AUTH_STORAGE_ERROR",
+                        "the service credential could not be verified",
+                    )
+                    .error_response(),
+                ))
+            }
+        };
+
+        if service.is_revoked() {
+            return Ok(request.into_response(service_revoked_refusal()));
+        }
+
+        // Revalidated on every request, never cached: ADR-024 says a stored
+        // context does not preserve access that has since been revoked.
+        match state.accounts.membership_of(user).await {
+            Ok(Some(membership)) if membership.account_id == context => {}
+            Ok(_) => {
+                return Ok(request.into_response(
+                    ApiError::forbidden(
+                        "CONTEXT_FORBIDDEN",
+                        "the represented user may not act in this application context",
+                        "Resolve the user's account again; the membership may have changed.",
+                    )
+                    .error_response(),
+                ))
+            }
+            Err(_) => {
+                return Ok(request.into_response(
+                    ApiError::internal(
+                        "AUTH_STORAGE_ERROR",
+                        "the represented user's account could not be read",
+                    )
+                    .error_response(),
+                ))
+            }
+        }
+
+        if state
+            .service_credentials
+            .touch_last_used(service.id)
+            .await
+            .is_err()
+        {
+            return Ok(request.into_response(
+                ApiError::internal(
+                    "AUTH_STORAGE_ERROR",
+                    "the service credential's last use could not be recorded",
+                )
+                .error_response(),
+            ));
+        }
+
+        Some(AuthContext {
+            account_id: context,
+            user_id: Some(user),
+            kind: AuthKind::Service,
+            client_id: None,
+            api_key_id: None,
+            service_credential_id: Some(service.id),
         })
     } else if let Some((state, verifier)) = state
         .as_ref()
@@ -206,9 +323,9 @@ pub async fn require_bearer(
     {
         // A session token from the identity provider (plan section 111.4).
         //
-        // Reached only after the deployment token and the PAT prefix have both
-        // failed to match, so the three credential classes cannot be confused
-        // for one another.
+        // Reached only after the deployment token and the PAT and service
+        // prefixes have all failed to match, so the credential classes cannot
+        // be confused for one another.
         let Some(token) = credential.as_deref() else {
             return Ok(request.into_response(refusal()));
         };
@@ -265,6 +382,7 @@ pub async fn require_bearer(
                 },
                 client_id: identity.client_id,
                 api_key_id: None,
+                service_credential_id: None,
             }),
             // A valid identity that is not an authorized Forma account. The one
             // 403 in this codebase, and never for an object in another account —
@@ -325,6 +443,25 @@ fn presented(request: &ServiceRequest) -> Option<String> {
         .then(|| value.trim().to_string())
 }
 
+/// The represented user and application context a service request names.
+///
+/// Both or neither: `None` when either is absent or not a UUID, so the caller
+/// refuses rather than filling the gap.
+fn represented(request: &ServiceRequest) -> Option<(AuthUserId, AccountId)> {
+    let uuid = |name: &str| {
+        request
+            .headers()
+            .get(name)?
+            .to_str()
+            .ok()
+            .and_then(|raw| uuid::Uuid::parse_str(raw.trim()).ok())
+    };
+    Some((
+        AuthUserId(uuid(REPRESENTED_USER_HEADER)?),
+        AccountId(uuid(APPLICATION_CONTEXT_HEADER)?),
+    ))
+}
+
 /// One refusal, worded once.
 ///
 /// No detail about why: a caller learning whether the header was missing,
@@ -350,6 +487,15 @@ fn revoked_refusal() -> actix_web::HttpResponse {
         "API_KEY_REVOKED",
         "this personal access token has been revoked",
         "Create a new personal access token and replace the revoked credential.",
+    )
+    .error_response()
+}
+
+fn service_revoked_refusal() -> actix_web::HttpResponse {
+    ApiError::unauthorized(
+        "SERVICE_CREDENTIAL_REVOKED",
+        "this service credential has been revoked",
+        "Mint a new one with `forma-server service-credential <name>` and reconfigure the sidecar.",
     )
     .error_response()
 }

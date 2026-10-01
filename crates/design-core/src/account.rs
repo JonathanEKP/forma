@@ -9,7 +9,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::ids::{AccountId, ApiKeyId, AuthUserId};
+use crate::ids::{AccountId, ApiKeyId, AuthUserId, ServiceCredentialId};
 
 /// The fixed id of the account that existed before anyone signed in.
 ///
@@ -158,6 +158,45 @@ pub struct CreatedApiKey {
     pub token: String,
 }
 
+/// Safe metadata for one service credential (Pontis plan §10(b) D1).
+///
+/// The credential the integration sidecar presents at Boundary F. Unlike an
+/// `ApiKey` it belongs to the deployment rather than to an account, and it
+/// names nobody: who a request acts for arrives with each request and is
+/// checked against a membership every time. That is why it has no
+/// `account_id` and no `created_by_user_id` — a field either one could fill
+/// would be a person or a workspace stamped on every request it carries.
+///
+/// Minted and revoked only from the machine (`forma-server service-credential`),
+/// never over REST: an account owner must not be able to create something that
+/// reaches every account. Not exported to TypeScript for the same reason —
+/// nothing in the browser ever lists one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServiceCredential {
+    pub id: ServiceCredentialId,
+    pub name: String,
+    pub token_prefix: String,
+    pub created_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_used_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revoked_at: Option<String>,
+}
+
+impl ServiceCredential {
+    pub fn is_revoked(&self) -> bool {
+        self.revoked_at.is_some()
+    }
+}
+
+/// The only value that contains a complete service credential.
+///
+/// Deliberately not `Debug` or `Clone`, like `CreatedApiKey`.
+pub struct CreatedServiceCredential {
+    pub credential: ServiceCredential,
+    pub token: String,
+}
+
 /// How a caller proved who they are (plan section 108).
 ///
 /// `Local` is not a weaker version of the others: it is the trusted-local model
@@ -171,6 +210,10 @@ pub enum AuthKind {
     BrowserUser,
     McpOAuth,
     McpPat,
+    /// The Pontis integration sidecar, acting for a represented user it names
+    /// on each request (Pontis plan §10(b) D1). One word so `snake_case` cannot
+    /// mangle it the way it turns `McpOAuth` into `"mcp_o_auth"`.
+    Service,
 }
 
 /// The resolved identity behind one request.
@@ -186,6 +229,8 @@ pub struct AuthContext {
     /// The OAuth client that presented the token, when one did.
     pub client_id: Option<String>,
     pub api_key_id: Option<crate::ids::ApiKeyId>,
+    /// The service credential that presented the request, for `Service` only.
+    pub service_credential_id: Option<ServiceCredentialId>,
 }
 
 impl AuthContext {
@@ -197,6 +242,7 @@ impl AuthContext {
             kind: AuthKind::Local,
             client_id: None,
             api_key_id: None,
+            service_credential_id: None,
         }
     }
 

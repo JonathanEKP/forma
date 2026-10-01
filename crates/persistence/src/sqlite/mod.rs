@@ -7,6 +7,8 @@ pub mod asset_request;
 pub mod design;
 pub mod export;
 pub mod project;
+mod secret;
+pub mod service_credential;
 pub mod template;
 
 use std::path::Path;
@@ -27,6 +29,7 @@ pub use asset_request::SqliteAssetRequestRepository;
 pub use design::SqliteDesignRepository;
 pub use export::SqliteExportRepository;
 pub use project::SqliteProjectRepository;
+pub use service_credential::{SqliteServiceCredentialRepository, SERVICE_PREFIX};
 pub use template::SqliteTemplateRepository;
 
 /// Opens the pool and applies migrations.

@@ -98,6 +98,32 @@ fn derived(auth: &AuthContext) -> Actor {
                     .unwrap_or_else(|| "unknown".into())
             )),
         },
+        // Reviewed for this class rather than borrowed from a neighbour
+        // (Pontis plan §10(b) D1).
+        //
+        // An agent, not a human. Everything that arrives with a service
+        // credential is a capability a model invoked through Pontis. Some of
+        // those were approved by a person first, but approving is not authoring:
+        // the operation is the agent's, and recording it as `Human` would make
+        // it indistinguishable from an edit made in the editor — which is the
+        // distinction §61's history exists to keep.
+        //
+        // Both the credential and the person, not either alone. The PAT answer,
+        // `pat:{key}`, would name the sidecar and hide whom it acted for, and one
+        // sidecar acts for many people; that is the reason this class exists
+        // instead of a PAT. The person alone would hide which delegate did it,
+        // and the credential id is the unit that gets revoked when one leaks.
+        // The arm refuses any request that does not name a user, so `unknown`
+        // is not a value this can actually record.
+        AuthKind::Service => Actor {
+            actor_type: ActorType::Agent,
+            actor_id: Some(format!(
+                "service:{}:{subject}",
+                auth.service_credential_id
+                    .map(|id| id.to_string())
+                    .unwrap_or_else(|| "unknown".into())
+            )),
+        },
     }
 }
 
@@ -157,7 +183,7 @@ pub fn auth(request: &HttpRequest, state: &AppState) -> AuthContext {
 mod tests {
     use super::*;
     use actix_web::test::TestRequest;
-    use design_core::{AccountId, ApiKeyId, AuthUserId};
+    use design_core::{AccountId, ApiKeyId, AuthUserId, ServiceCredentialId};
 
     /// Local mode: the caller is the process that started Forma.
     fn local() -> AuthContext {
@@ -203,6 +229,7 @@ mod tests {
             kind: AuthKind::BrowserUser,
             client_id: None,
             api_key_id: None,
+            service_credential_id: None,
         };
         let actor = actor_from(&request, &browser);
         assert_eq!(actor.actor_type, ActorType::Human);
@@ -231,6 +258,34 @@ mod tests {
         let actor = actor_from(&request, &pat);
         assert_eq!(actor.actor_type, ActorType::Agent);
         assert_eq!(actor.actor_id.as_deref(), Some(&*format!("pat:{key}")));
+    }
+
+    /// The sidecar acts for many people, so its history names both the
+    /// credential and the person it represented — and records an agent even
+    /// when the caller claims to be a human.
+    #[test]
+    fn a_service_request_records_the_delegate_and_the_person() {
+        let request = TestRequest::default()
+            .insert_header(("x-forma-actor", "human"))
+            .to_http_request();
+
+        let user = AuthUserId::new();
+        let credential = ServiceCredentialId::new();
+        let service = AuthContext {
+            account_id: AccountId::new(),
+            user_id: Some(user),
+            kind: AuthKind::Service,
+            client_id: None,
+            api_key_id: None,
+            service_credential_id: Some(credential),
+        };
+
+        let actor = actor_from(&request, &service);
+        assert_eq!(actor.actor_type, ActorType::Agent);
+        assert_eq!(
+            actor.actor_id.as_deref(),
+            Some(&*format!("service:{credential}:{user}"))
+        );
     }
 
     #[test]

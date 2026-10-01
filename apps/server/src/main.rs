@@ -4,10 +4,10 @@ use std::sync::Arc;
 
 use actix_web::{dev::fn_service, http::header, middleware::DefaultHeaders, web, App, HttpServer};
 use anyhow::Context;
-use design_core::{AccountRole, AuthUserId};
+use design_core::{AccountRole, AuthUserId, ServiceCredentialId};
 use forma_server::{auth, backup, routes, telemetry, AppState, Config};
-use persistence::ApiKeyRepository;
 use persistence::{AccountRepository, DesignRepository};
+use persistence::{ApiKeyRepository, ServiceCredentialRepository};
 use renderer::{FontRegistry, RenderCache};
 use tracing_subscriber::EnvFilter;
 
@@ -173,6 +173,96 @@ async fn main() -> anyhow::Result<()> {
             }
             return Ok(());
         }
+        // The Pontis sidecar's credential (Pontis plan §10(b) D1). Machine-only,
+        // like `grant-owner`: it reaches every account through the memberships
+        // it is shown, so no account owner may mint or list one over REST.
+        Some("service-credential") => {
+            let usage = "forma-server service-credential <name>";
+            let Some(name) = args.next().filter(|value| !value.trim().is_empty()) else {
+                anyhow::bail!("usage: {usage}");
+            };
+            reject_extra(&mut args, usage)?;
+
+            let pool = persistence::connect(&config.database_url, &config.data_dir)
+                .await
+                .context("could not open the Forma database to mint a service credential")?;
+            let credentials = persistence::SqliteServiceCredentialRepository::new(pool.clone());
+            let created = credentials
+                .create(name.trim())
+                .await
+                .with_context(|| format!("could not mint a service credential named {name:?}"))?;
+            persistence::checkpoint_and_close(&pool)
+                .await
+                .context("the credential was written, but the database could not close cleanly")?;
+
+            // Once, and to stdout alone, exactly like `api-key`.
+            println!("{}", created.token);
+            eprintln!(
+                "minted service credential {:?} ({}). This is the only time the value is shown.",
+                created.credential.name, created.credential.id
+            );
+            return Ok(());
+        }
+        Some("service-credentials") => {
+            reject_extra(&mut args, "forma-server service-credentials")?;
+
+            let pool = persistence::connect(&config.database_url, &config.data_dir)
+                .await
+                .context("could not open the Forma database to list service credentials")?;
+            let credentials = persistence::SqliteServiceCredentialRepository::new(pool.clone())
+                .list()
+                .await
+                .context("could not list service credentials")?;
+            persistence::checkpoint_and_close(&pool)
+                .await
+                .context("the database could not close cleanly after listing credentials")?;
+
+            println!("STATUS\tID\tNAME\tPREFIX\tCREATED\tLAST USED");
+            for credential in credentials {
+                let status = if credential.is_revoked() {
+                    "revoked"
+                } else {
+                    "active"
+                };
+                println!(
+                    "{status}\t{}\t{}\t{}\t{}\t{}",
+                    credential.id,
+                    credential.name,
+                    credential.token_prefix,
+                    credential.created_at,
+                    credential.last_used_at.as_deref().unwrap_or("-")
+                );
+            }
+            return Ok(());
+        }
+        Some("revoke-service-credential") => {
+            let usage = "forma-server revoke-service-credential <id>";
+            let Some(raw) = args.next() else {
+                anyhow::bail!("usage: {usage}");
+            };
+            let id = ServiceCredentialId(uuid::Uuid::parse_str(raw.trim()).with_context(|| {
+                format!("service credential id {raw:?} is malformed; usage: {usage}")
+            })?);
+            reject_extra(&mut args, usage)?;
+
+            let pool = persistence::connect(&config.database_url, &config.data_dir)
+                .await
+                .context("could not open the Forma database to revoke a service credential")?;
+            let revoked = persistence::SqliteServiceCredentialRepository::new(pool.clone())
+                .revoke(id)
+                .await
+                .with_context(|| format!("could not revoke service credential {id}"))?;
+            persistence::checkpoint_and_close(&pool)
+                .await
+                .context("the revocation was written, but the database could not close cleanly")?;
+
+            println!(
+                "revoked {} at {}",
+                revoked.id,
+                revoked.revoked_at.as_deref().unwrap_or("-")
+            );
+            return Ok(());
+        }
         Some("--help" | "-h" | "help") => {
             println!("forma-server                                      run the server");
             println!(
@@ -189,6 +279,13 @@ async fn main() -> anyhow::Result<()> {
             );
             println!(
                 "forma-server api-key <name>                       mint a personal access token, printed once"
+            );
+            println!(
+                "forma-server service-credential <name>            mint a credential for the Pontis sidecar, printed once"
+            );
+            println!("forma-server service-credentials                  list service credentials");
+            println!(
+                "forma-server revoke-service-credential <id>       revoke a service credential"
             );
             return Ok(());
         }

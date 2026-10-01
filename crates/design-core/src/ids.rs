@@ -48,3 +48,8 @@ typed_id!(TemplateId);
 typed_id!(AccountId);
 typed_id!(AuthUserId);
 typed_id!(ApiKeyId);
+
+// The Pontis sidecar's credential (plan D1). Its own id type rather than an
+// `ApiKeyId`, because the two are different credential classes, and history
+// that names one must never be readable as the other.
+typed_id!(ServiceCredentialId);

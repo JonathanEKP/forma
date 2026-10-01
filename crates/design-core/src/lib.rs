@@ -22,7 +22,7 @@ mod version;
 
 pub use account::{
     Account, AccountInvite, AccountMembership, AccountRole, ApiKey, AuthContext, AuthKind,
-    CreatedApiKey, BOOTSTRAP_ACCOUNT,
+    CreatedApiKey, CreatedServiceCredential, ServiceCredential, BOOTSTRAP_ACCOUNT,
 };
 pub use asset::{Asset, AssetKind, AssetOrigin};
 pub use asset_request::{AssetRequest, AssetRequestStatus};
@@ -37,7 +37,7 @@ pub use export::{Export, ExportScope};
 pub use geometry::{Rect, Transform};
 pub use ids::{
     AccountId, ApiKeyId, AssetId, AssetRequestId, AuthUserId, BrandId, DesignId, ExportId, LayerId,
-    PageId, ProjectId, TemplateId,
+    PageId, ProjectId, ServiceCredentialId, TemplateId,
 };
 pub use layer::{
     FocalPoint, ImageFit, ImageLayer, ImageOverlay, Layer, LayerCommon, LayerRole, OverlayEdge,
