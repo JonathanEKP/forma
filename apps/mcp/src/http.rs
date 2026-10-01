@@ -311,7 +311,10 @@ pub async fn serve(
         .await
         .map_err(|e| anyhow::anyhow!("cannot bind {listen}: {e}"))?;
 
-    tracing::info!(listen, "forma-mcp serving MCP over HTTP");
+    // The address actually bound, not the one asked for: with port 0 the two
+    // differ, and the one a client has to dial is this one.
+    let address = listener.local_addr()?;
+    tracing::info!(listen, %address, "forma-mcp serving MCP over HTTP");
     axum::serve(listener, app).await?;
     Ok(())
 }

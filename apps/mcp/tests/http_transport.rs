@@ -4,13 +4,15 @@
 //! something other than the person who started it, so the credential is the part
 //! worth a test that runs on every commit rather than once by hand on a VM.
 
+use std::process::Stdio;
 use std::sync::Arc;
 
 use actix_web::{web, App, HttpServer};
 use forma_server::{auth::RemoteToken, routes, state::AppState};
 use renderer::FontRegistry;
 use serde_json::{json, Value};
-use tokio::process::{Child, Command};
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::process::{Child, ChildStderr, Command};
 
 const TOKEN: &str = "a-token-with-enough-entropy-to-be-worth-something";
 
@@ -76,14 +78,6 @@ async fn start_server(dir: &std::path::Path) -> String {
     panic!("forma-server never answered {health}");
 }
 
-fn free_port() -> u16 {
-    std::net::TcpListener::bind("127.0.0.1:0")
-        .expect("a free port")
-        .local_addr()
-        .expect("addr")
-        .port()
-}
-
 struct Mcp {
     child: Child,
     url: String,
@@ -109,15 +103,23 @@ async fn start_mcp_with_discovery(
     domain: Option<&str>,
     issuer: Option<&str>,
 ) -> Mcp {
-    let port = free_port();
+    // Port 0, so the kernel picks and nothing else can take the port first. A
+    // port found free here and handed over by number was free only until it was
+    // released: in that gap another process could bind it, this forma-mcp then
+    // failed to bind and exited, and the test talked to whoever held the port —
+    // a forma-mcp from another test, configured differently — and failed on an
+    // assertion about the wrong server.
     let mut command = Command::new(env!("CARGO_BIN_EXE_forma-mcp"));
     command
         .arg("--transport")
         .arg("http")
         .arg("--listen")
-        .arg(format!("127.0.0.1:{port}"))
+        .arg("127.0.0.1:0")
         .env("FORMA_SERVER_URL", base_url)
-        .env("FORMA_LOG", "warn")
+        // Warnings as before, plus the line that names the bound address.
+        .env("FORMA_LOG", "warn,forma_mcp::http=info")
+        .env("NO_COLOR", "1")
+        .stderr(Stdio::piped())
         .kill_on_drop(true);
 
     match token {
@@ -133,19 +135,43 @@ async fn start_mcp_with_discovery(
         None => command.env_remove("FORMA_SUPABASE_ISSUER"),
     };
 
-    let child = command.spawn().expect("forma-mcp starts");
-    let url = format!("http://127.0.0.1:{port}/");
+    let mut child = command.spawn().expect("forma-mcp starts");
+    let stderr = child.stderr.take().expect("stderr is piped");
+    let address = bound_address(stderr).await;
 
-    // Wait on the port answering rather than on a clock.
-    let http = reqwest::Client::new();
-    for _ in 0..100 {
-        if http.post(&url).send().await.is_ok() {
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    Mcp {
+        child,
+        url: format!("http://{address}/"),
     }
+}
 
-    Mcp { child, url }
+/// Waits for forma-mcp to say which address it bound, and returns it.
+///
+/// The line is logged after the listener is bound, so connections from then on
+/// queue rather than being refused: it is readiness, and it comes from the
+/// process the test is about to talk to rather than from whatever answers on a
+/// port. If stderr ends first the process died, and its own words say why.
+async fn bound_address(stderr: ChildStderr) -> String {
+    let mut lines = BufReader::new(stderr).lines();
+    let mut seen = Vec::new();
+    while let Some(line) = lines.next_line().await.expect("forma-mcp stderr") {
+        if line.contains("serving MCP over HTTP") {
+            let address = line
+                .split_whitespace()
+                .find_map(|field| field.strip_prefix("address="))
+                .unwrap_or_else(|| panic!("no address in {line:?}"))
+                .to_string();
+            // Keep draining, or a full pipe would block the process mid-request.
+            tokio::spawn(async move {
+                while let Ok(Some(line)) = lines.next_line().await {
+                    eprintln!("forma-mcp: {line}");
+                }
+            });
+            return address;
+        }
+        seen.push(line);
+    }
+    panic!("forma-mcp exited before serving:\n{}", seen.join("\n"));
 }
 
 async fn initialize(url: &str, token: Option<&str>) -> reqwest::Response {
