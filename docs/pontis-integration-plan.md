@@ -1,0 +1,698 @@
+# Pontis integration plan — PV-1
+
+**Status:** plan. No code has been written for it.
+
+**Pontis stage:** the MCP/polyglot-host prerequisite gate is accepted as `pv1_ready`
+(`pontis/docs/implementation/mcp-host-integration-gate.md`), MP-0→MP-6 are `done`, and PV-1 is
+`ready` (`pontis/docs/implementation/product-validation-plan.md` §3). The owner has placed this
+repository in scope.
+
+**Pontis contracts this plan is built on:** ADR-010, ADR-015, ADR-016, ADR-019, ADR-020, ADR-022,
+ADR-023, ADR-024, ADR-025, ADR-026, ADR-027; `docs/06-capability-system.md`,
+`docs/12-sdk.md`, `docs/13-ui-integration.md`, `docs/15-deployment.md`, `docs/09-security.md`.
+
+This document owns the **host side** of the integration. Per ADR-023 Decision 4, Forma's repository
+records the capability/domain mapping, user and application-context tests, deployment wiring and
+product behaviour; Pontis records only sanitized reusable-platform outcomes and never names this
+product.
+
+---
+
+## 1. Authority, and how the two repositories' documents resolve
+
+Forma is the host and the domain authority (ADR-023 Decision 1). Pontis does not own Forma's data,
+user identity, account mapping, authorization or business rules.
+
+Two normative hierarchies now touch the same work. They resolve like this:
+
+| Question | Authority |
+|---|---|
+| What a capability may do, how it is projected, what credentials exist, what the Runtime enforces | Pontis ADRs and specs, in their own precedence order |
+| What Forma's domain means, which operations exist, what the editor does, what the product promises | [forma-plan.md](../forma-plan.md) and [CLAUDE.md](../CLAUDE.md) |
+| A genuine conflict | Stop and record it. Neither repository's agent resolves it by writing code (`pontis/AGENTS.md` § Normative hierarchy) |
+
+Anything touching identity, tenancy, authorization, credential flow or provider support is the
+owner's decision, not this plan's. §10 keeps three different things apart: the Pontis contracts
+that already decide the design, the host-side decisions — two now settled, five still open — and the
+one real product blocker.
+
+---
+
+## 2. Topology: an application-owned sidecar
+
+ADR-023 requires recording **why** a shape was chosen.
+
+Forma's backend is Rust (`apps/server`, Actix) and serves the built React SPA from
+`apps/web/dist`, so the whole product is one origin. The Pontis host SDK (`@pontis/core`,
+`@pontis/server`) and the mountable Control Plane (`@pontis/control-plane`) are TypeScript. The
+**embedded** shape of ADR-023 Decision 1 is therefore unavailable: it requires a compatible
+backend process, and reimplementing the Gateway, delegation issuer or Control Plane in Rust is
+what ADR-023's Context explicitly refuses and what `slice-08` §13 counts as a failed reuse proof.
+
+**Decision: the application-owned integration sidecar.** It is Forma's code, deployed by Forma,
+composed from public Pontis packages.
+
+```text
+browser ── https ──▶ Caddy ─┬─▶ forma-server   (Rust, :4765)  REST + SPA
+                            ├─▶ forma-mcp      (Rust, :4766)  existing direct MCP door
+                            └─▶ forma-pontis   (Node, :4767)  sidecar
+                                  │  Capability Gateway
+                                  │  delegation issuer
+                                  │  Control Plane + Realtime Gateway   (co-located, ADR-016/023)
+                                  │
+                                  └── Boundary F ──▶ forma-server domain operations
+                                                          │
+                                                          └─▶ crates/application use cases
+                                            ▲
+                                   outbound WSS
+                                            │
+                              user machine: pontisd + Codex 0.156.1
+```
+
+The four Pontis logical components stay in that one process, which is what keeps ADR-015's opaque
+reference credentials valid (issuer and validator co-located) and keeps this out of the deferred
+shared Control Plane.
+
+The port is a placeholder. `4766` is not reserved but **occupied** — `FORMA_MCP_BIND` defaults to
+it and `deploy/caddy/Caddyfile` already proxies `/mcp*` there — so the sidecar takes the next one.
+[CLAUDE.md](../CLAUDE.md) § Planned architecture still calls `4766` "reserved for future MCP HTTP";
+that line is stale and this plan is where it gets corrected.
+
+---
+
+## 3. Capability catalog, and the domain service behind each one
+
+Every capability binds to a `crates/application` use case, reached over Boundary F. That crate is
+already the domain-service layer ADR-010 asks for: every function takes `account: AccountId`, and
+`forma-mcp` has never been allowed to bypass it. **No capability reaches SQLite or the filesystem
+directly.**
+
+`risk` follows `pontis/docs/06-capability-system.md` § Risk model. Every `command` carries
+presentation metadata, which is required at registration.
+
+### Resources
+
+| Capability | Domain binding | Notes |
+|---|---|---|
+| `project.list` | `application::projects::list` | bounded list; the PV-1 "bounded read" |
+| `project.get` | `application::projects::get` | |
+| `brand.get` | `application::projects::get_brand` | the agent must read this before choosing any value |
+| `design.list` | `application::designs::list` | |
+| `design.get` | `application::designs::get` | carries the version the agent must echo as `base_version` |
+| `design.history` | `application::designs::history` | |
+| `asset.list` | `application::assets::list` | |
+| `template.list` | `application::templates::list` | |
+| `asset_request.get` | `application::asset_requests::get` | |
+| `design.validate` | `application::renders::validate` | no side effect, so `resource`, not `command`, despite being an "output" tool in Forma's MCP vocabulary |
+
+### Commands
+
+| Capability | Domain binding | risk | Notes |
+|---|---|---|---|
+| `design.create` | `application::designs::create` | `write` | |
+| `design.apply_operations` | `application::designs::apply` | `write`, elevated | see §3.1 |
+| `design.undo` | `application::designs::undo` | `write` | never decrements the version |
+| `design.export` | `application::exports::create` | `write` | writes a file under the data dir; not an `external_side_effect` — nothing leaves the deployment |
+| `asset_request.create` | `application::asset_requests::create` | `write` | how the agent asks for an image it does not have |
+| `template.create_design` | `application::templates::create_design` | `write` | |
+| `design.delete` | `application::designs::delete` | `destructive` | not required by PV-1; a Forma product decision — §10(b) D3 |
+
+Deliberately absent, matching [CLAUDE.md](../CLAUDE.md) § MCP surface: no `project.create`, no
+brand-editing capability, no template-saving capability. An agent works inside a workspace the user
+owns, and those three decisions are the user's. Pontis does not change that reasoning.
+
+Also absent, but for a different reason: **`design.render_preview`**. Forma's MCP tool returns the
+PNG as an image content block, which the Pontis projection cannot carry — §10(c). A
+structured-only variant (success, dimensions, cache key) is still coherent and is what would let a
+paired agent trigger the preview *the person* looks at, so whether it is added depends on how
+§10(c) is decided. It is not an oversight.
+
+### 3.1 `design.apply_operations` and dynamic risk elevation
+
+`apply_operations` is a batch of up to `MAX_OPS_PER_BATCH = 20` typed `DesignOperation`s applied
+atomically. Most are ordinary editing; `RemoveLayer` and `RemovePage` destroy work.
+
+The declared baseline is `write`. A batch containing a removal is elevated by the `requiresApproval`
+hook to the class the removal deserves, per `docs/06-capability-system.md` § Dynamic risk
+elevation. Elevation is one-directional and the hook can never lower a class.
+
+Two properties of Forma's operation set make this fit cleanly rather than awkwardly:
+
+- **Approval binds to resolved input.** `docs/06` requires a set-valued command to take explicit
+  resolved identifiers, never a filter re-evaluated at execution. Forma's operations already carry
+  explicit layer and page ids — there is no filter form to remove.
+- **The batch is already one atomic unit with one version increment.** One invocation, one approval,
+  one idempotency key, matching the `task.delete` reasoning in `pontis/docs/19-reference-app.md`.
+
+Approval scope is settled by the contract, not by this plan. `docs/06` § Approvals supports `once`
+(authorizing exactly one `invocation_id`) and a bounded `session` scope. **PV-1 needs only `once`**:
+one batch, one invocation id, one human decision. Session scope stays deliberately outside the
+initial integration.
+
+That leaves a product observation rather than an open question: an agent doing ordinary editorial
+work removes layers routinely, so `once` per batch may prove tiring in use. If it does, session
+scope is the bounded answer and the owner can ask for it then, with evidence. It is not a Pontis
+blocker and nothing waits on it.
+
+### 3.2 UI capabilities
+
+`pontis/docs/06` § Capability kinds: a `ui` capability has no execution binding, a fixed output
+schema, and `risk` is always `read`. It is routed to a `UIClient`, never executed by the Gateway.
+
+Forma's editor keeps exactly this state in Zustand (`apps/web/src/store.ts`), which is what makes
+these near one-to-one:
+
+| Capability | Handler |
+|---|---|
+| `ui.openDesign` | navigate to the design, then `selectPage` |
+| `ui.selectLayer` | `useEditor.selectLayer` |
+| `ui.setPanel` | `useEditor.setPanel` — `properties`, `validation`, `assets`, `brand` |
+| `ui.setZoom` | `useEditor.setZoom`, clamped to `MIN_ZOOM`/`MAX_ZOOM` |
+
+Each still declares an input schema and an authorization binding, and both still run: navigating to
+a design the represented user may not read would disclose that it exists.
+
+`apps/web/src/App.tsx` routes on a bare `switch (window.location.pathname)` with no router library,
+so `ui.openDesign` changes location rather than calling a `navigate()`. That is an implementation
+detail, not a contract problem.
+
+---
+
+## 4. Boundary F — authentication and trusted context
+
+ADR-023 Decision 2 defines the hop and its obligations. It deliberately does **not** prescribe the
+mechanism: "authenticate the sidecar using a host-owned server-to-server mechanism appropriate to
+the deployment".
+
+What the hop must carry, and where each value comes from:
+
+| Value | Source | Never from |
+|---|---|---|
+| sidecar service identity | a host-owned credential | a model argument |
+| represented user | the trusted application context the sidecar authenticated | a tool argument |
+| `application_context_id` | the same trusted binding (§5) | a tool argument |
+| `invocation_id` | the Runtime, forwarded by the Gateway | the model |
+| cancellation and a timeout | the caller's `AbortSignal`, which the sidecar client threads through every call | — |
+
+Two of ADR-023 Decision 2's obligations are **not** yet satisfied and are easy to read past:
+
+- **cancellation and timeouts.** The sidecar client passes an `AbortSignal` into every operation.
+  Forma's REST surface has no cancellation semantics at all, and shutdown deliberately waits 20s for
+  in-flight work. An aborted Boundary F request therefore leaves the work running — and
+  `design.validate` renders every page to measure glyphs, which CLAUDE.md records at 8.6s for a
+  Story page at scale 4. It is the cheapest capability for a model to call and the most expensive to
+  serve.
+- **idempotency identifiers.** See §10(b) D6: `base_version` is not a replay ledger.
+
+Forma's existing pieces line up with this better than expected:
+
+- `crates/application` is already the bounded operation surface — there is no generic endpoint
+  proxy to build or to refuse.
+- `AuthContext` (`crates/design-core/src/account.rs`) already documents `account_id` as "a security
+  boundary, not an input field: resolved here, from a credential, and never read from a request
+  body, a query parameter, an MCP tool schema or an agent prompt." That is ADR-024's rule, written
+  before ADR-024 existed.
+- `apps/server/src/routes/helpers.rs` already fails closed in hosted mode, and `actor_from` already
+  refuses to trust a caller-supplied actor outside `AuthKind::Local`.
+- Forma's optimistic `base_version` UPDATE is **not** an idempotency ledger, and reading it as one
+  is the mistake this plan made in an earlier draft. What it does cover is the fixture's *other*
+  guard: an approval granted against version N is refused once the design has moved. Replay safety
+  is a separate, missing thing — §10(b) D6.
+
+**The precedent to follow, not to copy.** `pontis/examples/polyglot-host-fixture/src/main.rs` is a
+Rust host proving this hop: a bearer service credential compared in constant time, `x-fixture-user-id`
+and `x-fixture-application-context-id` as trusted headers, fixed operation paths, bounded response
+bytes, and a ledger keyed on the invocation scope. Its header names are the fixture's, not a Pontis
+contract.
+
+**The credential is decided in §10(b) D1:** a dedicated service credential with its own
+`AuthKind`, not a reused PAT. A PAT is not identity-free — `apps/server/src/auth.rs` sets
+`user_id: key.created_by_user_id` — so the full reasoning lives there rather than being summarised
+twice and getting it wrong once.
+
+---
+
+## 5. Application context — `AccountId` is the mapping
+
+ADR-024 resolves the last open question from the earlier analysis. `ApplicationContextId` means only
+"the application-owned authorization context selected for this session"; the host decides what it
+maps to.
+
+**Forma's `AccountId` is that value.** It is already the tenant boundary, already threaded through
+every repository method as a non-`Option` parameter, and already resolved from a credential rather
+than from input. Its UUID form satisfies ADR-024's grammar
+(`[A-Za-z0-9][A-Za-z0-9._:-]{0,127}`).
+
+What follows from ADR-024, and what each implies for Forma:
+
+- **The binding is immutable for the session.** Switching account means a new `AgentSession`, not a
+  rebind. Forma's web app selects the account before session creation and cannot change it after.
+- **Durable history splits.** A principal stream `(application_id, user_id)` carrying only
+  `device.revoked`, and an application-context stream per account carrying everything else. A
+  frontend holds two cursors with independent gap rules.
+- **`UIClient` eligibility requires matching user *and* context.** A tab that switched account stops
+  being a valid target for the previous account's session. Forma's SPA must re-register on that
+  change.
+- **The host revalidates membership on every invocation.** A stored context or a valid delegation
+  never preserves access that was revoked. `crates/application` already takes `AccountId` on every
+  call, so the check has nowhere to hide.
+
+**One account per user is an assumption, not an invariant — and ADR-024 makes that load-bearing.**
+An earlier draft of this plan read `AccountRepository::membership_of` returning
+`Option<AccountMembership>` as the model. It is not. The schema permits many:
+
+```sql
+-- migrations/sqlite/0004_accounts.sql
+PRIMARY KEY (account_id, user_id)
+```
+
+and the query that resolves it has no `ORDER BY`:
+
+```sql
+-- crates/persistence/src/sqlite/account.rs
+SELECT account_id, user_id, email, role, created_at
+FROM account_memberships WHERE user_id = ?     -- fetch_optional, unordered
+```
+
+Two rows can exist today: `forma-server grant-owner` grants a bootstrap membership to any subject,
+including one who already owns an account created through `POST /api/v1/accounts`. Which one wins is
+undefined.
+
+Right now that is a latent bug about which projects a browser sees. Under ADR-024 it would decide
+the **session-immutable authorization context** — binding an `ApplicationContextId` to a coin flip,
+which is the opposite of ADR-024 Decision 1's "selected by the authenticated host application". So
+it has to be made deterministic before a session is ever bound: §10(b) D7.
+
+`AccountRole` genuinely does have one variant, `Owner`. ADR-024 explicitly supports a
+single-context application ("supplies one stable application-owned value"), and PV-1 bounds its
+isolation evidence to what the app supports, so the role limitation is recorded and the
+authorization that exists is tested. Nothing is added there on Pontis's account — §10(b) D4.
+
+---
+
+## 6. Guidance and posture
+
+### 6.1 `ApplicationAgentGuidance` is required, and Forma's skill does not fit it
+
+ADR-027 Decision 2 makes guidance mandatory for an application-operation session, supplied through
+the authenticated Gateway discovery response, validated, digest-bound and session-immutable. The
+schema is six required fields and a hard budget:
+
+```text
+version = 1
+role            ≤ 128 bytes
+purpose         ≤ 2 KiB
+instructions[]  ≤ 32 entries × 1 KiB
+out_of_scope[]  ≤ 32 entries × 1 KiB
+terminology[]   ≤ 64 entries (term ≤ 128 B, meaning ≤ 512 B)
+                 16 KiB canonical total
+```
+
+[skills/forma/SKILL.md](../skills/forma/SKILL.md) is roughly 400 lines in the thirteen sections
+§51.2 mandates. **It will not fit, and this matters more than it sounds.** Under `capability_only`
+the agent has no filesystem, so it cannot read the skill, the design reference, or anything else in
+this repository. The guidance is the *only* documentation it receives.
+
+So the distillation is authoring work with product judgement in it, not truncation. Its inputs are
+the skill, [docs/agent-design-reference.md](agent-design-reference.md), and the measurements that
+produced the rules. Its output is a draft for owner review; I do not intend to ship a guidance
+document nobody read.
+
+Two constraints that shape the draft: guidance is provider-visible, so nothing sensitive goes in it;
+and guidance is advisory, so a rule that must hold belongs in the validator or in a capability's
+authorization, never in prose.
+
+`apps/mcp/tests/skill_matches_the_code.rs` already asserts that every tool, operation, brand token,
+error code and layer field the skill names actually exists. The guidance needs the same guard for the
+same reason — a distilled document drifts faster than the one it came from.
+
+### 6.2 `capability_only` suits Forma unusually well
+
+ADR-027 Decision 3 makes `capability_only` the secure default, selected by the Runtime and not by
+the application: no ambient MCP server, no provider-native filesystem, process, shell, web, browser
+or subagent facility reachable by the model, no model-facing network, and failure to verify any
+required restriction fails session readiness with `unsupported_feature`.
+
+For most host applications that is a severe restriction. For Forma it is close to ideal: **the agent
+designs, it does not code.** It never needed a shell or the repository. Everything it does is
+already expressed as typed operations through one mutation path — which is the invariant
+[CLAUDE.md](../CLAUDE.md) states as "the editor has no private authoring path", now applied to the
+agent as well.
+
+Decision 4's neutral workspace (`<runtime-dir>/provider-workspaces/<session_id>/`, `0700`, no Git
+repository, no mount of any source tree, removed on exit) costs Forma nothing.
+
+### 6.3 The provider is pinned
+
+`pontis/docs/07-provider-system.md` and the accepted MP-6 evidence pin real-provider support to
+**Codex CLI `0.156.1`** on `linux/x86_64`. `0.154.0` is deterministic-contract only: the real run
+failed closed because `unified_exec` remained enabled. A newer release is a new candidate and is not
+covered.
+
+Product consequence, stated plainly so the UI does not promise otherwise: **the paired-agent path is
+Codex.** Claude and Gemini are Activation-Map-gated in Pontis. They keep working through Forma's
+existing direct MCP door, which is a different door with different properties (§8).
+
+---
+
+## 7. Sidecar composition and deployment wiring
+
+### 7.1 Composition
+
+Built from public packages only — `@pontis/core`, `@pontis/server`, `@pontis/control-plane`, and
+`@pontis/react` in the SPA. No private imports, no copied internals. The reuse metric in
+`slice-08` §13 is zero copied lines of provider, runtime, device-protocol or control-plane code, and
+this plan is bound by it.
+
+The sidecar's own code is: the capability definitions of §3, their Boundary F bindings, the
+guidance source of §6.1, `resolveUser`, and the domain-error mapping onto Forma's typed codes.
+
+Forma's error envelope is already stable and code-first (`{"error": {"code", "message", "details"}}`),
+which makes the mapping onto `docs/06`'s typed registry mechanical rather than interpretive:
+`VERSION_CONFLICT` → `conflict`, `DESIGN_NOT_FOUND` → `not_found`, `INVALID_OP` →
+`validation_error`, `ASSET_NOT_FOUND` → `not_found`. Each mapping gets a test; none is invented at
+call time.
+
+### 7.2 Deployment
+
+`deploy/caddy/Caddyfile` already fronts two upstreams and already sets `flush_interval -1` on the
+MCP path — the unbuffered-streaming requirement `pontis/docs/15-deployment.md` § What the reverse
+proxy must do names as load-bearing. Adding the sidecar is a third `handle` block plus a
+`forma-pontis.service` beside the existing units, and the WebSocket `Upgrade` must be forwarded for
+the device socket.
+
+Three things `docs/15-deployment.md` makes the host's responsibility and that this plan therefore
+owes explicitly: the pairing-code rate limit at the proxy (the Control Plane's own limiter keys on
+the peer address, which behind a proxy is the proxy's), browser `Origin`/cookie behaviour at the
+public origin, and trusted-proxy/client-IP handling.
+
+`forma.hintly.online` already terminates public-CA TLS on an Ampere box behind Caddy, which is the
+topology PV-2 requires and the TLS path OQ-011 left unproven. **PV-2 touches production and is not
+authorized by this plan**, and PV-2 is outside it — see §10's boundary note.
+
+### 7.3 The base product stays usable without Pontis
+
+ADR-023 Consequences and PV-1's own scope both require it, and Forma satisfies it structurally:
+`forma-server` has no dependency on the sidecar. If `forma-pontis` is down, the editor, the REST
+API and `forma-mcp` are unaffected; only the in-app chat and pairing are unavailable. A test asserts
+this rather than a sentence claiming it.
+
+---
+
+## 8. Two doors, one definition
+
+ADR-023 Decision 3 permits it explicitly: an application may keep operating another MCP server,
+Pontis neither adapts it nor treats its catalog as authoritative, and ADR-022 generates the
+provider-facing catalog from Pontis capabilities only.
+
+So Forma ends with two agent-facing surfaces:
+
+| | `forma-mcp` (existing) | Pontis capabilities (new) |
+|---|---|---|
+| Who reaches it | any MCP host, directly | a paired Runtime, Codex 0.156.1 |
+| Credential | PAT or OAuth token | none reaches the model; delegation is server-held |
+| Approvals | none | local policy + human approval |
+| UI actions | none | typed, routed to a `UIClient` |
+| Where the chat lives | the host's own client | inside Forma |
+
+Neither obsoletes the other, and both must describe the same product. The risk ADR-022 opens by
+naming — several catalogs that drift — is now Forma's to manage across its own two surfaces, which
+is not a question either repository's documents answer.
+
+Forma has unusually good machinery for it: `ts-rs` already generates TypeScript bindings from Rust
+into `bindings/generated/`, and `scripts/check-bindings.sh` already fails CI when they drift. A
+descriptor generated from the same Rust source that defines `DesignOperation` would make one
+definition enforceable rather than aspirational.
+
+That is Forma-internal architecture, so it is mine to recommend rather than the owner's to
+adjudicate, and it is not a Pontis requirement. It is recorded as a vetoable recommendation:
+§10(b) D5.
+
+---
+
+## 9. Test scenarios and evidence
+
+PV-1 §5 fixes the required shape. Mapped onto Forma:
+
+| PV-1 requirement | Forma scenario |
+|---|---|
+| bounded read | "Which projects do I have, and what is the brand of this one?" → `project.list`, `brand.get` |
+| low-risk write | "Raise the headline to 96pt" → `design.apply_operations`, one batch, `write` |
+| approval-requiring mutation | a batch carrying `RemoveLayer`, approved at `once` scope |
+| typed UI action | "Show me the layer that overflows" → `design.validate`, then `ui.selectLayer` |
+| FakeProvider and real Codex | the same capability definitions, unchanged, on both |
+| user / role / context isolation | bounded to what Forma supports; the limitation is recorded (§5) |
+| idempotency | one `invocation_id` replayed returns the first result and commits once — needs the ledger of §10(b) D6 |
+| denial / expiry / cancellation / replay | approval refused, expired, cancelled mid-turn, and re-delivered |
+| base app usable without Pontis | §7.3 |
+| the agent understands its role | it uses capabilities for design work and declines unrelated general-purpose tasks — ADR-027's product-behaviour evidence |
+
+Forma's existing layers carry most of this without new infrastructure: `cargo test --workspace`,
+the Playwright walkthrough in `e2e/` for the browser half, and `apps/mcp/tests/agent_flow.rs` for
+the agent half. The new layers are the sidecar's own tests and the Boundary F suite.
+
+Evidence lives in this repository per ADR-023 Decision 4. Pontis receives sanitized
+reusable-platform outcomes only, and no Forma URL, credential or user data enters its documents.
+
+---
+
+## 10. Three kinds of thing, kept apart
+
+This section replaces an earlier single list that mixed them, which made a Forma product choice look
+like a Pontis requirement and a settled contract look like an open question.
+
+### (a) Pontis contracts that already determine the design
+
+Nothing here is open. Each row is decided by a document, and the design follows it.
+
+| Determined | By |
+|---|---|
+| Capabilities bind to existing domain services, never to storage | ADR-010; `crates/application` is already that layer |
+| One canonical definition per operation; `resource`, `command`, `ui` | `docs/06-capability-system.md` |
+| Every `command` carries presentation metadata or fails registration | `docs/06` § Presentation metadata |
+| The Runtime generates the session MCP catalog: one same-named tool per authorized capability, no generic dispatcher, shell, URL or endpoint | ADR-022; SEC-INV-016 |
+| Forma's own MCP server may continue, is not imported and is not Pontis authority | ADR-023 Decision 3 |
+| The sidecar shape, with Gateway, delegation issuer, Control Plane and Realtime co-located | ADR-023 Decisions 1–2; ADR-016 |
+| Boundary F must authenticate the sidecar, bind user and context from trusted context, re-run host authorization, and expose no generic proxy | ADR-023 Decision 2 |
+| `application_context_id` is host-selected, opaque, required, session-immutable, never a model argument | ADR-024 Decisions 1–3 |
+| Durable history splits into a principal stream and one per application context | ADR-024 Decision 4 |
+| `UIClient` eligibility requires matching user *and* application context | ADR-024 Decision 2 |
+| `ApplicationAgentGuidance` is required, bounded to its six fields and 16 KiB, digest-bound and session-immutable | ADR-027 Decision 2 |
+| `capability_only` is the Runtime-selected secure default; the application cannot grant local authority | ADR-027 Decisions 1, 3 |
+| A neutral ephemeral per-session workspace | ADR-027 Decision 4 |
+| Approval scope for PV-1 is `once`, keyed on the `invocation_id` | `docs/06` § Approvals |
+| Real-provider support is Codex CLI `0.156.1` on `linux/x86_64` | `docs/07-provider-system.md`; accepted MP-6 evidence |
+| Capability results are structured JSON validated against the output schema; media capabilities are not activated | ADR-026 Decision 2; `pontis/crates/runtime/src/mcp.rs` § `project_result` |
+
+And what Forma already satisfies without new work:
+
+| Requirement | What satisfies it |
+|---|---|
+| domain-service reuse and no direct storage path | `crates/application`, the only mutation path; `forma-mcp` has never been allowed to bypass it |
+| context never taken from model input | `AuthContext::account_id`, already documented and implemented as a resolved boundary |
+| one atomic unit per invocation, one version increment | the guarded UPDATE and `MAX_OPS_PER_BATCH = 20` |
+| explicit resolved identifiers rather than filters | `DesignOperation` carries layer and page ids |
+| typed, stable error codes | Forma's §32 envelope, mapped in §7.2 |
+| unbuffered streaming through the proxy | `flush_interval -1`, already in `deploy/caddy/Caddyfile` |
+| base app independent of the agent path | `forma-server` has no dependency on the sidecar |
+| public-CA TLS on a real domain | `forma.hintly.online`, already deployed |
+| the agent needs no shell or filesystem | it never had one |
+
+### (b) Host-side decisions
+
+These are Forma's, not Pontis's: Pontis states the obligation and deliberately leaves the mechanism
+to the host, or does not speak to the question at all. The owner delegated these, and D1 and D2 were
+reviewed by an independent second reading before being settled.
+
+#### Decided
+
+**D1 — Boundary F is authenticated by a dedicated service credential with its own `AuthKind`.**
+
+`apps/server/src/auth.rs` dispatches on the credential's **prefix alone**: deployment token, then
+`forma_pat_`, then JWT, in mutually exclusive arms whose ordering is itself documented as what keeps
+the classes from being confused. So reusing a PAT here does not change the sidecar's credential — it
+changes what the string `forma_pat_…` *means server-wide*. Every PAT already minted, by any owner,
+would become a credential whose blast radius on leak is "any account, any user, any context" instead
+of "one account", without anyone re-issuing or re-reviewing one. Gating that on a flag on `ApiKey`
+is this same decision with a worse name and a shared prefix.
+
+A PAT is also not identity-free: `auth.rs` sets `user_id: key.created_by_user_id`, the subject who
+minted it, permanently. A sidecar serving several people would stamp every request with that one
+person — which is the audit trail ADR-024 exists to keep honest.
+
+The dedicated credential gets its **own prefix**, so the arms in `require_bearer` stay mutually
+exclusive by construction. It reuses what PATs already proved: blake3 hashing, the prefix as an
+index hint, constant-time comparison, revocation. And a new `AuthKind` variant forces the
+exhaustive match in `routes/helpers.rs` to make a reviewed decision about what §61's history
+records, rather than inheriting one.
+
+*Accepted cost:* a fourth credential class in a file whose header enumerates three, a new
+minting and revocation path, and churn in `bindings/generated/AuthKind.ts`. That cost is additive
+and local; option A's cost is a silent redefinition of a credential already in circulation.
+
+*Two requirements, or this is worse than the alternative it replaced.* The service arm must **refuse**
+a request that carries no represented-user and context inputs, and must **refuse** one carrying
+`x-forma-entry`. Otherwise the credential alone is full account access, and `forma-mcp`'s `admits()`
+— which probes `/api/v1/status` with no such inputs — would admit a leaked sidecar credential at the
+`/mcp` door. Both are tests, not comments. Note also that `AuthKind` is exported with
+`rename_all = "snake_case"`, where `McpOAuth` becomes `"mcp_o_auth"`; pick a variant name that does
+not mangle.
+
+**D2 — `forma-server` resolves the session; the sidecar asks it.**
+
+The decisive argument is not "one verifier", which is what an earlier draft of this plan said. It is
+that **the alternative does not remove the hop it exists to remove.** Pontis requires two
+resolutions, not one: `getAuthenticatedUser(request)` *and* the authorized application context
+(`pontis/docs/12-sdk.md` § Adapter boundary), and ADR-024 Decision 1 requires the host to verify the
+user may *enter* the selected context at session creation. That context is Forma's `AccountId`,
+which is a row in `account_memberships` — only `forma-server` can answer it, and the sidecar is
+forbidden the database. So a sidecar that verified the JWT itself would verify it in TypeScript
+**and still call `forma-server`** for membership: a second implementation of `jwt.rs` bought for
+zero saved round trips.
+
+One endpoint answers both halves at the existing choke point. The precedent for its shape is already
+in the repository: `ServerClient::admits` in `apps/mcp/src/client.rs` asks `forma-server` and reads
+the status code rather than verifying anything itself.
+
+What a second implementation would have to re-derive correctly, in another language, each with a
+recorded reason and a permissive default to drift toward: `alg` pinned to ES256 and read only in
+order to refuse; `validate_aud = false` plus a hand-rolled two-shape audience check whose agent form
+must match the token's own `client_id`; `email_verified` read from the top level and never from
+`user_metadata`; 5s leeway instead of the library's 60; and a JWKS refresh floor where an empty key
+set does not clear the cache.
+
+*Accepted cost:* `forma-server` sits on the authentication path of every session start — an extra
+hop, extra latency, and a hard dependency. It also cuts against §7.3: with `forma-server` down the
+sidecar cannot resolve a user at all. Accepted, because there is nothing useful a resolved user
+could do while the domain service is unreachable — every capability binds to `crates/application`
+over that same hop. The resolution is cached for the session, which ADR-024's immutable binding
+permits, and authorization still re-runs per invocation, which ADR-024 requires regardless.
+
+*Interaction:* D2 makes D1 close to forced. The resolve call is one request carrying two credentials
+— the sidecar's own, and the subject token being asked about — and `presented()` reads exactly one
+`Authorization` header. A dedicated arm ("service credential in `Authorization`, subject token in a
+named header, verified by the same `Verifier`") fits that structure; growing the PAT branch a second
+credential check is where the class separation starts to blur. The sidecar must also **not** set
+`x-forma-entry` on that call, since a browser session token is verified with `Accepts::Either`.
+
+#### Still open
+
+**D3 — Whether `design.delete` becomes a capability. Not required by PV-1.**
+[docs/plan-status.md](plan-status.md) item 5 deliberately gave the agent no delete tool: "deciding
+that a piece of someone's work should stop existing is not the agent's call." Pontis changes the
+premise — an approval is exactly a human making that call with the target in front of them. But
+PV-1's approval-requiring mutation is already satisfied by `design.apply_operations` carrying a
+`RemoveLayer`, so this is a Forma product decision with no schedule pressure on it.
+
+**D4 — Whether Forma grows a second role. Not required by PV-1.**
+See §5. PV-1's isolation evidence is bounded to what the app supports. If it is ever built it will
+be for Forma's own product reasons, not to satisfy a gate.
+
+**D5 — One definition across Forma's two agent surfaces. A recommendation, vetoable.**
+Pontis requires one canonical definition per operation (`docs/06`) and says nothing about how a host
+keeps its *own* surfaces synchronized — `forma-mcp` and the Pontis capabilities are both Forma's.
+I recommend generating capability descriptors from the same Rust source that defines
+`DesignOperation`, reusing the `ts-rs` plus `scripts/check-bindings.sh` machinery that already fails
+CI on drift. That is a host-side engineering preference, not a Pontis requirement and not an
+architectural blocker. Say no and I author them in TypeScript with a weaker guard.
+
+**D6 — A host-side invocation ledger. Newly identified; blocks PV-1's idempotency evidence.**
+ADR-023 Decision 2 requires the hop to carry idempotency identifiers, and
+`pontis/examples/polyglot-host-fixture/src/main.rs` keeps the ledger **in the host**: the stored
+result is returned on replay, and a different payload under the same key is refused with
+`invocation_conflict`. Forma has no such table — `grep -ri idempot` over `crates/` and `apps/`
+returns one unrelated comment. Replaying `apply_operations` with the same `base_version` after the
+first succeeded answers `VERSION_CONFLICT`, an error, not the first result. That is the wrong shape:
+idempotency means the replay returns the original answer.
+
+This is new persisted work in `forma-server` and it was missing from the step list. It is mine to
+design rather than the owner's to adjudicate, but it is recorded here because it changes the
+schedule, and the gap stays invisible until the sidecar retries a timeout that actually committed.
+
+**D7 — Deterministic account resolution. Newly identified; blocks binding a session.**
+See §5. Either constrain the data — a unique index on `user_id`, or `grant` refusing a second
+account — or make resolution explicit and ordered. Which one depends on whether Forma ever intends a
+user to belong to more than one account, which is D4's question, so the two should be answered
+together. It has to be settled before any `ApplicationContextId` is bound, because ADR-024 makes
+that binding immutable for the life of the session.
+
+### (c) The one real product blocker
+
+**The visual design loop through the Pontis door is not viable under the current contract.**
+
+This is the only functional blocker that the accepted contracts do not resolve. It is not an open
+technical question — Pontis has already answered it:
+
+- ADR-026 Decision 2: Pontis "does not activate resources, prompts, completion, sampling,
+  elicitation, media-specific capabilities, remote MCP, subscriptions or any later-generation
+  extension", and the accepted surface is tools-only with structured content and schemas.
+- `pontis/crates/runtime/src/mcp.rs` § `project_result`: every completed result is validated against
+  the declared output schema and bounds, then projected as `CallToolResult::structured(result)`.
+  There is no image content block in that path.
+
+So the answer today is **no**: a capability result cannot carry a picture the model can look at.
+
+Why it matters here rather than being a cosmetic loss. Forma's `render_preview` returns the PNG as an
+image content block precisely so a multimodal host can see the piece, and
+[CLAUDE.md](../CLAUDE.md) records the reason: the validate → fix → render → **look** loop is the
+contract the agent's judgement rests on. The skill tells the agent to say so when the image does not
+reach it rather than claim the design looks right. Through the Pontis door, it would never reach it.
+
+I am not proposing a media mechanism, and deliberately not proposing base64, a URL, an asset handle
+or any other route — inventing one would be exactly the kind of parallel path ADR-022 and
+SEC-INV-016 exist to prevent.
+
+The decision is the owner's, and it is a scope decision with two shapes:
+
+1. **Proceed with PV-1 as structural work.** The paired agent reads, mutates, validates and exports,
+   and the render is visible to the *person* in Forma's own UI rather than to the model. The
+   editorial judgement that needs eyes stays with the human, or stays on Forma's existing direct MCP
+   door, which is unaffected by this and keeps its image content block.
+2. **Ask Pontis for a formal scope or ADR review for media.** That is a Pontis contract change with
+   its own review, not something this integration can absorb.
+
+Until that is decided, §12's step list is implementable and nothing in it depends on the answer —
+but what the paired agent can be *claimed* to do does.
+
+### A boundary note, not a question
+
+PV-2 mutates a production-like VPS with real DNS and TLS, and is outside this plan.
+`forma.hintly.online` is the obvious candidate and already the right topology. I will not touch it,
+and I will ask for authorization in as many words when PV-1 passes.
+
+### Recorded skew
+
+Pontis requires Rust 1.88+ and pins `rmcp ~3.2.0`; Forma's workspace is on `rmcp 3.1`. Separate
+workspaces, so not a conflict today. Written down so it is not discovered later if anything is ever
+shared.
+
+---
+
+## 11. Order of work
+
+D1 and D2 are settled, so nothing blocks the start. D7 blocks step 3 and D6 blocks step 8; both are
+in the list rather than waiting outside it. The product blocker in (c) does not block any step — it
+bounds what the finished thing can be claimed to do.
+
+1. **Deterministic account resolution** (D7). Constrain or order it, with a test that two
+   memberships cannot produce an arbitrary winner. First, because every later step binds a context.
+2. **The service credential** (D1): a new `AuthKind`, its own prefix, blake3 hashing and
+   constant-time comparison reusing the PAT machinery — plus the two negative tests, that the arm
+   refuses a request with no represented user and refuses one carrying `x-forma-entry`.
+3. **The resolve endpoint** (D2): subject, account and role from one authenticated call, verified by
+   the existing `Verifier`, with the sidecar cached for the session.
+4. **The host-side invocation ledger** (D6), keyed on the invocation scope, returning the stored
+   result on replay and refusing a different payload under the same key.
+5. **Cancellation on the operations Boundary F can abort**, starting with `design.validate`, which
+   is the cheapest to call and the most expensive to serve.
+6. **The capability descriptors and their Boundary F bindings**, with the error mapping and its
+   tests.
+7. **The sidecar composition** and its local run against `FakeProvider`.
+8. **`ApplicationAgentGuidance`** drafted for review, with its drift guard.
+9. **The UI capability handlers** in the editor.
+10. **The device panel and in-app chat** replacing the Agents page.
+11. **The real Codex `0.156.1` local run.**
+12. **PV-1 evidence** in this repository; sanitized platform outcomes to Pontis.
+
+Steps 1 to 5 are all `forma-server` work in Rust and none of them needs the sidecar to exist, so
+they are testable before any TypeScript is written. Nothing starts until this plan is approved.
