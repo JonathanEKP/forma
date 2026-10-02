@@ -297,7 +297,7 @@ authorization that exists is tested. Nothing is added there on Pontis's account 
 
 ## 6. Guidance and posture
 
-### 6.1 `ApplicationAgentGuidance` is required, and Forma's skill does not fit it
+### 6.1 Guidance is the opening context, and the manual is a capability
 
 ADR-027 Decision 2 makes guidance mandatory for an application-operation session, supplied through
 the authenticated Gateway discovery response, validated, digest-bound and session-immutable. The
@@ -313,23 +313,66 @@ terminology[]   ≤ 64 entries (term ≤ 128 B, meaning ≤ 512 B)
                  16 KiB canonical total
 ```
 
-[skills/forma/SKILL.md](../skills/forma/SKILL.md) is roughly 400 lines in the thirteen sections
-§51.2 mandates. **It will not fit, and this matters more than it sounds.** Under `capability_only`
-the agent has no filesystem, so it cannot read the skill, the design reference, or anything else in
-this repository. The guidance is the *only* documentation it receives.
+**An earlier draft of this section read that budget as a cap on everything the agent could ever
+know, and planned to distil the skill into it. That was wrong, and Pontis said so when asked.** The
+budget bounds the *opening context*, not the agent's knowledge. An application may serve its full
+manual through a `resource` capability, risk `read`, as an intended use of the existing contract —
+ordinary JSON, no `resultContent`, no image support, no MCP Resources, no native skill installed in
+the provider.
 
-So the distillation is authoring work with product judgement in it, not truncation. Its inputs are
-the skill, [docs/agent-design-reference.md](agent-design-reference.md), and the measurements that
-produced the rules. Its output is a draft for owner review; I do not intend to ship a guidance
-document nobody read.
+So nothing is distilled. The reasoning and examples that make a rule followable rather than merely
+stated stay whole, and the guidance carries only what must hold even if the manual is never read.
 
-Two constraints that shape the draft: guidance is provider-visible, so nothing sensitive goes in it;
-and guidance is advisory, so a rule that must hold belongs in the validator or in a capability's
-authorization, never in prose.
+The decisions, settled with the owner:
+
+| | |
+|---|---|
+| Source | One. A template at `crates/agent-catalog/manual/SKILL.md`, rendered per door through the `{capability.id}` substitution `surface.rs` already performs |
+| MCP artifact | `skills/forma/SKILL.md` is generated from it and committed, and stops being edited by hand |
+| Pontis rendering | Rendered from the same template, embedded with `include_str!`, not committed |
+| Capability | `forma.guide`, `resource`, risk `read`, no input, answering `{ revision, text }` |
+| Revision | A content hash of the rendered manual, in the result only and never in the guidance text |
+| Execution | A Boundary F route, account-scoped like every other capability |
+| Sections | None. The whole manual, with a test that fails at 75% of its 64 KiB bound |
+| MCP door | Does not get `forma.guide`. It stays at fourteen tools and byte-identical |
+| Obligation | Advisory. Nothing refuses a write because the manual went unread |
+
+Three of those deserve their reason recorded, because each had a plausible alternative.
+
+**The template lives outside `skills/`** because hosts scan that directory — Claude Code reads
+`.claude/skills`, Codex walks `.agents/skills` — and a file full of `{design.get}` sitting there is
+exactly what should never be loaded by mistake. It lives in the crate that knows how to render it.
+
+**`include_str!` rather than a runtime read**, for the reason that already governs the `/skill`
+route: a deployed binary must not be able to serve a manual that differs from the one CI tested.
+Editing without a rebuild sounds like a convenience and is precisely the property to refuse.
+
+**The result carries no timestamp and no capability list.** A timestamp would make two identical
+reads look different to the invocation ledger's fingerprint. A capability list would give the agent
+a second answer to a question its authorized session catalog already answers, with no way to tell
+which governs when they disagree.
+
+Two things the budget does not change. Guidance is provider-visible, so nothing sensitive goes in
+it. And guidance is advisory — Pontis will not block a write because a manual went unread, and as
+its lead put it, a call does not prove comprehension. A rule that *must* hold belongs in the
+validator or in a capability's authorization, never in prose.
+
+### Guards
 
 `apps/mcp/tests/skill_matches_the_code.rs` already asserts that every tool, operation, brand token,
-error code and layer field the skill names actually exists. The guidance needs the same guard for the
-same reason — a distilled document drifts faster than the one it came from.
+error code and layer field the skill names actually exists. Its ten tests keep pointing at the
+generated MCP artifact unchanged: that file holds real MCP tool names, so they stay true. Aiming
+them at the template would break them, since a template holds ids.
+
+Three tests are added over the template: every `{id}` resolves in the catalog, the template renders
+on both doors, and **no MCP tool name appears in it literally.** That third one closes a hole
+`render_text` cannot see — it validates braces, so a sentence in prose saying "call `get_design`"
+renders cleanly and then lies on the Pontis door. An operation is named with `{id}` or it is not
+named.
+
+`scripts/check-bindings.sh` widens to cover the generated skill rather than gaining a sibling
+script. Its mechanism is already the right one, and two scripts doing the same job drift on what
+each counts as drift.
 
 ### 6.2 `capability_only` suits Forma unusually well
 
@@ -650,43 +693,38 @@ user to belong to more than one account, which is D4's question, so the two shou
 together. It has to be settled before any `ApplicationContextId` is bound, because ADR-024 makes
 that binding immutable for the life of the session.
 
-### (c) The one real product blocker
+### (c) The visual loop, now answered and still waiting
 
-**The visual design loop through the Pontis door is not viable under the current contract.**
+**Resolved as a contract, not yet active.** This section used to record the visual loop as the one
+functional blocker the accepted contracts did not address, and asked the owner to choose between
+proceeding structurally and requesting a media review. Pontis ran that review: ADR-028 defines
+bounded rich capability results and mediated artifacts.
 
-This is the only functional blocker that the accepted contracts do not resolve. It is not an open
-technical question — Pontis has already answered it:
+What that settles:
 
-- ADR-026 Decision 2: Pontis "does not activate resources, prompts, completion, sampling,
-  elicitation, media-specific capabilities, remote MCP, subscriptions or any later-generation
-  extension", and the accepted surface is tools-only with structured content and schemas.
-- `pontis/crates/runtime/src/mcp.rs` § `project_result`: every completed result is validated against
-  the declared output schema and bounds, then projected as `CallToolResult::structured(result)`.
-  There is no image content block in that path.
+- text and structured JSON reports are already supported, which is what makes the manual of §6.1
+  possible at all;
+- ADR-028's first activation adds **one bounded inline PNG**, and nothing else;
+- PDF, audio, video, downloadable files and mediated references or URLs stay deferred to explicit
+  packages, and no alternative route may be introduced to deliver them.
 
-So the answer today is **no**: a capability result cannot carry a picture the model can look at.
+So the answer moved from "a capability result cannot carry a picture" to "it will, within a bounded
+profile, when that profile activates." The structural and documentary integration may proceed now.
+The visual loop and PV-1's exit both wait on `pv1_visual_ready`.
 
-Why it matters here rather than being a cosmetic loss. Forma's `render_preview` returns the PNG as an
-image content block precisely so a multimodal host can see the piece, and
-[CLAUDE.md](../CLAUDE.md) records the reason: the validate → fix → render → **look** loop is the
-contract the agent's judgement rests on. The skill tells the agent to say so when the image does not
-reach it rather than claim the design looks right. Through the Pontis door, it would never reach it.
+What this changes in how Forma writes for the agent, and it is the part worth carrying: **the manual
+must distinguish an image it received from a mechanical validation, and must not claim that the
+agent will never be able to see the render.** An earlier draft of ours did exactly that, and it
+would have been wrong twice over — wrong as a permanent claim, and wrong as advice, because an
+agent told it is blind forever stops asking.
 
-I am not proposing a media mechanism, and deliberately not proposing base64, a URL, an asset handle
-or any other route — inventing one would be exactly the kind of parallel path ADR-022 and
-SEC-INV-016 exist to prevent.
+The honest wording is door-neutral and true on both doors today: when a render reaches you, look at
+it; when it does not, say so and lean on the validator rather than asserting the piece looks right.
+That needs no conditional in the template and survives the activation without an edit.
 
-The decision is the owner's, and it is a scope decision with two shapes:
-
-1. **Proceed with PV-1 as structural work.** The paired agent reads, mutates, validates and exports,
-   and the render is visible to the *person* in Forma's own UI rather than to the model. The
-   editorial judgement that needs eyes stays with the human, or stays on Forma's existing direct MCP
-   door, which is unaffected by this and keeps its image content block.
-2. **Ask Pontis for a formal scope or ADR review for media.** That is a Pontis contract change with
-   its own review, not something this integration can absorb.
-
-Until that is decided, §12's step list is implementable and nothing in it depends on the answer —
-but what the paired agent can be *claimed* to do does.
+Still not proposed, and still deliberately: base64 in an output schema, an improvised URL, a private
+artifact handle, a fetch-by-id tool, or any other parallel path. ADR-022 and SEC-INV-016 exist to
+prevent exactly that, and a workaround built while waiting is harder to remove than the wait.
 
 ### A boundary note, not a question
 
@@ -723,7 +761,9 @@ bounds what the finished thing can be claimed to do.
    bindings, with the error mapping and its tests. Re-pointing `apps/mcp` at the registry and its
    drift guard are part of this step, not a follow-up.
 7. **The sidecar composition** and its local run against `FakeProvider`.
-8. **`ApplicationAgentGuidance`** drafted for review, with its drift guard.
+8. **The manual and the guidance** (§6.1): the template, the generated MCP artifact and its
+    widened drift check, `forma.guide` with its Boundary F route, and bounded guidance drafted for
+    review. No distillation — the budget bounds the opening context, not the agent's knowledge.
 9. **The UI capability handlers** in the editor.
 10. **The device panel and in-app chat** replacing the Agents page.
 11. **The real Codex local run**, against whichever release the evidence matrix accepts when this
