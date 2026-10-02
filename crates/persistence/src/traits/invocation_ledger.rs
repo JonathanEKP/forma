@@ -9,7 +9,7 @@ use crate::error::Result;
 pub struct InvocationRequest {
     /// The person the sidecar acts for, not the sidecar itself.
     pub represented_user: AuthUserId,
-    /// The capability id, e.g. `design.apply_operations`.
+    /// The capability id, e.g. `design.applyOperations`.
     pub capability: String,
     /// The design the invocation targets, when it names one. One it produces
     /// instead (`create_design`) is attached on `complete`.

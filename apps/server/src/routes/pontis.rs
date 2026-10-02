@@ -99,7 +99,7 @@ pub const INVOCATION_OUTCOME_HEADER: &str = "x-forma-invocation";
 pub const PROJECT_LIST: &str = "project.list";
 pub const DESIGN_GET: &str = "design.get";
 pub const DESIGN_VALIDATE: &str = "design.validate";
-pub const APPLY_OPERATIONS: &str = "design.apply_operations";
+pub const APPLY_OPERATIONS: &str = "design.applyOperations";
 
 /// Every capability Boundary F serves, one per route.
 pub const SERVED: [&str; 4] = [PROJECT_LIST, DESIGN_GET, DESIGN_VALIDATE, APPLY_OPERATIONS];
@@ -585,7 +585,7 @@ pub struct ApprovalEvidence {
     pub expires_at: String,
 }
 
-/// `design.apply_operations` at Boundary F.
+/// `design.applyOperations` at Boundary F.
 ///
 /// Unknown fields are refused, so a caller cannot send a `risk` of its own and
 /// have it ignored quietly: the class is never the caller's to state.
@@ -615,7 +615,7 @@ pub struct PontisApplyResult {
     pub updated_at: String,
 }
 
-/// The class `design.apply_operations` is declared at, read from the agent
+/// The class `design.applyOperations` is declared at, read from the agent
 /// catalog — the same entry the generated Pontis descriptor carries — rather
 /// than decided again here.
 ///
@@ -956,7 +956,7 @@ async fn claim_and_apply(
     Ok(Delivered::Executed(result))
 }
 
-/// `design.apply_operations`: the write, and the same write elevated.
+/// `design.applyOperations`: the write, and the same write elevated.
 ///
 /// Order is the point. Everything that can refuse without touching anything —
 /// the caller, the input, the class and its consent — runs first. Then the
@@ -1172,7 +1172,7 @@ mod tests {
     #[test]
     fn the_baseline_is_the_catalogs() {
         let declared = agent_catalog::operation(APPLY_OPERATIONS)
-            .expect("the catalog declares design.apply_operations");
+            .expect("the catalog declares design.applyOperations");
         assert_eq!(required_risk(&[]), declared.risk);
         // Elevation is only well defined above a baseline it can raise.
         assert!(declared.risk.rank() < CapabilityRisk::Destructive.rank());

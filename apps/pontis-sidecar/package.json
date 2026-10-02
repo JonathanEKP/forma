@@ -1,0 +1,24 @@
+{
+  "name": "forma-pontis-sidecar",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "node src/main.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --max-warnings 0",
+    "test": "node --test \"src/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@pontis/control-plane": "link:.pontis/services/control-plane",
+    "@pontis/core": "link:.pontis/packages/capability-core",
+    "@pontis/server": "link:.pontis/packages/sdk-server"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@types/node": "^22.10.0",
+    "eslint": "^9.17.0",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.0"
+  }
+}

@@ -172,13 +172,13 @@ export const capabilityCatalog: ReadonlyArray<CapabilitySpec> = [
     }
   },
   {
-    "id": "asset_request.get",
+    "id": "assetRequest.get",
     "kind": "resource",
     "description": "Check whether an image you asked for has been uploaded. A request is pending until a person resolves it; poll this rather than assuming.",
     "inputSchema": {
       "properties": {
         "asset_request_id": {
-          "description": "The asset request's id, as returned by asset_request.create.",
+          "description": "The asset request's id, as returned by assetRequest.create.",
           "type": "string"
         }
       },
@@ -261,7 +261,7 @@ export const capabilityCatalog: ReadonlyArray<CapabilitySpec> = [
     }
   },
   {
-    "id": "template.create_design",
+    "id": "template.createDesign",
     "kind": "command",
     "description": "Create a design from a saved template, by its id from template.list. The new design takes the template's canvas, pages and layout, and carries its words for you to replace. The template itself is not changed.",
     "inputSchema": {
@@ -296,7 +296,7 @@ export const capabilityCatalog: ReadonlyArray<CapabilitySpec> = [
     }
   },
   {
-    "id": "design.apply_operations",
+    "id": "design.applyOperations",
     "kind": "command",
     "description": "Apply a batch of typed operations to a design. This is how every edit is made: add_page, remove_page, reorder_pages, set_background, add_layer, remove_layer, move_layer, reorder_layer, set_text, patch_text_style, set_image, patch_shape_style, set_format. The batch is atomic — if one operation is rejected, none are saved — so group a coherent change into one call rather than sending several. On VERSION_CONFLICT, call design.get, rebase onto the version it returns, and send again; never resend the same base_version.",
     "inputSchema": {
@@ -343,7 +343,7 @@ export const capabilityCatalog: ReadonlyArray<CapabilitySpec> = [
   {
     "id": "design.undo",
     "kind": "command",
-    "description": "Undo the most recent change to a design by restoring the version before base_version. This writes a new version rather than removing one: undoing version 10 saves version 11 with version 9's content, and version 10 stays in design.history. Undoing twice in a row therefore restores the change you undid -- to go further back, read the history and rebuild with design.apply_operations. Pass the version you actually read; on VERSION_CONFLICT, someone else changed the design after you read it, so read it again before deciding to undo.",
+    "description": "Undo the most recent change to a design by restoring the version before base_version. This writes a new version rather than removing one: undoing version 10 saves version 11 with version 9's content, and version 10 stays in design.history. Undoing twice in a row therefore restores the change you undid -- to go further back, read the history and rebuild with design.applyOperations. Pass the version you actually read; on VERSION_CONFLICT, someone else changed the design after you read it, so read it again before deciding to undo.",
     "inputSchema": {
       "properties": {
         "base_version": {
@@ -377,9 +377,9 @@ export const capabilityCatalog: ReadonlyArray<CapabilitySpec> = [
     }
   },
   {
-    "id": "asset_request.create",
+    "id": "assetRequest.create",
     "kind": "command",
-    "description": "Record that the design needs an image that does not exist yet, so a person can upload it. Forma generates no images. Do this instead of inventing an asset id or stalling, then carry on with the rest of the design and check back with asset_request.get.",
+    "description": "Record that the design needs an image that does not exist yet, so a person can upload it. Forma generates no images. Do this instead of inventing an asset id or stalling, then carry on with the rest of the design and check back with assetRequest.get.",
     "inputSchema": {
       "properties": {
         "description": {

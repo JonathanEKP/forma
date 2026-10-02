@@ -90,6 +90,11 @@ directly.**
 `risk` follows `pontis/docs/06-capability-system.md` § Risk model. Every `command` carries
 presentation metadata, which is required at registration.
 
+Ids follow Pontis's capability-id grammar — dot-separated camelCase segments, no underscore —
+because `defineCapability` refuses anything else at registration. Four ids first shipped with
+underscores and could not be registered at all; `every_id_is_one_pontis_will_register` in
+`crates/agent-catalog` now holds the grammar. forma-mcp's tool names are separate and did not move.
+
 ### Resources
 
 | Capability | Domain binding | Notes |
@@ -102,7 +107,7 @@ presentation metadata, which is required at registration.
 | `design.history` | `application::designs::history` | |
 | `asset.list` | `application::assets::list` | |
 | `template.list` | `application::templates::list` | |
-| `asset_request.get` | `application::asset_requests::get` | |
+| `assetRequest.get` | `application::asset_requests::get` | |
 | `design.validate` | `application::renders::validate` | no side effect, so `resource`, not `command`, despite being an "output" tool in Forma's MCP vocabulary |
 
 ### Commands
@@ -110,24 +115,24 @@ presentation metadata, which is required at registration.
 | Capability | Domain binding | risk | Notes |
 |---|---|---|---|
 | `design.create` | `application::designs::create` | `write` | |
-| `design.apply_operations` | `application::designs::apply` | `write`, elevated | see §3.1 |
+| `design.applyOperations` | `application::designs::apply` | `write`, elevated | see §3.1 |
 | `design.undo` | `application::designs::undo` | `write` | never decrements the version |
 | `design.export` | `application::exports::create` | `write` | writes a file under the data dir; not an `external_side_effect` — nothing leaves the deployment |
-| `asset_request.create` | `application::asset_requests::create` | `write` | how the agent asks for an image it does not have |
-| `template.create_design` | `application::templates::create_design` | `write` | |
+| `assetRequest.create` | `application::asset_requests::create` | `write` | how the agent asks for an image it does not have |
+| `template.createDesign` | `application::templates::create_design` | `write` | |
 | `design.delete` | `application::designs::delete` | `destructive` | not required by PV-1; a Forma product decision — §10(b) D3 |
 
 Deliberately absent, matching [CLAUDE.md](../CLAUDE.md) § MCP surface: no `project.create`, no
 brand-editing capability, no template-saving capability. An agent works inside a workspace the user
 owns, and those three decisions are the user's. Pontis does not change that reasoning.
 
-Also absent, but for a different reason: **`design.render_preview`**. Forma's MCP tool returns the
+Also absent, but for a different reason: **`design.renderPreview`**. Forma's MCP tool returns the
 PNG as an image content block, which the Pontis projection cannot carry — §10(c). A
 structured-only variant (success, dimensions, cache key) is still coherent and is what would let a
 paired agent trigger the preview *the person* looks at, so whether it is added depends on how
 §10(c) is decided. It is not an oversight.
 
-### 3.1 `design.apply_operations` and dynamic risk elevation
+### 3.1 `design.applyOperations` and dynamic risk elevation
 
 `apply_operations` is a batch of up to `MAX_OPS_PER_BATCH = 20` typed `DesignOperation`s applied
 atomically. Most are ordinary editing; `RemoveLayer` and `RemovePage` destroy work.
@@ -437,7 +442,7 @@ PV-1 §5 fixes the required shape. Mapped onto Forma:
 | PV-1 requirement | Forma scenario |
 |---|---|
 | bounded read | "Which projects do I have, and what is the brand of this one?" → `project.list`, `brand.get` |
-| low-risk write | "Raise the headline to 96pt" → `design.apply_operations`, one batch, `write` |
+| low-risk write | "Raise the headline to 96pt" → `design.applyOperations`, one batch, `write` |
 | approval-requiring mutation | a batch carrying `RemoveLayer`, approved at `once` scope |
 | typed UI action | "Show me the layer that overflows" → `design.validate`, then `ui.selectLayer` |
 | FakeProvider and real Codex | the same capability definitions, unchanged, on both |
@@ -618,7 +623,7 @@ it at the registry is real work and belongs in step 6 rather than beside it.
 [docs/plan-status.md](plan-status.md) item 5 deliberately gave the agent no delete tool: "deciding
 that a piece of someone's work should stop existing is not the agent's call." Pontis changes the
 premise — an approval is exactly a human making that call with the target in front of them. But
-PV-1's approval-requiring mutation is already satisfied by `design.apply_operations` carrying a
+PV-1's approval-requiring mutation is already satisfied by `design.applyOperations` carrying a
 `RemoveLayer`, so this is a Forma product decision with no schedule pressure on it.
 
 **D4 — Whether Forma grows a second role. Not required by PV-1.**

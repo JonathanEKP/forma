@@ -4,7 +4,7 @@ import type { DesignOperation } from "./DesignOperation";
 import type { Version } from "./Version";
 
 /**
- * `design.apply_operations` at Boundary F.
+ * `design.applyOperations` at Boundary F.
  *
  * Unknown fields are refused, so a caller cannot send a `risk` of its own and
  * have it ignored quietly: the class is never the caller's to state.

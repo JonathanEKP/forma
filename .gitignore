@@ -47,3 +47,9 @@ e2e/playwright-report/
 # The blobs already in history stay there — removing those is a rewrite, and
 # that is the repository owner's call.
 /dist/
+
+# --- Pontis sidecar ---
+# The one seam to a local Pontis checkout (apps/pontis-sidecar/README.md). A
+# symlink to someone's own path, so it is never committed.
+apps/pontis-sidecar/.pontis
+apps/pontis-sidecar/test-driver/target/

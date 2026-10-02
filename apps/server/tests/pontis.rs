@@ -202,7 +202,7 @@ fn approval(invocation: &str) -> Value {
     json!({
         "approval_id": "apr_1",
         "session_id": "ses_1",
-        "capability_id": "design.apply_operations",
+        "capability_id": "design.applyOperations",
         "scope": { "kind": "once", "invocation_id": invocation },
         "risk": "destructive",
         "granted_at": (now - chrono::Duration::seconds(5)).to_rfc3339(),
@@ -651,7 +651,7 @@ async fn an_in_flight_claim_is_never_executed_again() {
             &invocation,
             &InvocationRequest {
                 represented_user: them.user,
-                capability: "design.apply_operations".into(),
+                capability: "design.applyOperations".into(),
                 design: Some(them.design),
                 input: json!({ "base_version": 1, "operations": operations }),
             },
@@ -781,7 +781,7 @@ async fn a_removal_is_refused_without_consent_for_exactly_this_invocation() {
             with_approval(removal.clone(), {
                 let mut approval = approval("inv_remove");
                 approval["scope"] =
-                    json!({ "kind": "session", "capability_ids": ["design.apply_operations"] });
+                    json!({ "kind": "session", "capability_ids": ["design.applyOperations"] });
                 approval
             }),
             StatusCode::FORBIDDEN,
@@ -1370,7 +1370,7 @@ async fn the_bounds_keep_the_headroom_they_were_chosen_with() {
         "{max_items} projects are {bytes} bytes"
     );
 
-    // design.apply_operations answers four fields, whatever the design weighs.
+    // design.applyOperations answers four fields, whatever the design weighs.
     let response = test::call_service(
         &app,
         apply_request(&token, &them, "inv_measure", move_headline(&them, 1, 120.0)),

@@ -28,7 +28,7 @@ pub struct DesignParams {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct AssetRequestParams {
-    /// The asset request's id, as returned by {asset_request.create}.
+    /// The asset request's id, as returned by {assetRequest.create}.
     pub asset_request_id: String,
 }
 

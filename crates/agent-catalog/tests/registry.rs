@@ -39,6 +39,55 @@ fn every_id_and_every_tool_name_is_unique() {
     }
 }
 
+/// Pontis's capability-id grammar, which is **its contract, not our style**:
+/// `CAPABILITY_ID_PATTERN` in `pontis/packages/capability-core/src/capability.ts`,
+///
+/// ```text
+/// /^[a-z][a-zA-Z0-9]*(\.[a-z][a-zA-Z0-9]*)+$/
+/// ```
+///
+/// enforced by `defineCapability` at registration — so an id outside it is a
+/// catalog the sidecar cannot load at all. Four ids shipped that way
+/// (`design.apply_operations` among them) because nothing here asked; written
+/// out by hand rather than with a regex crate, and kept to the letter of that
+/// pattern: dot-separated segments, at least two, each a lowercase ASCII letter
+/// followed by ASCII letters and digits. No underscore, in any segment.
+fn is_pontis_capability_id(id: &str) -> bool {
+    let segments: Vec<&str> = id.split('.').collect();
+    segments.len() >= 2
+        && segments.iter().all(|segment| {
+            let mut bytes = segment.bytes();
+            bytes.next().is_some_and(|first| first.is_ascii_lowercase())
+                && bytes.all(|byte| byte.is_ascii_alphanumeric())
+        })
+}
+
+#[test]
+fn every_id_is_one_pontis_will_register() {
+    for operation in REGISTRY {
+        assert!(
+            is_pontis_capability_id(operation.id),
+            "{} is outside Pontis's capability-id grammar; defineCapability refuses it",
+            operation.id
+        );
+    }
+    // The checker itself, against the cases that slipped through before.
+    for refused in [
+        "design.apply_operations",
+        "asset_request.get",
+        "design",
+        "Design.get",
+        "design.",
+        "design..get",
+        "design.1get",
+    ] {
+        assert!(!is_pontis_capability_id(refused), "{refused}");
+    }
+    for accepted in ["design.applyOperations", "ui.openDesign", "a.b.c2"] {
+        assert!(is_pontis_capability_id(accepted), "{accepted}");
+    }
+}
+
 #[test]
 fn every_operation_renders_on_every_door_that_exposes_it() {
     for operation in REGISTRY {
@@ -69,7 +118,7 @@ fn a_name_resolves_only_on_a_door_that_has_it() {
     );
     // MCP-only and Pontis-only operations cannot be named on the other door,
     // so no description can send an agent to a tool it does not have.
-    assert!(render_text("{design.render_preview}", Door::Pontis).is_err());
+    assert!(render_text("{design.renderPreview}", Door::Pontis).is_err());
     assert!(render_text("{design.undo}", Door::Mcp).is_err());
     assert!(render_text("{design.nonexistent}", Door::Mcp).is_err());
     assert!(render_text("a stray { brace", Door::Mcp).is_err());
@@ -83,7 +132,7 @@ fn the_doors_are_the_ones_the_plan_settled() {
         .filter(|o| matches!(o.doors, Doors::McpOnly { .. }))
         .map(|o| o.id)
         .collect();
-    assert_eq!(mcp_only, ["forma.status", "design.render_preview"]);
+    assert_eq!(mcp_only, ["forma.status", "design.renderPreview"]);
 
     let pontis: HashSet<&str> = pontis_catalog().into_iter().map(|c| leak(c.id)).collect();
     for id in [
@@ -95,14 +144,14 @@ fn the_doors_are_the_ones_the_plan_settled() {
         "design.history",
         "asset.list",
         "template.list",
-        "asset_request.get",
+        "assetRequest.get",
         "design.validate",
         "design.create",
-        "design.apply_operations",
+        "design.applyOperations",
         "design.undo",
         "design.export",
-        "asset_request.create",
-        "template.create_design",
+        "assetRequest.create",
+        "template.createDesign",
         "ui.openDesign",
         "ui.selectLayer",
         "ui.setPanel",
@@ -125,7 +174,7 @@ fn the_deliberate_absences_stay_absent() {
         );
         assert!(!id.starts_with("brand.") || id == "brand.get", "{id}");
         assert!(
-            !id.starts_with("template.") || id == "template.list" || id == "template.create_design",
+            !id.starts_with("template.") || id == "template.list" || id == "template.createDesign",
             "{id}"
         );
         assert!(!id.contains("delete"), "{id}");

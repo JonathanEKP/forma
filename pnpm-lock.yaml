@@ -8,6 +8,34 @@ importers:
 
   .: {}
 
+  apps/pontis-sidecar:
+    dependencies:
+      '@pontis/control-plane':
+        specifier: link:.pontis/services/control-plane
+        version: link:.pontis/services/control-plane
+      '@pontis/core':
+        specifier: link:.pontis/packages/capability-core
+        version: link:.pontis/packages/capability-core
+      '@pontis/server':
+        specifier: link:.pontis/packages/sdk-server
+        version: link:.pontis/packages/sdk-server
+    devDependencies:
+      '@eslint/js':
+        specifier: ^9.17.0
+        version: 9.39.5
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.20.1
+      eslint:
+        specifier: ^9.17.0
+        version: 9.39.5(jiti@2.7.0)(supports-color@7.2.0)
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      typescript-eslint:
+        specifier: ^8.18.0
+        version: 8.68.0(eslint@9.39.5(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.9.3)
+
   apps/web:
     dependencies:
       '@supabase/supabase-js':

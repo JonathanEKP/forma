@@ -1,0 +1,39 @@
+# A test instrument, not part of Forma. It stands in for a user's machine
+# running the Pontis Runtime with FakeProvider, so the sidecar's local run can
+# exercise the whole chain — pairing, the device socket, the Tool Proxy, the
+# Capability Gateway, Boundary F — with no model and no subscription.
+#
+# Why it is Rust: FakeProvider is a Rust library (`pontis-provider-fake`) that
+# `pontisd` does not register, and its scripts are Rust values. Every FakeProvider
+# run in Pontis itself links these same crates; there is no other door.
+#
+# Test-only by construction rather than by comment:
+#   - it has no library target, so nothing can depend on it;
+#   - it is its own workspace (the empty table below), not a member of Forma's,
+#     so `cargo test --workspace` never builds it;
+#   - `publish = false`.
+#
+# Every Pontis path goes through `../.pontis`, the one seam the sidecar's
+# package.json also resolves through. See ../README.md.
+
+[package]
+name = "forma-pontis-test-driver"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "forma-pontis-test-driver"
+path = "src/main.rs"
+
+[dependencies]
+pontis-identity = { path = "../.pontis/crates/identity" }
+pontis-protocol = { path = "../.pontis/crates/protocol" }
+pontis-provider-fake = { path = "../.pontis/crates/providers/fake" }
+pontis-runtime = { path = "../.pontis/crates/runtime" }
+pontis-transport = { path = "../.pontis/crates/transport" }
+serde_json = "1"
+tempfile = "3"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "time", "io-std", "io-util"] }
+
+[workspace]

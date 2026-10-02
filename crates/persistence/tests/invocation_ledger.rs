@@ -90,7 +90,7 @@ fn id(raw: &str) -> InvocationId {
 fn apply_request(user: AuthUserId, design: DesignId) -> InvocationRequest {
     InvocationRequest {
         represented_user: user,
-        capability: "design.apply_operations".into(),
+        capability: "design.applyOperations".into(),
         design: Some(design),
         input: json!({ "base_version": 1, "operations": [{ "op": "rename_page", "name": "Edited" }] }),
     }
@@ -183,7 +183,7 @@ async fn a_replay_returns_the_stored_result_and_does_not_execute_again() {
         .expect("the row exists");
     assert_eq!(record.result, Some(first));
     assert_eq!(record.design, Some(design));
-    assert_eq!(record.capability, "design.apply_operations");
+    assert_eq!(record.capability, "design.applyOperations");
     assert_eq!(record.represented_user, request.represented_user);
     assert!(record.completed_at.is_some());
     assert!(

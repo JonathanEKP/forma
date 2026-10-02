@@ -320,7 +320,7 @@ pub static REGISTRY: &[Operation] = &[
         bounds: READ,
     },
     Operation {
-        id: "asset_request.get",
+        id: "assetRequest.get",
         doors: Doors::Both {
             mcp_tool: "get_asset_request",
         },
@@ -355,7 +355,7 @@ pub static REGISTRY: &[Operation] = &[
         bounds: MUTATION,
     },
     Operation {
-        id: "template.create_design",
+        id: "template.createDesign",
         doors: Doors::PontisOnly,
         kind: Command,
         risk: Write,
@@ -373,7 +373,7 @@ pub static REGISTRY: &[Operation] = &[
         bounds: MUTATION,
     },
     Operation {
-        id: "design.apply_operations",
+        id: "design.applyOperations",
         doors: Doors::Both {
             mcp_tool: "apply_operations",
         },
@@ -413,7 +413,7 @@ pub static REGISTRY: &[Operation] = &[
                       undoing version 10 saves version 11 with version 9's content, and \
                       version 10 stays in {design.history}. Undoing twice in a row therefore \
                       restores the change you undid -- to go further back, read the history \
-                      and rebuild with {design.apply_operations}. Pass the version you \
+                      and rebuild with {design.applyOperations}. Pass the version you \
                       actually read; on VERSION_CONFLICT, someone else changed the design \
                       after you read it, so read it again before deciding to undo.",
         input: input_of::<UndoParams>,
@@ -426,7 +426,7 @@ pub static REGISTRY: &[Operation] = &[
         bounds: MUTATION,
     },
     Operation {
-        id: "asset_request.create",
+        id: "assetRequest.create",
         doors: Doors::Both {
             mcp_tool: "request_asset",
         },
@@ -435,7 +435,7 @@ pub static REGISTRY: &[Operation] = &[
         description: "Record that the design needs an image that does not exist yet, so a \
                       person can upload it. Forma generates no images. Do this instead of \
                       inventing an asset id or stalling, then carry on with the rest of the \
-                      design and check back with {asset_request.get}.",
+                      design and check back with {assetRequest.get}.",
         input: input_of::<RequestAssetParams>,
         presentation: Some(Presentation {
             summary: "Ask for an image this design needs, for you to upload",
@@ -464,7 +464,7 @@ pub static REGISTRY: &[Operation] = &[
         bounds: VALIDATE,
     },
     Operation {
-        id: "design.render_preview",
+        id: "design.renderPreview",
         doors: Doors::McpOnly {
             mcp_tool: "render_preview",
         },
