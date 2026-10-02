@@ -123,3 +123,20 @@ jobs:
           name: playwright-trace
           path: e2e/test-results/
           retention-days: 7
+
+  coverage:
+    name: Coverage gaps
+    needs: [rust, web, e2e]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Report checks not covered
+        run: |
+          skipped=()
+          while IFS= read -r item; do
+            [[ -z "$item" || "$item" == \#* ]] && continue
+            skipped+=("$item")
+          done < scripts/pontis-skipped-checks.txt
+          printf 'Every check that ran passed. %d did not run:\n' "${#skipped[@]}"
+          printf '  - %s\n' "${skipped[@]}"

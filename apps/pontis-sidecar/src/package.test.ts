@@ -48,6 +48,8 @@ describe('the package boundary', () => {
       '.gitignore',
       'scripts/check.sh',
       'apps/pontis-sidecar/README.md',
+      // This debt note documents the seam; prose is not a second resolution path.
+      'docs/plan-status.md',
       'apps/pontis-sidecar/package.json',
       'apps/pontis-sidecar/eslint.config.js',
       'apps/pontis-sidecar/test-driver/Cargo.toml',

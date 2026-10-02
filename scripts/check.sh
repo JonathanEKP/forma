@@ -105,12 +105,13 @@ if [[ "$target" == "all" || "$target" == "--pontis" ]]; then
         run cargo build --manifest-path "$driver"
         run pnpm --filter forma-pontis-sidecar test
     else
+        pontis_skipped=()
+        while IFS= read -r item; do
+            [[ -z "$item" || "$item" == \#* ]] && continue
+            pontis_skipped+=("$item")
+        done < scripts/pontis-skipped-checks.txt
         skip "Pontis sidecar skipped: $missing" \
-            "lint of apps/pontis-sidecar (eslint, --max-warnings 0)" \
-            "typecheck of apps/pontis-sidecar (tsc)" \
-            "fmt and clippy of apps/pontis-sidecar/test-driver" \
-            "unit tests of apps/pontis-sidecar (Boundary F client, capabilities, composition)" \
-            "the local run against FakeProvider (read, write, cancel, approval)"
+            "${pontis_skipped[@]}"
     fi
 fi
 

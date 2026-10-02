@@ -1,0 +1,9 @@
+# Pontis checks that Forma cannot run without a linked private Pontis checkout.
+# Read by scripts/check.sh and the CI coverage job; add uncovered checks here.
+# The real CI fix is recorded in docs/plan-status.md.
+
+lint of apps/pontis-sidecar (eslint, --max-warnings 0)
+typecheck of apps/pontis-sidecar (tsc)
+fmt and clippy of apps/pontis-sidecar/test-driver
+unit tests of apps/pontis-sidecar (Boundary F client, capabilities, composition)
+the local run against FakeProvider (read, write, cancel, approval)
