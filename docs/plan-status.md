@@ -67,6 +67,33 @@ Neither blocks anything. They are here because an unexplained flake that CI
 retries away is the kind of thing that stops being investigated once it stops
 being visible.
 
+### CI cannot exercise the Pontis sidecar, and the fix waits on the repositories going public
+
+`apps/pontis-sidecar` needs a Pontis checkout, reached through the gitignored
+symlink `apps/pontis-sidecar/.pontis`. CI has no such checkout, so it cannot
+lint, typecheck or test that package, and cannot run the FakeProvider flow.
+
+**The real fix is available and deliberately not taken yet.** `pontis` has a
+GitHub origin, and CI could check it out alongside Forma. Both repositories are
+private, so that needs cross-repository credentials: a read-only deploy key for
+`pontis` held as an Actions secret in `forma` is the narrow choice, narrower
+than a fine-grained token and not tied to one person's account. The owner
+intends to make both repositories public later, which removes the credential
+question entirely, so the decision is to wait rather than introduce a secret
+that a future `git clone` makes pointless.
+
+What is done instead: CI states what it did not cover, from the same source
+`scripts/check.sh` uses for its skip list, so a green run cannot be misread as
+full coverage. That closes the silence, not the gap.
+
+**One question comes with the real fix and is not answered by making the
+repositories public: which Pontis commit CI builds against.** A floating `main`
+lets another repository break Forma's CI with no change to Forma. A pinned
+commit cannot, but someone has to move the pin. Pin it — a stale pin is
+visible and fixable, while a surprise break on an unrelated Tuesday is neither,
+and moving the pin makes "we now target Pontis X" an explicit, reviewable
+change. Decide this when the checkout lands, not after the first break.
+
 ### Credentials and identity need a deliberate pass
 
 Known debt, recorded so it is not rediscovered. Forma's authentication grew one
