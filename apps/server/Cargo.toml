@@ -13,6 +13,7 @@ name = "forma-server"
 path = "src/main.rs"
 
 [dependencies]
+agent-catalog.workspace = true
 design-core.workspace = true
 application.workspace = true
 assets.workspace = true

@@ -49,6 +49,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use actix_web::{get, http::StatusCode, post, web, HttpRequest, HttpResponse, ResponseError};
+use agent_catalog::CapabilityRisk;
 use application::{ApplicationError, Cancellation};
 use design_core::{
     AccountId, AuthKind, AuthUserId, DesignId, DesignOperation, InvocationId, ProjectId, Version,
@@ -509,21 +510,17 @@ async fn validate(
     }
 }
 
-/// A risk class of pontis docs/06 § Risk model.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "snake_case")]
-#[ts(export)]
-pub enum CapabilityRisk {
-    Read,
-    Write,
-    Sensitive,
-    Destructive,
-    ExternalSideEffect,
+/// The partial order of docs/06: `read ≤ write ≤ {sensitive, destructive,
+/// external_side_effect}`, the last three mutually incomparable.
+///
+/// Boundary F's own, not the catalog's: it decides which refusal to send and
+/// whether elevation raised a class. It never decides consent — that is exact
+/// equality, because equal rank is not coverage.
+trait Rank {
+    fn rank(self) -> u8;
 }
 
-impl CapabilityRisk {
-    /// The partial order of docs/06: `read ≤ write ≤ {sensitive, destructive,
-    /// external_side_effect}`, the last three mutually incomparable.
+impl Rank for CapabilityRisk {
     fn rank(self) -> u8 {
         match self {
             Self::Read => 0,
@@ -598,10 +595,25 @@ pub struct PontisApplyResult {
     pub updated_at: String,
 }
 
-/// The class this batch deserves, decided from the operations themselves.
+/// The class `design.apply_operations` is declared at, read from the agent
+/// catalog — the same entry the generated Pontis descriptor carries — rather
+/// than decided again here.
+///
+/// # Panics
+///
+/// When the catalog has no such capability. `the_baseline_is_the_catalogs`
+/// fails on that first.
+fn baseline_risk() -> CapabilityRisk {
+    agent_catalog::operation(APPLY_OPERATIONS)
+        .unwrap_or_else(|| panic!("the agent catalog has no {APPLY_OPERATIONS}"))
+        .risk
+}
+
+/// The class this batch deserves: the catalog's baseline, raised when the
+/// batch removes work.
 ///
 /// Exhaustive on purpose: a new operation must be classified here before it
-/// compiles, rather than inheriting `write` by default.
+/// compiles, rather than inheriting the baseline by default.
 pub fn required_risk(operations: &[DesignOperation]) -> CapabilityRisk {
     let destroys = |operation: &DesignOperation| match operation {
         DesignOperation::RemovePage { .. } | DesignOperation::RemoveLayer { .. } => true,
@@ -617,10 +629,26 @@ pub fn required_risk(operations: &[DesignOperation]) -> CapabilityRisk {
         | DesignOperation::PatchShapeStyle { .. }
         | DesignOperation::SetFormat { .. } => false,
     };
+    let baseline = baseline_risk();
     if operations.iter().any(destroys) {
-        CapabilityRisk::Destructive
+        elevate(baseline, CapabilityRisk::Destructive)
     } else {
-        CapabilityRisk::Write
+        baseline
+    }
+}
+
+/// Elevation on top of a baseline, one-directional (docs/06 § Dynamic risk
+/// elevation): the higher class wins and nothing is ever lowered.
+///
+/// Two classes of equal rank cannot be combined into one, so a baseline that
+/// is already sensitive, destructive or external would leave this unable to
+/// say what a removal needs. `the_baseline_is_the_catalogs` keeps the baseline
+/// below them.
+fn elevate(baseline: CapabilityRisk, raised: CapabilityRisk) -> CapabilityRisk {
+    if raised.rank() > baseline.rank() {
+        raised
+    } else {
+        baseline
     }
 }
 
@@ -1089,6 +1117,24 @@ mod tests {
     fn a_batch_is_elevated_by_what_it_contains_not_by_its_length() {
         assert_eq!(required_risk(&[]), CapabilityRisk::Write);
         assert_eq!(required_risk(&[removal()]), CapabilityRisk::Destructive);
+    }
+
+    #[test]
+    fn the_baseline_is_the_catalogs() {
+        let declared = agent_catalog::operation(APPLY_OPERATIONS)
+            .expect("the catalog declares design.apply_operations");
+        assert_eq!(required_risk(&[]), declared.risk);
+        // Elevation is only well defined above a baseline it can raise.
+        assert!(declared.risk.rank() < CapabilityRisk::Destructive.rank());
+        assert_eq!(
+            elevate(declared.risk, CapabilityRisk::Destructive),
+            CapabilityRisk::Destructive
+        );
+        assert_eq!(
+            elevate(CapabilityRisk::Destructive, CapabilityRisk::Write),
+            CapabilityRisk::Destructive,
+            "elevation never lowers"
+        );
     }
 
     #[test]

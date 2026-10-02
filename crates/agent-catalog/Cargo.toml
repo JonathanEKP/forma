@@ -1,0 +1,15 @@
+[package]
+name = "agent-catalog"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# The one definition of every operation an agent can reach, on either door.
+# Deliberately no rmcp and no design-core: the catalog describes operations, it
+# neither serves them nor implements them, and the Pontis sidecar consumes it
+# through generated TypeScript without caring which MCP library forma-mcp uses.
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+schemars.workspace = true
+ts-rs.workspace = true

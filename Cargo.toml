@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "apps/mcp",
     "apps/server",
+    "crates/agent-catalog",
     "crates/application",
     "crates/assets",
     "crates/design-core",
@@ -17,6 +18,7 @@ edition = "2021"
 license = "MIT"
 
 [workspace.dependencies]
+agent-catalog = { path = "crates/agent-catalog" }
 application = { path = "crates/application" }
 assets = { path = "crates/assets" }
 design-core = { path = "crates/design-core" }

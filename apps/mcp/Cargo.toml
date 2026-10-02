@@ -9,6 +9,7 @@ name = "forma-mcp"
 path = "src/main.rs"
 
 [dependencies]
+agent-catalog.workspace = true
 axum.workspace = true
 blake3.workspace = true
 rmcp.workspace = true
@@ -16,7 +17,6 @@ reqwest.workspace = true
 tokio = { workspace = true, features = ["net", "rt-multi-thread", "macros"] }
 serde.workspace = true
 serde_json.workspace = true
-schemars.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 anyhow.workspace = true
