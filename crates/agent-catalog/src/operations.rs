@@ -99,17 +99,57 @@ pub fn no_input() -> Map<String, Value> {
 
 // --- bounds -------------------------------------------------------------------
 //
-// Authored, not measured: nothing on the Pontis path runs yet, so these are
-// ceilings chosen from what is known rather than from a distribution. A version
-// snapshot is about 2 KB (CLAUDE.md), so 256 KiB is two orders of magnitude of
-// headroom for a design; a Story page at scale 4 takes 8.6s to render, which
-// sets the floor for anything that renders.
+// These are the only bounds there are. Boundary F's routes in forma-server read
+// them from here and enforce them before answering, and the sidecar declares
+// them to Pontis, which enforces them again — so a result the route returns is
+// never one Pontis then refuses. The route counts `serde_json`'s bytes and
+// Pontis counts `JSON.stringify`'s; serde writes `1080.0` where JavaScript
+// writes `1080` and nothing shorter, so the route's count is never the smaller.
 //
-// `maxListItems` and `maxDepth` stay unset everywhere. Pontis applies both to
-// every array and every level *anywhere* in a result, and no Forma read is
-// paginated: a cap would turn a large project into a hard `result_too_large`
-// with no way to ask for less. Pagination is the honest fix and is not this
-// change's to make.
+// The three read bounds Boundary F serves were measured, by serializing what
+// each route actually answers (`apps/server/tests/pontis.rs`, which re-measures
+// the cases below on every run). The yardstick is the largest real design on a
+// working Forma: a 1080x1350 cover from a real brief, one page of eight layers
+// (photo, two scrims, four lines of type, an accent rule), 3,199 bytes as
+// `design.get` answers it. Every version of every design in that workspace was
+// under 3.4 KB. A design costs 360-500 bytes a layer and a validation issue
+// about 323 bytes; neither has a cap in the domain, so the bound is the cap.
+//
+// - `design.get`: 256 KiB. A 20-page carousel at the real cover's density —
+//   Instagram's ceiling of twenty slides, 160 layers — is 57,649 bytes, 4.5x
+//   under. A stress case nobody has made, twenty pages of twenty layers with a
+//   300-character paragraph on every other one, is 200,869 bytes and still
+//   fits (1.3x). Twice that, 800 layers, is 398 KB and is refused: by then the
+//   design alone is a large fraction of a model's context, and there is no
+//   narrower read to send it to instead.
+// - `design.validate`: 512 KiB, twice the design's, because a report outgrows
+//   the design it describes. A text layer wrong in every way at once draws five
+//   issues — off-brand colour, too small, outside the safe area, overflowing in
+//   both directions — at 323 bytes each, four times the layer itself. That
+//   20-page carousel, every line of it broken, reports 800 issues in 258,386
+//   bytes: 242 bytes under the 256 KiB this used to share with `design.get`,
+//   so a first draft one layer worse would have had its report refused at
+//   exactly the moment the agent needed it. 512 KiB holds it at 2.0x, and
+//   holds 1.4x even at seven issues a layer. Twenty pages of twenty broken
+//   layers, 2,000 issues and 646 KB, is refused; a list that long is not
+//   one an agent works through.
+// - `project.list`: 64 KiB and 200 items. A project has no array in it, so
+//   `maxListItems` — which Pontis applies to every array anywhere in a result —
+//   caps exactly the list and nothing else, and is declared. Two hundred
+//   projects with a 52-character name each answer 38,408 bytes, 192 a project:
+//   1.7x under. The item cap is a ceiling rather than a measurement — a real
+//   workspace holds one — and is kept because the list cannot be paged, and
+//   because at 38 KB it is not what fills a context.
+//
+// `maxListItems` stays unset everywhere else, and `maxDepth` everywhere. A
+// design nests pages in layers, and no other Forma read is paginated: a cap
+// would turn a large project into a hard `result_too_large` with no way to ask
+// for less. Pagination is the honest fix and is not this change's to make.
+//
+// The remaining bounds are authored, not measured: nothing serves them on the
+// Pontis path yet. `apply_operations` answers four fields, 156 bytes, under
+// `MUTATION`. A Story page at scale 4 takes 8.6s to render, which sets the floor
+// for anything that renders; validating the 800-layer stress case took 9s.
 
 const KIB: u32 = 1024;
 
@@ -122,12 +162,20 @@ const fn bounds(max_result_bytes: u32, timeout_ms: u32) -> CapabilityBounds {
     }
 }
 
-/// A read of rows or one record.
+/// A read of rows or one record. Unmeasured; see above.
 const READ: CapabilityBounds = bounds(256 * KIB, 10_000);
+/// The project list, measured; see above.
+const PROJECT_LIST: CapabilityBounds = CapabilityBounds {
+    max_list_items: Some(200),
+    ..bounds(64 * KIB, 10_000)
+};
+/// One whole design, measured; see above.
+const DESIGN: CapabilityBounds = bounds(256 * KIB, 10_000);
 /// A mutation answering with the design it wrote.
 const MUTATION: CapabilityBounds = bounds(256 * KIB, 15_000);
-/// Renders every page to measure its text.
-const VALIDATE: CapabilityBounds = bounds(256 * KIB, 60_000);
+/// Renders every page to measure its text, and answers with every issue at
+/// once; measured, see above.
+const VALIDATE: CapabilityBounds = bounds(512 * KIB, 60_000);
 /// Renders every page at up to scale 4, at 8.6s a page in the worst case.
 const EXPORT: CapabilityBounds = bounds(64 * KIB, 120_000);
 /// One page as a PNG, base64-encoded. MCP door only, where Pontis enforces
@@ -166,7 +214,7 @@ pub static REGISTRY: &[Operation] = &[
                       Kit, assets and designs.",
         input: no_input,
         presentation: None,
-        bounds: READ,
+        bounds: PROJECT_LIST,
     },
     Operation {
         id: "project.get",
@@ -255,7 +303,7 @@ pub static REGISTRY: &[Operation] = &[
                       version it returns is what you pass as base_version.",
         input: input_of::<DesignParams>,
         presentation: None,
-        bounds: READ,
+        bounds: DESIGN,
     },
     Operation {
         id: "design.history",

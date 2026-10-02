@@ -12,8 +12,9 @@ export const capabilityCatalog: ReadonlyArray<CapabilitySpec> = [
     },
     "risk": "read",
     "bounds": {
-      "maxResultBytes": 262144,
-      "timeoutMs": 10000
+      "maxResultBytes": 65536,
+      "timeoutMs": 10000,
+      "maxListItems": 200
     }
   },
   {
@@ -466,7 +467,7 @@ export const capabilityCatalog: ReadonlyArray<CapabilitySpec> = [
     },
     "risk": "read",
     "bounds": {
-      "maxResultBytes": 262144,
+      "maxResultBytes": 524288,
       "timeoutMs": 60000
     }
   },

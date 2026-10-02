@@ -19,8 +19,8 @@ use design_core::{
 use forma_server::auth::{APPLICATION_CONTEXT_HEADER, REPRESENTED_USER_HEADER};
 use forma_server::config::AuthMode;
 use forma_server::routes::pontis::{
-    INVOCATION_HEADER, INVOCATION_OUTCOME_HEADER, MAX_CONCURRENT_VALIDATIONS, MAX_LIST_ITEMS,
-    TIMEOUT_HEADER,
+    bounds, DESIGN_GET, DESIGN_VALIDATE, INVOCATION_HEADER, INVOCATION_OUTCOME_HEADER,
+    MAX_CONCURRENT_VALIDATIONS, PROJECT_LIST, TIMEOUT_HEADER,
 };
 use forma_server::{routes, state::AppState};
 use persistence::{
@@ -357,7 +357,10 @@ async fn only_the_service_credential_reaches_boundary_f() {
 async fn a_list_over_its_bound_is_refused_rather_than_cut() {
     let (state, _dir) = hosted().await;
     let them = person(&state, 1).await;
-    for index in 0..MAX_LIST_ITEMS {
+    let max_items = bounds(PROJECT_LIST)
+        .max_list_items
+        .expect("project.list declares an item bound") as usize;
+    for index in 0..max_items {
         state
             .projects
             .create(them.account, &format!("Project {index}"))
@@ -384,7 +387,8 @@ async fn a_list_over_its_bound_is_refused_rather_than_cut() {
         "result_too_large",
     )
     .await;
-    assert_eq!(body["error"]["details"]["items"], MAX_LIST_ITEMS + 1);
+    assert_eq!(body["error"]["details"]["items"], max_items + 1);
+    assert_eq!(body["error"]["details"]["max_items"], max_items);
 }
 
 #[actix_web::test]
@@ -1053,5 +1057,404 @@ async fn storage_going_away_is_unavailable() {
     assert_eq!(
         body["error"]["message"],
         "the operation failed on the server"
+    );
+}
+
+// --- what the bounds were measured against -------------------------------------
+//
+// The bounds of `agent_catalog::operations` carry the numbers these tests
+// measure. They re-measure them on every run, so a change that makes a result
+// heavier — a longer issue message, a new field on every layer — shows up here
+// as lost headroom rather than as a real design refused in front of a person.
+
+/// The brand of the real cover the bounds were measured against.
+async fn with_brand(state: &AppState, person: &Person) {
+    let draft = serde_json::from_value(json!({
+        "name": "Cruce",
+        "colors": {
+            "primary": "#E8E4DA",
+            "secondary": "#FDBA2D",
+            "accent": "#FF5436",
+            "background": "#101112",
+            "surface": "#191919",
+            "text": "#F4F1EA",
+            "text_inverse": "#101010",
+            "muted": "#A3A3A3"
+        },
+        "typography": { "display": "Geist", "body": "Geist", "mono": "Geist Mono" }
+    }))
+    .expect("a brand draft");
+    application::projects::put_brand(&*state.projects, person.account, person.project, draft)
+        .await
+        .expect("brand");
+}
+
+fn text_layer(
+    page: PageId,
+    name: &str,
+    (x, y, width, height): (f32, f32, f32, f32),
+    text: &str,
+    font_size: f32,
+    color: &str,
+) -> Value {
+    json!({
+        "op": "add_layer",
+        "page_id": page,
+        "layer": {
+            "type": "text", "id": LayerId::new(), "name": name, "role": "body",
+            "transform": { "x": x, "y": y, "width": width, "height": height },
+            "text": text, "font_family": "Geist", "font_size": font_size, "font_weight": 400,
+            "line_height": 1.1, "letter_spacing": 0.0, "align": "left", "color": color
+        }
+    })
+}
+
+fn shape_layer(page: PageId, name: &str, (x, y, width, height): (f32, f32, f32, f32)) -> Value {
+    json!({
+        "op": "add_layer",
+        "page_id": page,
+        "layer": {
+            "type": "shape", "id": LayerId::new(), "name": name, "role": "decoration",
+            "opacity": 0.6, "transform": { "x": x, "y": y, "width": width, "height": height },
+            "kind": "rectangle", "fill": "$brand.background", "stroke_width": 0.0,
+            "corner_radius": 0.0
+        }
+    })
+}
+
+/// The largest real design on a working Forma, layer for layer: a 1080x1350
+/// cover with a photo, two scrims, four lines of type and an accent rule.
+fn cover_page(page: PageId) -> Vec<Value> {
+    vec![
+        json!({
+            "op": "add_layer",
+            "page_id": page,
+            "layer": {
+                "type": "image", "id": LayerId::new(), "name": "Foto BA lluvia", "role": "photo",
+                "transform": { "x": 0.0, "y": 0.0, "width": 1080.0, "height": 1350.0 },
+                "asset_id": LayerId::new(), "fit": "cover", "focal_point": { "x": 0.5, "y": 0.5 }
+            }
+        }),
+        shape_layer(page, "Scrim superior", (0.0, 0.0, 1080.0, 170.0)),
+        shape_layer(page, "Scrim inferior", (0.0, 1100.0, 1080.0, 250.0)),
+        text_layer(
+            page,
+            "Masthead",
+            (96.0, 44.0, 584.0, 75.0),
+            "CRUCE",
+            42.0,
+            "$brand.text",
+        ),
+        text_layer(
+            page,
+            "Titular",
+            (98.0, 1097.0, 888.0, 180.0),
+            "buenos aires\nbajo la lluvia",
+            64.0,
+            "$brand.text",
+        ),
+        shape_layer(page, "Acento sección", (96.0, 1292.0, 40.0, 4.0)),
+        text_layer(
+            page,
+            "Sección y número",
+            (150.0, 1288.0, 500.0, 36.0),
+            "CIUDAD · N.º 07",
+            24.0,
+            "$brand.muted",
+        ),
+        text_layer(
+            page,
+            "Créditos de foto",
+            (600.0, 1315.0, 384.0, 30.0),
+            "Foto: M. Duarte",
+            20.0,
+            "$brand.muted",
+        ),
+    ]
+}
+
+/// A page denser than anything made yet: `layers` layers, every other one a
+/// 300-character paragraph.
+fn dense_page(page: PageId, layers: usize) -> Vec<Value> {
+    let copy: String = "La garúa no moja, insiste. "
+        .chars()
+        .cycle()
+        .take(300)
+        .collect();
+    let copy = copy
+        .chars()
+        .collect::<Vec<_>>()
+        .chunks(40)
+        .map(|line| line.iter().collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
+    (0..layers)
+        .map(|index| {
+            let y = 100.0 + index as f32 * 20.0;
+            if index % 2 == 0 {
+                text_layer(
+                    page,
+                    &format!("Párrafo {index}"),
+                    (96.0, y, 888.0, 600.0),
+                    &copy,
+                    28.0,
+                    "$brand.text",
+                )
+            } else {
+                shape_layer(page, &format!("Barra {index}"), (96.0, y, 400.0, 12.0))
+            }
+        })
+        .collect()
+}
+
+/// A page of `layers` text layers, each wrong in every way the validator
+/// reports at once: off-brand colour, too small, outside the safe area, and
+/// overflowing its frame both ways.
+fn broken_page(page: PageId, layers: usize) -> Vec<Value> {
+    (0..layers)
+        .map(|index| {
+            text_layer(
+                page,
+                &format!("Mal {index}"),
+                (10.0 + index as f32, 1300.0, 60.0, 10.0),
+                "TEXTO DEMASIADO LARGO PARA SU CAJA\nY CON OTRA LÍNEA MÁS",
+                12.0,
+                "#121313",
+            )
+        })
+        .collect()
+}
+
+fn built(pages: usize, page: impl Fn(PageId) -> Vec<Value>) -> DesignDocument {
+    let mut document =
+        DesignDocument::new(DesignFormat::from_preset(FormatPreset::InstagramPortrait));
+    let mut operations = Vec::new();
+    for index in 0..pages {
+        let new = Page::new(format!("Página {}", index + 1));
+        operations.extend(page(new.id));
+        document.pages.push(new);
+    }
+    for batch in operations.chunks(design_core::MAX_OPS_PER_BATCH) {
+        let batch: Vec<DesignOperation> = batch
+            .iter()
+            .map(|operation| serde_json::from_value(operation.clone()).expect("an operation"))
+            .collect();
+        document = design_core::apply_operations(&document, &batch).expect("a valid document");
+    }
+    document
+}
+
+async fn stored(state: &AppState, person: &Person, document: &DesignDocument) -> DesignId {
+    state
+        .designs
+        .create(
+            person.account,
+            person.project,
+            "Portada BA bajo la lluvia",
+            document,
+            &Actor::human(),
+        )
+        .await
+        .expect("design")
+        .id
+}
+
+fn get_request(token: &str, person: &Person, design: DesignId) -> TestRequest {
+    as_sidecar(
+        TestRequest::get().uri(&format!("/api/v1/pontis/designs/{design}")),
+        token,
+        person,
+    )
+}
+
+fn validate_of(token: &str, person: &Person, design: DesignId) -> TestRequest {
+    as_sidecar(
+        TestRequest::post().uri(&format!("/api/v1/pontis/designs/{design}/validate")),
+        token,
+        person,
+    )
+}
+
+/// Bytes of a successful answer.
+async fn answered(response: actix_web::dev::ServiceResponse) -> usize {
+    assert_eq!(response.status(), StatusCode::OK);
+    test::read_body(response).await.len()
+}
+
+/// How many times over `bytes` fits under `capability`'s declared bound.
+fn headroom(capability: &str, bytes: usize) -> f64 {
+    let max = bounds(capability).max_result_bytes as f64;
+    eprintln!(
+        "{capability}: {bytes} bytes against {max}, {:.2}x",
+        max / bytes as f64
+    );
+    max / bytes as f64
+}
+
+#[actix_web::test]
+async fn the_bounds_keep_the_headroom_they_were_chosen_with() {
+    let (state, _dir) = hosted().await;
+    let them = person(&state, 1).await;
+    with_brand(&state, &them).await;
+    let token = sidecar_token(&state).await;
+    let app = serve!(state.clone());
+
+    // design.get: a 20-page carousel at the real cover's density, and a far
+    // denser stress case, both answered.
+    let carousel = stored(&state, &them, &built(20, cover_page)).await;
+    let bytes =
+        answered(test::call_service(&app, get_request(&token, &them, carousel).to_request()).await)
+            .await;
+    assert!(
+        headroom(DESIGN_GET, bytes) >= 4.0,
+        "a real carousel is {bytes} bytes"
+    );
+    let dense = stored(&state, &them, &built(20, |page| dense_page(page, 20))).await;
+    let bytes =
+        answered(test::call_service(&app, get_request(&token, &them, dense).to_request()).await)
+            .await;
+    assert!(
+        headroom(DESIGN_GET, bytes) >= 1.2,
+        "the stress case is {bytes} bytes"
+    );
+
+    // design.validate: that carousel with every line of it broken.
+    let broken = stored(&state, &them, &built(20, |page| broken_page(page, 8))).await;
+    let response = test::call_service(&app, validate_of(&token, &them, broken).to_request()).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let report = test::read_body(response).await;
+    let issues = serde_json::from_slice::<Value>(&report).expect("a report")["issues"]
+        .as_array()
+        .map_or(0, Vec::len);
+    assert_eq!(issues, 20 * 8 * 5, "five issues on every broken layer");
+    assert!(
+        headroom(DESIGN_VALIDATE, report.len()) >= 1.9,
+        "the broken carousel reports {} bytes",
+        report.len()
+    );
+    // The reason the two differ: the report is far heavier than the design.
+    let design =
+        answered(test::call_service(&app, get_request(&token, &them, broken).to_request()).await)
+            .await;
+    assert!(
+        report.len() > 3 * design,
+        "{} against {design}",
+        report.len()
+    );
+
+    // project.list: the item bound at full length, with long names.
+    let max_items = bounds(PROJECT_LIST).max_list_items.expect("an item bound") as usize;
+    for _ in 1..max_items {
+        state
+            .projects
+            .create(
+                them.account,
+                "Campaña de otoño — piezas para redes y prensa (2026)",
+            )
+            .await
+            .expect("project");
+    }
+    let response = test::call_service(
+        &app,
+        as_sidecar(
+            TestRequest::get().uri("/api/v1/pontis/projects"),
+            &token,
+            &them,
+        )
+        .to_request(),
+    )
+    .await;
+    let bytes = answered(response).await;
+    assert!(
+        headroom(PROJECT_LIST, bytes) >= 1.5,
+        "{max_items} projects are {bytes} bytes"
+    );
+
+    // design.apply_operations answers four fields, whatever the design weighs.
+    let response = test::call_service(
+        &app,
+        apply_request(&token, &them, "inv_measure", move_headline(&them, 1, 120.0)),
+    )
+    .await;
+    let bytes = answered(response).await;
+    assert!(bytes < 512, "{bytes}");
+    headroom(forma_server::routes::pontis::APPLY_OPERATIONS, bytes);
+}
+
+/// The route enforces exactly what the catalog declares: a design answering at
+/// its bound to the byte is returned, and one byte more is refused. Fails if
+/// the route ever takes its bound from anywhere else.
+#[actix_web::test]
+async fn a_design_at_its_declared_bound_is_returned_and_one_byte_over_is_refused() {
+    let (state, _dir) = hosted().await;
+    let them = person(&state, 1).await;
+    let token = sidecar_token(&state).await;
+    let app = serve!(state.clone());
+    let max_bytes = bounds(DESIGN_GET).max_result_bytes as usize;
+
+    // Every field but the copy has a fixed width — ids, millisecond timestamps,
+    // version 1 — so the answer grows by exactly one byte per ASCII character.
+    let sized = |characters: usize| {
+        let (mut document, layer) = document(1);
+        let set_text: DesignOperation = serde_json::from_value(json!({
+            "op": "set_text", "layer_id": layer, "content": "x".repeat(characters)
+        }))
+        .expect("a set_text operation");
+        document = design_core::apply_operations(&document, &[set_text]).expect("valid");
+        document
+    };
+    let probe = stored(&state, &them, &sized(1)).await;
+    let base =
+        answered(test::call_service(&app, get_request(&token, &them, probe).to_request()).await)
+            .await;
+
+    let at = stored(&state, &them, &sized(1 + max_bytes - base)).await;
+    let bytes =
+        answered(test::call_service(&app, get_request(&token, &them, at).to_request()).await).await;
+    assert_eq!(
+        bytes, max_bytes,
+        "the design meant to sit exactly at the bound"
+    );
+
+    let over = stored(&state, &them, &sized(2 + max_bytes - base)).await;
+    let response = test::call_service(&app, get_request(&token, &them, over).to_request()).await;
+    let body = refused(
+        response,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "RESULT_TOO_LARGE",
+        "result_too_large",
+    )
+    .await;
+    assert_eq!(body["error"]["details"]["max_bytes"], max_bytes);
+    assert_eq!(body["error"]["details"]["bytes"], max_bytes + 1);
+}
+
+/// A report is bounded by its own declaration, not the design's: this design
+/// is returned whole while its report is refused against validate's bound.
+#[actix_web::test]
+async fn a_report_over_its_declared_bound_is_refused_though_its_design_is_not() {
+    let (state, _dir) = hosted().await;
+    let them = person(&state, 1).await;
+    with_brand(&state, &them).await;
+    let token = sidecar_token(&state).await;
+    let app = serve!(state.clone());
+
+    let broken = stored(&state, &them, &built(20, |page| broken_page(page, 20))).await;
+    let design =
+        answered(test::call_service(&app, get_request(&token, &them, broken).to_request()).await)
+            .await;
+    assert!(design <= bounds(DESIGN_GET).max_result_bytes as usize);
+
+    let response = test::call_service(&app, validate_of(&token, &them, broken).to_request()).await;
+    let body = refused(
+        response,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "RESULT_TOO_LARGE",
+        "result_too_large",
+    )
+    .await;
+    assert_eq!(
+        body["error"]["details"]["max_bytes"],
+        bounds(DESIGN_VALIDATE).max_result_bytes
     );
 }

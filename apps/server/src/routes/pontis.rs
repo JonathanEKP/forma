@@ -11,9 +11,12 @@
 //!   represented user and an application context, and revalidated the user's
 //!   membership in it. Nothing here re-derives that; [`represented`] only
 //!   refuses a request that did not come through that arm at all.
-//! - **Bounds.** Request bodies are capped at [`MAX_REQUEST_BYTES`] and results
-//!   at [`MAX_RESULT_BYTES`], lists at [`MAX_LIST_ITEMS`]. A result over its
-//!   bound is refused as `result_too_large`, never truncated (pontis docs/06).
+//! - **Bounds.** Request bodies are capped at [`MAX_REQUEST_BYTES`]. Results,
+//!   lists and the validate deadline are capped at what the agent catalog
+//!   declares for the capability ([`bounds`]) — the same numbers the sidecar
+//!   hands Pontis, so the route and the runtime cannot disagree about what is
+//!   too large. A result over its bound is refused as `result_too_large`,
+//!   never truncated (pontis docs/06).
 //! - **Errors.** Pontis owns the capability error registry; Forma keeps its own
 //!   §32 envelope as the wire shape and adds one field, `capability_error`,
 //!   which says where the failure sits in that registry. The Forma `code` stays,
@@ -49,7 +52,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use actix_web::{get, http::StatusCode, post, web, HttpRequest, HttpResponse, ResponseError};
-use agent_catalog::CapabilityRisk;
+use agent_catalog::{CapabilityBounds, CapabilityRisk};
 use application::{ApplicationError, Cancellation};
 use design_core::{
     AccountId, AuthKind, AuthUserId, DesignId, DesignOperation, InvocationId, ProjectId, Version,
@@ -69,19 +72,6 @@ use crate::telemetry;
 /// operations with long copy is a few kilobytes; this leaves room without
 /// letting a request become a way to make the server buffer anything.
 pub const MAX_REQUEST_BYTES: usize = 256 * 1024;
-
-/// The largest result a capability returns. A design document is the biggest
-/// thing any of these answers carries.
-pub const MAX_RESULT_BYTES: usize = 1024 * 1024;
-
-/// The most items a list capability returns. There is no pagination behind it
-/// yet, so a longer list is refused rather than cut.
-pub const MAX_LIST_ITEMS: usize = 200;
-
-/// The longest a validate may run, and what it gets when the caller names no
-/// deadline. A Story page at scale 4 renders in 8.6s; a whole design of them
-/// fits several times over.
-pub const MAX_VALIDATE_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// How many validates one account may run at once. It is the cheapest
 /// capability to call and the most expensive to serve (plan §4), so it is the
@@ -106,7 +96,33 @@ pub const TIMEOUT_HEADER: &str = "x-forma-timeout-ms";
 /// answer read back from the ledger.
 pub const INVOCATION_OUTCOME_HEADER: &str = "x-forma-invocation";
 
+pub const PROJECT_LIST: &str = "project.list";
+pub const DESIGN_GET: &str = "design.get";
+pub const DESIGN_VALIDATE: &str = "design.validate";
 pub const APPLY_OPERATIONS: &str = "design.apply_operations";
+
+/// Every capability Boundary F serves, one per route.
+pub const SERVED: [&str; 4] = [PROJECT_LIST, DESIGN_GET, DESIGN_VALIDATE, APPLY_OPERATIONS];
+
+/// What the agent catalog declares for a capability: the one source of its
+/// result size, list length and timeout. The measurements behind the numbers
+/// are beside them, in `agent_catalog::operations`.
+///
+/// # Panics
+///
+/// When the catalog has no such capability. `every_route_is_a_declared_capability`
+/// fails on that first.
+pub fn bounds(capability: &str) -> CapabilityBounds {
+    agent_catalog::operation(capability)
+        .unwrap_or_else(|| panic!("the agent catalog has no {capability}"))
+        .bounds
+}
+
+/// The longest a validate may run, and what it gets when the caller names no
+/// deadline.
+pub fn max_validate_timeout() -> Duration {
+    Duration::from_millis(bounds(DESIGN_VALIDATE).timeout_ms.into())
+}
 
 /// Where a failure sits in the Pontis capability error registry
 /// (pontis/docs/06-capability-system.md § Typed error registry).
@@ -361,34 +377,36 @@ fn represented(request: &HttpRequest, state: &AppState) -> Result<Represented, P
     }
 }
 
-/// Serializes a result, refusing one over its bound rather than cutting it.
-fn bounded(value: &impl Serialize) -> Result<Vec<u8>, PontisError> {
+/// Serializes a result, refusing one over the capability's bound rather than
+/// cutting it.
+fn bounded(capability: &str, value: &impl Serialize) -> Result<Vec<u8>, PontisError> {
+    let max_bytes = bounds(capability).max_result_bytes as usize;
     let bytes = serde_json::to_vec(value).map_err(|error| {
         PontisError::from(ApiError::internal(
             "SERIALIZATION_FAILED",
             error.to_string(),
         ))
     })?;
-    if bytes.len() > MAX_RESULT_BYTES {
+    if bytes.len() > max_bytes {
         return Err(PontisError::new(
             StatusCode::UNPROCESSABLE_ENTITY,
             "RESULT_TOO_LARGE",
             CapabilityError::ResultTooLarge,
             format!(
-                "the result is {} bytes, over the {MAX_RESULT_BYTES}-byte bound",
+                "the result is {} bytes, over the {max_bytes}-byte bound",
                 bytes.len()
             ),
             "Ask for less: a single design rather than a listing of everything.",
         )
-        .with_details(serde_json::json!({ "bytes": bytes.len(), "max_bytes": MAX_RESULT_BYTES })));
+        .with_details(serde_json::json!({ "bytes": bytes.len(), "max_bytes": max_bytes })));
     }
     Ok(bytes)
 }
 
-fn respond(value: &impl Serialize) -> Result<HttpResponse, PontisError> {
+fn respond(capability: &str, value: &impl Serialize) -> Result<HttpResponse, PontisError> {
     Ok(HttpResponse::Ok()
         .content_type("application/json")
-        .body(bounded(value)?))
+        .body(bounded(capability, value)?))
 }
 
 /// The project list: the bounded read of PV-1.
@@ -399,22 +417,24 @@ async fn list_projects(
 ) -> Result<HttpResponse, PontisError> {
     let who = represented(&request, &state)?;
     let projects = application::projects::list(&*state.projects, who.account).await?;
-    if projects.len() > MAX_LIST_ITEMS {
+    let max_items = bounds(PROJECT_LIST).max_list_items;
+    if let Some(max_items) = max_items
+        .map(|max| max as usize)
+        .filter(|max| projects.len() > *max)
+    {
         return Err(PontisError::new(
             StatusCode::UNPROCESSABLE_ENTITY,
             "RESULT_TOO_LARGE",
             CapabilityError::ResultTooLarge,
             format!(
-                "this account has {} projects, over the {MAX_LIST_ITEMS}-item bound",
+                "this account has {} projects, over the {max_items}-item bound",
                 projects.len()
             ),
             "The list cannot be paged yet; open a project by id instead.",
         )
-        .with_details(
-            serde_json::json!({ "items": projects.len(), "max_items": MAX_LIST_ITEMS }),
-        ));
+        .with_details(serde_json::json!({ "items": projects.len(), "max_items": max_items })));
     }
-    respond(&projects)
+    respond(PROJECT_LIST, &projects)
 }
 
 /// One design, carrying the version a batch must echo as `base_version`.
@@ -426,7 +446,7 @@ async fn get_design(
 ) -> Result<HttpResponse, PontisError> {
     let who = represented(&request, &state)?;
     let record = application::designs::get(&*state.designs, who.account, design_id(&path)?).await?;
-    respond(&record)
+    respond(DESIGN_GET, &record)
 }
 
 /// The caller's deadline: absent means the ceiling, and one over the ceiling is
@@ -434,13 +454,13 @@ async fn get_design(
 /// than it does.
 fn deadline(request: &HttpRequest) -> Result<Duration, PontisError> {
     let Some(raw) = request.headers().get(TIMEOUT_HEADER) else {
-        return Ok(MAX_VALIDATE_TIMEOUT);
+        return Ok(max_validate_timeout());
     };
     raw.to_str()
         .ok()
         .and_then(|raw| raw.trim().parse::<u64>().ok())
         .map(Duration::from_millis)
-        .filter(|timeout| !timeout.is_zero() && *timeout <= MAX_VALIDATE_TIMEOUT)
+        .filter(|timeout| !timeout.is_zero() && *timeout <= max_validate_timeout())
         .ok_or_else(|| {
             PontisError::new(
                 StatusCode::BAD_REQUEST,
@@ -448,7 +468,7 @@ fn deadline(request: &HttpRequest) -> Result<Duration, PontisError> {
                 CapabilityError::ValidationError,
                 format!(
                     "{TIMEOUT_HEADER} must be a whole number of milliseconds from 1 to {}",
-                    MAX_VALIDATE_TIMEOUT.as_millis()
+                    max_validate_timeout().as_millis()
                 ),
                 "Send the caller's remaining deadline, or omit the header.",
             )
@@ -498,7 +518,7 @@ async fn validate(
     )
     .await
     {
-        Ok(report) => respond(&report),
+        Ok(report) => respond(DESIGN_VALIDATE, &report),
         Err(ApplicationError::Cancelled) if cancel.deadline_passed() => Err(PontisError::new(
             StatusCode::GATEWAY_TIMEOUT,
             "DEADLINE_EXCEEDED",
@@ -1006,7 +1026,7 @@ async fn apply_operations(
     Ok(HttpResponse::Ok()
         .insert_header((INVOCATION_OUTCOME_HEADER, outcome))
         .content_type("application/json")
-        .body(bounded(&result)?))
+        .body(bounded(APPLY_OPERATIONS, &result)?))
 }
 
 /// One count per account of validations running now.
@@ -1117,6 +1137,36 @@ mod tests {
     fn a_batch_is_elevated_by_what_it_contains_not_by_its_length() {
         assert_eq!(required_risk(&[]), CapabilityRisk::Write);
         assert_eq!(required_risk(&[removal()]), CapabilityRisk::Destructive);
+    }
+
+    #[test]
+    fn every_route_is_a_declared_capability() {
+        for capability in SERVED {
+            let operation = agent_catalog::operation(capability)
+                .unwrap_or_else(|| panic!("the catalog does not declare {capability}"));
+            assert!(
+                operation.doors.on_pontis(),
+                "{capability} is served on Boundary F but not declared on the Pontis door"
+            );
+        }
+    }
+
+    #[test]
+    fn the_bounds_are_the_ones_the_sidecar_declares() {
+        // What the sidecar hands Pontis is `pontis_catalog()`, so compare the
+        // route's source against that rendering rather than the raw registry.
+        let declared = agent_catalog::pontis_catalog();
+        for capability in SERVED {
+            let spec = declared
+                .iter()
+                .find(|spec| spec.id == capability)
+                .unwrap_or_else(|| panic!("the sidecar declares no {capability}"));
+            assert_eq!(bounds(capability), spec.bounds, "{capability}");
+        }
+        assert_eq!(
+            max_validate_timeout().as_millis(),
+            u128::from(bounds(DESIGN_VALIDATE).timeout_ms)
+        );
     }
 
     #[test]
