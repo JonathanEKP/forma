@@ -801,12 +801,20 @@ Read this before the list below; the list is the plan, this is what happened to 
 | 7 Sidecar composition, local run against FakeProvider | done | `c0c7744` |
 | 8 Manual and guidance (§6.1) | done | `ee7be64` |
 | 9 UI capability handlers (D8, D9) | done | `c852e91` |
-| 10 Device panel and in-app chat | **in progress** — 10a and 10b merged, 10c (live delivery) dispatched | |
+| 10 Device panel and in-app chat | **done** — 10a, 10b, 10c merged; one known limitation below | merges `142688b`, `fa428d8`, `e63dd5d` |
 | 10a Device panel and proxy routes | done, merged into `main` | `70dae4e`, `d6b000c`, `ad74373`, `f37b358`, `bd4cd8b`, `6edc1b6` (branch `JonathanEKP/pontis-10a-devices`) |
 | 10b In-app chat and `/agent/context` | done, merged into `main` | `93dde1a`, `58b754f`, `f081782`, `0a34a10`, `005d9d0` (branch `JonathanEKP/pontis-10b-chat`) |
-| 10c Live delivery and device presence | built and tested; not yet seen in a browser against a real Runtime (see below) | `f501cc9`, `ce96b88`, `93731c2` (branch `JonathanEKP/pontis-10c-live`) |
+| 10c Live delivery and device presence | done, merged into `main` | `f501cc9`, `ce96b88`, `93731c2`, `821e33d` (branch `JonathanEKP/pontis-10c-live`) |
 | 11 Real Codex local run | not started; needs the owner (a real provider credential on their machine) | |
 | 12 PV-1 evidence | not started; follows 11 | |
+
+**Where it stands after step 10 (2026-10-03).** Everything up to step 10 is on `main` and green:
+161 web tests, 62 sidecar tests including the FakeProvider local run, and S11. What no test has
+done is drive a real browser against a live sidecar with a real Runtime — that is step 11. Known
+limitation, accepted for now: the chat's state lives in `Editor`, so it resets when the person
+leaves a design; lifting it to `App` is small and waits until someone uses the chat in anger.
+**Step 11 needs the owner** — a real Codex install and its credential on their machine — so the
+coordinator stopped here rather than start it.
 
 **Step 10, as dispatched (2026-10-03).** Run by a coordinating agent through Orca, each worker in
 its own worktree, merged into `main` as it lands. Split so the two never edit the same file:
