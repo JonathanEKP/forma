@@ -814,6 +814,14 @@ its own worktree, merged into `main` as it lands. Split so the two never edit th
 - **10b — in-app chat**, in the editor: intents out, the event stream in, approval cards from
   presentation metadata, and UI navigation shown as its own kind of line. Owns
   `apps/web/src/pontis/chat*`, `apps/web/src/pontis/events*` and the editor mount point.
+  **10b state: built and tested, not yet seen in a browser against a live sidecar.** `93dde1a` adds
+  `GET /agent/context` to the sidecar (the editor cannot learn its `applicationContextId` any other
+  way, and `/pons/v1/events` refuses a context the caller does not name — the proxy needs that
+  route too), `58b754f` the event reader, `f081782` the intents and transcript, `0a34a10` the panel
+  and its mount. Two limits worth knowing: `/pons/v1/events` is a polled JSON page, so the reply
+  arrives whole as `agent.output.completed` and there is no token-level streaming (a live tail would
+  need a delivery channel the sidecar does not have), and no durable event echoes what the person
+  typed, so a reload restores the agent's side of a conversation and not theirs.
 
 Decisions taken for step 10, low-risk and delegated:
 
