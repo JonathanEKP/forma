@@ -64,10 +64,17 @@ node apps/pontis-sidecar/src/main.ts      # binds 127.0.0.1:4767, prints READY <
 Node runs the TypeScript directly (type stripping, Node 24); there is no build step.
 
 `FORMA_PONTIS_EDITOR_ORIGIN` is where the editor is served from, and it is the UI channel's whole
-allowlist — the value above is Vite's dev server, which proxies `/pons/v1/ui` here so the two share
-an origin. In the deployment it is the public name and Caddy does the same. Leave it unset and the
-four `ui.*` capabilities answer `ui_unavailable`: no window can connect, which is the fail-closed
-reading of a missing setting rather than an open one.
+allowlist — the value above is Vite's dev server, which proxies the browser's Pontis paths here so
+the two share an origin (`FORMA_PONTIS_URL` moves its target off `127.0.0.1:4767`). In the
+deployment it is the public name and Caddy does the same. Leave it unset and the four `ui.*`
+capabilities answer `ui_unavailable`: no window can connect, which is the fail-closed reading of a
+missing setting rather than an open one.
+
+Which paths those are: `/pons/v1/pairing/codes`, `/pons/v1/devices` and `/pons/v1/devices/*`,
+`/pons/v1/events`, `/pons/v1/jobs` and `/pons/v1/jobs/*`, `/pons/v1/ui/*` and `/agent/intent` — in
+`deploy/caddy/Caddyfile` and `apps/web/vite.config.ts`, kept equal by
+`apps/web/src/pontis/proxy.test.ts`. The Runtime's routes (`/pons/v1/pairing/claim`,
+`/pons/v1/device/*`) are deliberately not proxied: a remote machine reaching the sidecar is PV-2.
 
 ## The local run
 
