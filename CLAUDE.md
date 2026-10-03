@@ -38,6 +38,11 @@ The remote deploy has three documents, and they answer different questions:
 which keeps *reported* and *verified here* apart, because a status document that
 blurs those is how one starts lying.
 
+**The Pontis integration's live state is the *Progress* table at the top of §11 in
+[docs/pontis-integration-plan.md](docs/pontis-integration-plan.md)** — which steps are done, by
+which commit, and what is in flight and who owns which files. Read it before touching
+`apps/pontis-sidecar` or `apps/web/src/pontis`.
+
 **What comes next is in [docs/plan-status.md](docs/plan-status.md) under *Agreed order*,
 and it is ordered.** Items 1 to 9 are done, item 6 struck on the evidence rather than
 built. Items 5 to 8 came out of using the product against a real brief rather than from

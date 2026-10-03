@@ -717,7 +717,7 @@ PV-1's approval-requiring mutation is already satisfied by `design.applyOperatio
 See §5. PV-1's isolation evidence is bounded to what the app supports. If it is ever built it will
 be for Forma's own product reasons, not to satisfy a gate.
 
-**D6 — A host-side invocation ledger. Newly identified; blocks PV-1's idempotency evidence.**
+**D6 — A host-side invocation ledger. Built in `307a74a` (step 4); kept here for its reasoning.**
 ADR-023 Decision 2 requires the hop to carry idempotency identifiers, and
 `pontis/examples/polyglot-host-fixture/src/main.rs` keeps the ledger **in the host**: the stored
 result is returned on replay, and a different payload under the same key is refused with
@@ -730,7 +730,7 @@ This is new persisted work in `forma-server` and it was missing from the step li
 design rather than the owner's to adjudicate, but it is recorded here because it changes the
 schedule, and the gap stays invisible until the sidecar retries a timeout that actually committed.
 
-**D7 — Deterministic account resolution. Newly identified; blocks binding a session.**
+**D7 — Deterministic account resolution. Built in `d1e819f` (step 1); kept here for its reasoning.**
 See §5. Either constrain the data — a unique index on `user_id`, or `grant` refusing a second
 account — or make resolution explicit and ordered. Which one depends on whether Forma ever intends a
 user to belong to more than one account, which is D4's question, so the two should be answered
@@ -785,6 +785,48 @@ shared.
 ---
 
 ## 11. Order of work
+
+### Progress — the live state, kept here so any agent can pick the work up
+
+Read this before the list below; the list is the plan, this is what happened to it.
+
+| Step | State | Where |
+|---|---|---|
+| 1 Deterministic account resolution (D7) | done | `d1e819f` |
+| 2 Service credential (D1) | done | `78c0209` |
+| 3 Resolve endpoint (D2) | done | `6209edf` |
+| 4 Invocation ledger (D6) | done | `307a74a` |
+| 5 Cancellation on validate | done | `3fe5d64` |
+| 6 Descriptor registry (D5) and Boundary F bindings | done | `d40d763`, `dadfcb2` |
+| 7 Sidecar composition, local run against FakeProvider | done | `c0c7744` |
+| 8 Manual and guidance (§6.1) | done | `ee7be64` |
+| 9 UI capability handlers (D8, D9) | done | `c852e91` |
+| 10 Device panel and in-app chat | **in progress** — two workers, see below | |
+| 11 Real Codex local run | not started; needs the owner (a real provider credential on their machine) | |
+| 12 PV-1 evidence | not started; follows 11 | |
+
+**Step 10, as dispatched (2026-10-03).** Run by a coordinating agent through Orca, each worker in
+its own worktree, merged into `main` as it lands. Split so the two never edit the same file:
+
+- **10a — device panel**, on the Agents page beside the existing MCP connection UI, plus the
+  proxy routes every browser-facing Pontis path needs (Caddy and Vite). Owns `Agents.tsx`,
+  `deploy/caddy/Caddyfile`, `apps/web/vite.config.ts`, `apps/web/src/pontis/devices*`.
+- **10b — in-app chat**, in the editor: intents out, the event stream in, approval cards from
+  presentation metadata, and UI navigation shown as its own kind of line. Owns
+  `apps/web/src/pontis/chat*`, `apps/web/src/pontis/events*` and the editor mount point.
+
+Decisions taken for step 10, low-risk and delegated:
+
+- **"Replacing the Agents page" does not remove the MCP door.** §8 is explicit that neither door
+  obsoletes the other, so the PAT and OAuth-grant UI stays; the page gains the device panel. The
+  chat lives in the editor, where the person is looking at the work it acts on.
+- **D8 holds for both surfaces.** Neither depends on `@pontis/react`; both reuse
+  `apps/web/src/pontis/channel.ts`'s `frames` rather than writing a second SSE parser.
+- **Only browser routes go through the proxy:** `/pons/v1/pairing/codes`, `/pons/v1/devices*`,
+  `/pons/v1/events`, `/pons/v1/jobs*`, `/agent/intent`, `/pons/v1/ui/*`. The Runtime's own routes
+  (`pairing/claim`, `device/*`) are a remote Device reaching the sidecar, which is PV-2 and not
+  authorized by this plan.
+
 
 D1 and D2 are settled, so nothing blocks the start. D7 blocks step 3 and D6 blocks step 8; both are
 in the list rather than waiting outside it. The product blocker in (c) does not block any step — it
