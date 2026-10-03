@@ -93,8 +93,8 @@ export async function startSidecar(options: SidecarOptions): Promise<Sidecar> {
   // `sequence`, and what is not — output deltas, presence — from the Device's own
   // notification. `agentApp.uiClients` is the registry the UI stream registers in.
   const windows = agentApp.uiClients;
-  const devices = new DeviceGateway({ controlPlane, onNotification: liveNotification(controlPlane, windows) });
-  const stopFanOut = fanOutDurable(controlPlane, windows);
+  const devices = new DeviceGateway({ controlPlane, onNotification: liveNotification(controlPlane, windows, options.log) });
+  const stopFanOut = fanOutDurable(controlPlane, windows, options.log);
   devices.attach(server);
 
   const controlRoutes = createControlPlaneRoutes({

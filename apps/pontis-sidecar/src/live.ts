@@ -20,6 +20,7 @@ import { publicDeviceView } from '@pontis/control-plane';
 import { PONS_PROTOCOL_VERSION, isDurableNotification } from '@pontis/core';
 import type { UIClientRegistry } from '@pontis/server';
 
+import type { Log } from './log.ts';
 import type { ResolvePerson } from './person.ts';
 
 export const DEVICES_PATH = '/pons/v1/devices';
@@ -29,6 +30,17 @@ export const DEVICES_PATH = '/pons/v1/devices';
  * to address one context or one person. Named so a test can hand it a stand-in.
  */
 type Windows = Pick<UIClientRegistry, 'all' | 'notifyContext' | 'notifyPrincipal'>;
+
+/**
+ * Said once, and only what failed and for what kind of frame.
+ *
+ * Never the payload — it carries what the person typed and what the agent
+ * answered — and never the error's own text, which a library is free to fill
+ * with whatever it was holding. The error's name is enough to find the cause.
+ */
+function dropped(log: Log, source: string, type: string, cause: unknown): void {
+  log('live_delivery_dropped', { source, type, error: cause instanceof Error ? cause.name : 'unknown' });
+}
 
 /**
  * What a window is told about a durable event.
@@ -59,19 +71,28 @@ function durableFrame(event: DurableEvent) {
  * twice. A principal-scoped event goes to every window of that person, because
  * a lost context membership must not hide `device.revoked`.
  *
+ * Delivery is an optimization, so a failure costs the frame and nothing else.
+ * The in-memory store already swallows a throwing listener; this does not lean
+ * on that, because a store that did not would let a bad frame fail an append
+ * that has already succeeded.
+ *
  * Returns the unsubscribe, for `close`.
  */
-export function fanOutDurable(controlPlane: ControlPlane, windows: Windows): () => void {
+export function fanOutDurable(controlPlane: ControlPlane, windows: Windows, log: Log): () => void {
   return controlPlane.events.subscribeAll((event) => {
-    const envelope = durableFrame(event);
-    if (event.scope.kind === 'principal') {
-      windows.notifyPrincipal(event.scope.userId, envelope);
-      return;
+    try {
+      const envelope = durableFrame(event);
+      if (event.scope.kind === 'principal') {
+        windows.notifyPrincipal(event.scope.userId, envelope);
+        return;
+      }
+      const target = windows
+        .all()
+        .find((candidate) => candidate.userId === event.scope.userId && controlPlane.streamKeyFor(candidate.userId, candidate.applicationContextId) === event.streamKey);
+      if (target) windows.notifyContext(target.userId, target.applicationContextId, envelope);
+    } catch (cause) {
+      dropped(log, 'durable', event.type, cause);
     }
-    const target = windows
-      .all()
-      .find((candidate) => candidate.userId === event.scope.userId && controlPlane.streamKeyFor(candidate.userId, candidate.applicationContextId) === event.streamKey);
-    if (target) windows.notifyContext(target.userId, target.applicationContextId, envelope);
   });
 }
 
@@ -84,31 +105,40 @@ export function fanOutDurable(controlPlane: ControlPlane, windows: Windows): () 
  * routed to this Device — the same three checks the reference app makes, so a
  * Device cannot speak into a session that is not its own. Anything without a
  * session goes to the owner's windows.
+ *
+ * The lookup is asynchronous and nothing awaits it, so a rejection — or a throw
+ * from a window's write inside the callback — would be an unhandled rejection,
+ * which ends the process on Node 15 and later and with it every person's chat
+ * and UI channel. It is caught here instead: the frame is dropped and the page
+ * still has it, or, for a delta, the completed text will.
  */
-export function liveNotification(controlPlane: ControlPlane, windows: Windows) {
+export function liveNotification(controlPlane: ControlPlane, windows: Windows, log: Log) {
   return (
     deviceId: string,
     envelope: { readonly protocol: string; readonly type: string; readonly sessionId?: string; readonly sentAt: string; readonly payload: unknown },
   ): void => {
     // Durable ones are delivered, stamped, from the store.
     if (isDurableNotification(envelope.type)) return;
-    void controlPlane.getDevice(deviceId).then((device) => {
-      if (!device) return;
-      const frame = {
-        protocol: envelope.protocol,
-        type: envelope.type,
-        ...(envelope.sessionId ? { sessionId: envelope.sessionId } : {}),
-        payload: envelope.payload,
-        sentAt: envelope.sentAt,
-      };
-      if (envelope.sessionId) {
-        const context = controlPlane.getSessionContext(envelope.sessionId);
-        if (!context || context.userId !== device.userId || context.deviceId !== deviceId) return;
-        windows.notifyContext(device.userId, context.applicationContextId, frame);
-      } else {
-        windows.notifyPrincipal(device.userId, frame);
-      }
-    });
+    void controlPlane
+      .getDevice(deviceId)
+      .then((device) => {
+        if (!device) return;
+        const frame = {
+          protocol: envelope.protocol,
+          type: envelope.type,
+          ...(envelope.sessionId ? { sessionId: envelope.sessionId } : {}),
+          payload: envelope.payload,
+          sentAt: envelope.sentAt,
+        };
+        if (envelope.sessionId) {
+          const context = controlPlane.getSessionContext(envelope.sessionId);
+          if (!context || context.userId !== device.userId || context.deviceId !== deviceId) return;
+          windows.notifyContext(device.userId, context.applicationContextId, frame);
+        } else {
+          windows.notifyPrincipal(device.userId, frame);
+        }
+      })
+      .catch((cause: unknown) => dropped(log, 'notification', envelope.type, cause));
   };
 }
 

@@ -16,7 +16,8 @@ import { canonicalProofMessage } from '@pontis/control-plane';
 
 import { SUBJECT_TOKEN_HEADER } from './boundary.ts';
 import { envelope, fakeForma } from './fake-forma.ts';
-import { silentLog } from './log.ts';
+import { fanOutDurable, liveNotification } from './live.ts';
+import { silentLog, type LogFields } from './log.ts';
 import { APPLICATION_ID, startSidecar, type Sidecar } from './sidecar.ts';
 
 const USER = '11111111-1111-4111-8111-111111111111';
@@ -362,3 +363,76 @@ describe('GET /pons/v1/devices', () => {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
+
+describe('a failure while delivering costs the frame, not the process', () => {
+  /** Fails the test if anything in the process rejects without a handler. */
+  function watchUnhandled(): { unhandled: unknown[]; stop(): void } {
+    const unhandled: unknown[] = [];
+    const listener = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', listener);
+    return { unhandled, stop: () => void process.off('unhandledRejection', listener) };
+  }
+
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+
+  // Only what the delivery reads of them; nothing here is a real Control Plane.
+  const delta = { protocol: 'pons/1.0', type: 'agent.output.delta', sentAt: 'now', payload: { text: 'a private sentence' } };
+
+  it('logs one line and drops the frame when the device lookup rejects', async () => {
+    const watch = watchUnhandled();
+    const logged: { event: string; fields: LogFields | undefined }[] = [];
+    const controlPlane = { getDevice: () => Promise.reject(new TypeError('lookup failed: a private sentence')) };
+    const delivered: unknown[] = [];
+    const windows = { all: () => [], notifyContext: (...args: unknown[]) => delivered.push(args), notifyPrincipal: (...args: unknown[]) => delivered.push(args) };
+    try {
+      liveNotification(controlPlane as never, windows, (event, fields) => logged.push({ event, fields }))('dev_x', delta);
+      await settle();
+      assert.deepEqual(watch.unhandled, [], 'nothing was left unhandled');
+      assert.deepEqual(delivered, []);
+      assert.equal(logged.length, 1, 'logged once');
+      assert.deepEqual(logged[0], { event: 'live_delivery_dropped', fields: { source: 'notification', type: 'agent.output.delta', error: 'TypeError' } });
+      // Neither the payload nor the error's own text is in the line.
+      assert.ok(!JSON.stringify(logged).includes('private sentence'));
+    } finally {
+      watch.stop();
+    }
+  });
+
+  it('does the same when a window\'s write throws inside the callback', async () => {
+    const watch = watchUnhandled();
+    const logged: string[] = [];
+    const controlPlane = { getDevice: () => Promise.resolve({ userId: USER }) };
+    const windows = {
+      all: () => [],
+      notifyContext: () => undefined,
+      notifyPrincipal: () => {
+        throw new Error('the stream was closed under us');
+      },
+    };
+    try {
+      liveNotification(controlPlane as never, windows as never, (event) => logged.push(event))('dev_x', delta);
+      await settle();
+      assert.deepEqual(watch.unhandled, []);
+      assert.deepEqual(logged, ['live_delivery_dropped']);
+    } finally {
+      watch.stop();
+    }
+  });
+
+  it('keeps a throwing window out of the event store, and says so once', () => {
+    const logged: { event: string; fields: LogFields | undefined }[] = [];
+    let subscriber: ((event: never) => void) | undefined;
+    const controlPlane = { events: { subscribeAll: (listener: (event: never) => void) => ((subscriber = listener), () => undefined) } };
+    const windows = {
+      all: () => [],
+      notifyContext: () => undefined,
+      notifyPrincipal: () => {
+        throw new Error('boom');
+      },
+    };
+    fanOutDurable(controlPlane as never, windows as never, (event, fields) => logged.push({ event, fields }));
+    const stored = { sequence: 1, type: 'device.revoked', scope: { kind: 'principal', applicationId: 'forma', userId: USER }, payload: {}, createdAt: 'now' };
+    assert.doesNotThrow(() => subscriber?.(stored as never));
+    assert.deepEqual(logged, [{ event: 'live_delivery_dropped', fields: { source: 'durable', type: 'device.revoked', error: 'Error' } }]);
+  });
+});
