@@ -7,14 +7,15 @@ Realtime Gateway, composed from public Pontis packages. It reaches Forma only th
 (`/api/v1/pontis`, authenticated with a `forma_svc_` credential). forma-server stays the domain
 authority and does not depend on this process.
 
-This is plan §11 **steps 7 and 8**. The UI capabilities (step 9)
-are not registered yet. Do not deploy it before they are.
+This is plan §11 **steps 7 to 9**. What is left before PV-1 is the editor's own Pontis surface
+(step 10: the device panel and in-app chat), the real Codex run and the evidence.
 
 ## What is Forma's here
 
 | File | What it is |
 |---|---|
 | `src/capabilities.ts` | the operations Boundary F serves (`forma.guide`, `brand.get` and `assetRequest.create` among them), built from `bindings/generated/capabilityCatalog.ts`; output schemas and bindings |
+| `src/ui.ts` | the four editor actions, which have no execution binding at all: they are routed to the person's window, and what is Forma's is who may aim one |
 | `src/boundary.ts` | the Boundary F client: fixed operations, bounded answers, Forma's refusals as registry errors |
 | `src/person.ts` | who is behind a browser request, asked of `GET /api/v1/service/resolve` |
 | `src/intents.ts` | the browser's route to its Runtime: start, input, cancel, approve |
@@ -56,10 +57,17 @@ The process, against a running forma-server:
 ```bash
 FORMA_SERVER_URL=http://127.0.0.1:4765 \
 FORMA_SERVICE_CREDENTIAL="$(./target/debug/forma-server service-credential sidecar)" \
+FORMA_PONTIS_EDITOR_ORIGIN=http://127.0.0.1:5173 \
 node apps/pontis-sidecar/src/main.ts      # binds 127.0.0.1:4767, prints READY <origin>
 ```
 
 Node runs the TypeScript directly (type stripping, Node 24); there is no build step.
+
+`FORMA_PONTIS_EDITOR_ORIGIN` is where the editor is served from, and it is the UI channel's whole
+allowlist — the value above is Vite's dev server, which proxies `/pons/v1/ui` here so the two share
+an origin. In the deployment it is the public name and Caddy does the same. Leave it unset and the
+four `ui.*` capabilities answer `ui_unavailable`: no window can connect, which is the fail-closed
+reading of a missing setting rather than an open one.
 
 ## The local run
 
@@ -86,10 +94,21 @@ workspace, so nothing can depend on it and `cargo test --workspace` never builds
 
 ## Decisions recorded here
 
-- **No `ui.*` capability yet.** Pontis would answer `ui_unavailable`, which is meant for "no
-  window of yours is connected right now". With no handler written anywhere it would be
-  permanent, every call would cost the agent a turn, and each still owes the authorization
-  binding §3.2 asks for. They arrive with step 9.
+- **The four `ui.*` capabilities were held back until their handlers existed.** Pontis answers
+  `ui_unavailable` when no window is connected, which is meant for a state the person can fix by
+  opening Forma; with no handler written anywhere it would have been permanent and every call
+  would have cost the agent a turn to learn it. They landed in step 9 together with
+  `apps/web/src/pontis/`.
+- **The editor implements the three UI routes itself** (plan §10(b) D8). `@pontis/react` would
+  have put the seam below in the base product's own build, and §7.3 promises the base product
+  stays usable — which includes buildable — without Pontis. `src/ui.test.ts` drives the real
+  routes so a drift in the frame or ack shape fails a test here rather than silently killing the
+  channel in a browser.
+- **The UI channel is same-origin and header-authenticated** (D9). The transport refuses a
+  cross-origin `Origin` and checks `Host` against the same list, so the editor reaches these
+  routes through the proxy in front of both — `FORMA_PONTIS_EDITOR_ORIGIN` is that one name, and
+  unset means no channel rather than an open one. The stream is read with `fetch` rather than
+  `EventSource` so the session bearer travels in a header and never in a URL.
 - **Forma classifies, the sidecar trusts it.** Boundary F's envelope carries `capability_error`
   from `routes/pontis.rs::classify`; the sidecar maps nothing by Forma code, so there is one
   classification. The Forma code and hint travel in `details`.

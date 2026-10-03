@@ -33,6 +33,23 @@
 		}
 	}
 
+	# The Pontis UI action channel (Pontis plan section 10(b) D9). Routed here
+	# so the editor and these three routes share an origin: the sidecar's
+	# transport refuses a cross-origin Origin and validates Host against the
+	# same list, which is its DNS-rebinding defence, and the editor's bearer
+	# travels in a header rather than a query string because of it.
+	#
+	# Only /pons/v1/ui/*. The gateway hop the agent runtime uses is not a
+	# browser route and is not exposed here.
+	handle /pons/v1/ui/* {
+		reverse_proxy 127.0.0.1:4767 {
+			# Server-Sent Events. Buffering would hold a UI action until a
+			# buffer filled, which is the difference between the person's
+			# canvas moving now and moving a minute from now.
+			flush_interval -1
+		}
+	}
+
 	# The REST API and the built editor, from one origin (plan section 58).
 	handle {
 		reverse_proxy 127.0.0.1:4765

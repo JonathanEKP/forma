@@ -178,8 +178,12 @@ Each still declares an input schema and an authorization binding, and both still
 a design the represented user may not read would disclose that it exists.
 
 `apps/web/src/App.tsx` routes on a bare `switch (window.location.pathname)` with no router library,
-so `ui.openDesign` changes location rather than calling a `navigate()`. That is an implementation
-detail, not a contract problem.
+and an earlier reading of this section said `ui.openDesign` would therefore change location. It
+cannot: the four paths in that switch are authentication hand-offs, the open design is React state
+on `/`, and any other path answers "Page not found". So the handler lifts the design id instead —
+`App` now holds `openDesign` beside its `designId` state and the channel calls it, which also lets
+it select the named page in the same commit rather than through a reload that would lose it. Still
+an implementation detail, and still not a contract problem.
 
 ---
 
@@ -659,6 +663,46 @@ later holds the stronger reading as contractual, this implementation already sat
 *Schedule effect:* `apps/mcp/src/server.rs` authors the catalog today — name and description in each
 `#[tool(...)]` attribute, schema derived from its `Parameters<T>` struct, fourteen times. Re-pointing
 it at the registry is real work and belongs in step 6 rather than beside it.
+
+**D8 — The editor speaks the three UI routes itself; it does not depend on `@pontis/react`.**
+
+`pontis/packages/sdk-react` ships `PontisClient` and `useAgentUIAction`, and
+`pontis/docs/12-sdk.md` is explicit that the package is "a wrapper, not the contract" — canonical UI
+action registration must not require React, and the reference frontend is plain HTML precisely to
+keep proving it. Taking the wrapper would mean `apps/web` resolved a dependency through the one seam
+`apps/pontis-sidecar` keeps into the private Pontis checkout. §7.3 says the base product stays
+usable without Pontis, and that has to include *building*: the editor is the base product, and a
+build that fails without a Pontis checkout present would break the promise in the most basic way
+there is. The sidecar may depend on that checkout because the sidecar *is* the integration; the
+editor may not, and keeping that seam in one place is itself a tested rule.
+
+What the editor implements instead is small and fully specified by
+`pontis/packages/sdk-server/src/ui-transport.ts`: three paths
+(`/pons/v1/ui/stream`, `/pons/v1/ui/actions`, `/pons/v1/ui/ack`), the `ui.connected` and `ui.action`
+frames, and the four ack outcomes. `apps/web/src/pontis/channel.ts` is that client, and
+`apps/pontis-sidecar/src/ui.test.ts` drives the real routes so a drift in any of the three shows up
+as a failing test rather than a dead channel in a browser.
+
+**D9 — The UI channel is same-origin, and the stream carries its bearer in a header.**
+
+Two constraints meet here. The transport refuses a cross-origin `Origin` and validates `Host`
+against the same declared list, which is its DNS-rebinding defence; and Forma's browser session is a
+provider JWT that `api.ts` sends as `Authorization: Bearer`, which `EventSource` cannot set at all.
+
+So the channel is same-origin through whatever already fronts the editor — Caddy routes
+`/pons/v1/ui/*` to `127.0.0.1:4767` in the deployment, Vite proxies it in development — and the
+sidecar declares that one public origin. Nothing new is exposed: the sidecar stays on loopback and
+the proxy was already the only thing the internet talks to.
+
+And the stream is read with `fetch` plus a `ReadableStream`, not `EventSource`, so the bearer travels
+in a header. The alternative was a token in the query string, which `pontis/docs/13` does for the
+reference app's stand-in for a session cookie; a real provider JWT in a URL lands in access logs and
+in `Referer`, and "never log tokens" is an invariant Forma states in as many words. The cost is a
+dozen lines of SSE framing, which is the smaller price.
+
+In `FORMA_AUTH_MODE=local` there is no sidecar and no channel: `/service/resolve` needs a subject and
+an account, and local mode has neither. The editor connects nothing and the four `ui.*` capabilities
+are simply not offered.
 
 #### Still open
 

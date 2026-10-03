@@ -8,6 +8,8 @@
  * FORMA_SERVICE_CREDENTIAL=forma_svc_…    from `forma-server service-credential <name>`
  * FORMA_PONTIS_BIND=127.0.0.1:4767       4766 is forma-mcp's (plan §2)
  * FORMA_PONTIS_ORIGIN=                   the public origin, when behind a proxy
+ * FORMA_PONTIS_EDITOR_ORIGIN=            where the editor is served from, comma
+ *                                        separated; the UI channel's allowlist
  * ```
  *
  * Prints `READY <origin>` on stdout once it is listening, and logs JSON lines on
@@ -43,12 +45,21 @@ if (host !== '127.0.0.1' && host !== '::1' && host !== 'localhost') {
 }
 
 const origin = process.env.FORMA_PONTIS_ORIGIN?.trim();
+// The editor and the UI routes share an origin through the proxy in front of
+// both (plan §10(b) D9), so the usual value is the one public name. Unset means
+// no UI channel rather than an open one: the transport refuses every origin when
+// its allowlist is empty, which is the fail-closed reading of a missing setting.
+const editorOrigins = (process.env.FORMA_PONTIS_EDITOR_ORIGIN?.trim() ?? '')
+  .split(',')
+  .map((value) => value.trim())
+  .filter((value) => value.length > 0);
 const sidecar = await startSidecar({
   formaUrl: required('FORMA_SERVER_URL'),
   serviceCredential: required('FORMA_SERVICE_CREDENTIAL'),
   host,
   port,
   ...(origin ? { origin } : {}),
+  ...(editorOrigins.length ? { editorOrigins } : {}),
   log: stderrLog,
 });
 process.stdout.write(`READY ${sidecar.origin}\n`);

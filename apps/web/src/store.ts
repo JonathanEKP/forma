@@ -7,6 +7,7 @@
  * there is exactly one copy of it.
  */
 
+import type { EditorPanel } from "@forma/bindings/EditorPanel";
 import { create } from "zustand";
 
 /** A frame being dragged or resized, before the operation is sent. */
@@ -18,7 +19,16 @@ export interface DraftFrame {
   height: number;
 }
 
-export type Panel = "properties" | "validation" | "assets" | "brand";
+/**
+ * The side panels, from Rust rather than written out again here.
+ *
+ * `crates/agent-catalog` exports `EditorPanel` because `ui.setPanel`'s schema is
+ * built from it, and two hand-kept copies of the same union would have had
+ * nothing guarding the drift between them — an agent would have been told
+ * `properties, validation, assets, brand` by a schema the editor no longer
+ * agreed with.
+ */
+export type Panel = EditorPanel;
 
 interface EditorState {
   selectedPageId: string | null;

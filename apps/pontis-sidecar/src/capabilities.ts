@@ -15,13 +15,13 @@
  * - `forma.guide`, the manual (plan §6.1). The guidance is only the opening
  *   context; this is where the agent reads the rest, as an ordinary `read`
  *   resource. Nothing gates a write on having called it.
- * - **No `ui.*` capability.** Pontis would answer `ui_unavailable` for them, and
- *   that answer is meant for "no window of yours is connected right now" — a
- *   state the person can fix by opening Forma. With no handler written anywhere
- *   (that is plan §11 step 9) it would be permanent, every call would cost the
- *   agent a turn to learn it, and each one still owes an authorization binding
- *   (§3.2: opening a design discloses that it exists) that step 9 is where it
- *   gets designed. They are added with their handlers, not before.
+ * - The four `ui.*` actions, which live in [ui.ts](ui.ts) because they are a
+ *   different kind of thing: no `execute` binding, a fixed output schema, and a
+ *   target that is the person's own open editor rather than Forma. They were
+ *   held back until their handlers existed — `ui_unavailable` means "no window
+ *   of yours is connected right now", a state the person can fix by opening
+ *   Forma, and with no handler written anywhere it would have been permanent and
+ *   every call would have cost the agent a turn to learn it.
  */
 import { CapabilityError, defineCapability, type ApprovalEvidence, type ApprovalRequirement, type Capability, type JsonSchema } from '@pontis/core';
 import type { ApprovalEvidence as FormaApprovalEvidence } from '@forma/bindings/ApprovalEvidence';
@@ -85,10 +85,22 @@ export function removals(operations: readonly unknown[]): number {
   }).length;
 }
 
-function spec(id: ServedCapability): CapabilitySpec {
+/**
+ * The generated entry for one operation.
+ *
+ * Takes any catalog id rather than only a served one, because [ui.ts](ui.ts)
+ * reads the same catalog for actions Boundary F deliberately does not serve. The
+ * throw is the drift guard: an id that has left the catalog fails at startup
+ * rather than registering a capability with no definition behind it.
+ */
+export function specOf(id: string): CapabilitySpec {
   const found = capabilityCatalog.find((entry) => entry.id === id);
   if (!found) throw new Error(`the agent catalog has no ${id}`);
   return found;
+}
+
+function spec(id: ServedCapability): CapabilitySpec {
+  return specOf(id);
 }
 
 function schema(value: JsonValue): JsonSchema {

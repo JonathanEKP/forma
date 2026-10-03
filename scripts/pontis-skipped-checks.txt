@@ -5,5 +5,5 @@
 lint of apps/pontis-sidecar (eslint, --max-warnings 0)
 typecheck of apps/pontis-sidecar (tsc)
 fmt and clippy of apps/pontis-sidecar/test-driver
-unit tests of apps/pontis-sidecar (Boundary F client, capabilities, composition)
+unit tests of apps/pontis-sidecar (Boundary F client, capabilities, composition, UI actions)
 the local run against FakeProvider (read, write, cancel, approval)

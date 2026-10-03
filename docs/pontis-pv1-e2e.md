@@ -112,6 +112,19 @@ with no tab open the result is `ui_unavailable` rather than a false success; a l
 after a timeout is dropped; and a tab authenticated for **another account** is not an eligible
 target (ADR-024).
 
+**Carried, in two halves that meet at the wire.**
+`apps/pontis-sidecar/src/ui.test.ts` drives the sidecar's real routes with a client that speaks
+what the editor speaks, and covers every assertion above plus `ui_action_not_registered` and the
+authorization refusal that does not say which refusal it was.
+`apps/web/src/pontis/handlers.test.ts` covers what the window does with each action against the
+real store, and `channel.test.ts` the framing and acknowledgement from the browser's side.
+
+What neither half reaches is a real browser driving a real sidecar. The §67 Playwright walkthrough
+has no sidecar in front of it, and giving it one would make the base product's own end-to-end layer
+depend on a private checkout — the thing plan §10(b) D8 declines to do. So the step 10 editor
+surface is where a person sees this work, and S7's evidence is the two halves plus the real-provider
+run of S13.
+
 ### S8 — Cancellation · full stack
 
 Cancel mid-turn, both ways: MCP request cancellation and a Pontis `session.cancel`.

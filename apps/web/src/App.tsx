@@ -1,12 +1,16 @@
-import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Agents } from "./Agents";
 import { ApiError, getIdentity, listProjects } from "./api";
 import { Consent } from "./Consent";
 import { Editor } from "./editor/Editor";
 import { currentSession } from "./identity";
+import { uiHandlers } from "./pontis/handlers";
+import { useUiChannel } from "./pontis/useUiChannel";
 import { Onboard, SignIn } from "./SignIn";
 import { Projects } from "./Projects";
+import { useEditor } from "./store";
 
 /**
  * What the app knows about who is using it.
@@ -67,6 +71,29 @@ function useAccess(): [Access, () => void] {
 export function App() {
   const [designId, setDesignId] = useState<string | null>(null);
   const [access, recheck] = useAccess();
+  const queries = useQueryClient();
+
+  // Opening a design is a navigation, so it clears what was selected in the
+  // last one — a layer id from another design would otherwise survive the
+  // switch. The channel calls this, and so could anything else; it is not an
+  // agent-only path.
+  const openDesign = useCallback((next: string) => {
+    setDesignId((current) => {
+      if (current !== next) useEditor.getState().selectPage(null);
+      return next;
+    });
+  }, []);
+
+  // The four editor actions of plan §3.2, answered by this window.
+  //
+  // Only where there is a sidecar to connect to: `/service/resolve` needs a
+  // subject and an account, so a local Forma has neither one nor a session to
+  // present, and `access.at === "ready"` is exactly the state that has both.
+  const handlers = useMemo(
+    () => uiHandlers({ openDesignId: () => designId, openDesign, queries }),
+    [designId, openDesign, queries],
+  );
+  useUiChannel({ enabled: access.at === "ready", handlers });
 
   // These entry points are part of authentication hand-offs and setup
   // instructions, not an in-app navigation graph. Reading the browser path
@@ -91,7 +118,7 @@ export function App() {
   if (access.at === "accountless") return <Onboard onReady={recheck} />;
 
   return designId === null ? (
-    <Projects onOpen={setDesignId} />
+    <Projects onOpen={openDesign} />
   ) : (
     <Editor designId={designId} onBack={() => setDesignId(null)} />
   );

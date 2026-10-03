@@ -142,6 +142,21 @@ from Signal and unrelated to it; do not unify them.
   layer, dragging, placing an uploaded asset — goes through the same typed
   `DesignOperation` an agent would send (§28). If the editor needs something the operation
   set cannot express, the operation set is what has to change.
+- **The editor builds without Pontis, so it speaks the UI channel itself.** An agent can
+  move the person's view through four `ui.*` capabilities, and the handlers are in
+  `apps/web/src/pontis/` — Forma's own ~200 lines against the three documented routes,
+  never `@pontis/react`. The wrapper resolves through the sidecar's symlink into a
+  private checkout, and `apps/web` *is* the base product that Pontis plan §7.3 promises
+  stays usable without Pontis; a build that needed that checkout would break the promise
+  outright. `apps/pontis-sidecar/src/ui.test.ts` drives the real routes with a client
+  shaped like the editor's, because nothing else would notice a drift until a browser did.
+  The channel is same-origin through the proxy in front of both and reads its stream with
+  `fetch` rather than `EventSource`, so the session bearer stays in a header: a token in a
+  query string lands in access logs, against the rule this list ends on.
+  Every handler goes through `useEditor`, so an agent pointing at a layer moves the same
+  selection a click moves — the no-private-path rule, in the other direction. Delivery is
+  not success: an action is `handled` only once the window acknowledges it, and
+  `ui_unavailable` or a typed `rejected` is always better than a success nobody saw.
 - **A client never mints server-owned identity.** `PUT /projects/{id}/brand` takes a
   `BrandKitDraft` — what the brand *is* — while the `BrandId` and the kit's version are
   decided server-side, with the id kept stable across edits so the project's `brand_id`

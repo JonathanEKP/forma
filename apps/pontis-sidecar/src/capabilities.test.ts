@@ -15,6 +15,7 @@ import { fakeForma } from './fake-forma.ts';
 import { GUIDANCE } from './guidance.ts';
 import { startSidecar } from './sidecar.ts';
 import { silentLog } from './log.ts';
+import { UI_ACTIONS } from './ui.ts';
 
 const USER = '11111111-1111-4111-8111-111111111111';
 const CONTEXT = '22222222-2222-4222-8222-222222222222';
@@ -282,8 +283,12 @@ describe('the composition', () => {
     });
     try {
       const discovered = await sidecar.agentApp.gateway.discoverApplication(USER, SESSION, CONTEXT);
-      // No ui.* capability until step 9 writes its handler (see capabilities.ts).
-      assert.deepEqual(discovered.capabilities.map(({ id }) => id).sort(), [...SERVED].sort());
+      // Boundary F's operations plus the four editor actions, which are routed
+      // to the person's window rather than served here (see ui.ts).
+      assert.deepEqual(
+        discovered.capabilities.map(({ id }) => id).sort(),
+        [...SERVED, ...UI_ACTIONS].sort(),
+      );
       assert.equal(discovered.guidance.version, 1);
 
       const devices = await fetch(`${sidecar.origin}/pons/v1/devices`);
