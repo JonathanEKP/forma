@@ -802,7 +802,7 @@ Read this before the list below; the list is the plan, this is what happened to 
 | 8 Manual and guidance (§6.1) | done | `ee7be64` |
 | 9 UI capability handlers (D8, D9) | done | `c852e91` |
 | 10 Device panel and in-app chat | **in progress** — two workers, see below | |
-| 10a Device panel and proxy routes | done, not yet merged | `70dae4e`, `d6b000c`, `ad74373`, `f37b358` (branch `JonathanEKP/pontis-10a-devices`) |
+| 10a Device panel and proxy routes | done, not yet merged | `70dae4e`, `d6b000c`, `ad74373`, `f37b358`, `bd4cd8b`, `6edc1b6` (branch `JonathanEKP/pontis-10a-devices`) |
 | 11 Real Codex local run | not started; needs the owner (a real provider credential on their machine) | |
 | 12 PV-1 evidence | not started; follows 11 | |
 
