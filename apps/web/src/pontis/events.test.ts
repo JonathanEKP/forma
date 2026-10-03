@@ -23,6 +23,9 @@ const event = (sequence: number, type = "turn.started"): DurableEvent => ({
   payload: {},
 });
 
+const urlOf = (input: RequestInfo | URL): string =>
+  typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+
 const wire = (sequence: number) => ({ sequence, type: "turn.started", sessionId: "ses_1", payload: {} });
 
 describe("parsing a page", () => {
@@ -87,7 +90,7 @@ describe("the polling stream", () => {
     const headers: (string | null)[] = [];
     let call = 0;
     const fetchImpl = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = new URL(String(input), "http://x");
+      const url = new URL(urlOf(input), "http://x");
       asked.push(`${url.searchParams.get("scope")}|${url.searchParams.get("applicationContextId")}|${url.searchParams.get("after")}`);
       headers.push(new Headers(init?.headers).get("authorization"));
       const answer = answers[Math.min(call, answers.length - 1)];
@@ -128,7 +131,8 @@ describe("the polling stream", () => {
     expect(applied).toEqual([1, 2]);
     expect(source.asked[0]).toBe(`application_context|${CONTEXT}|0`);
     expect(source.headers[0]).toBe("Bearer session-token");
-    expect(String(source.fetchImpl.mock.calls[0]?.[0])).not.toContain("session-token");
+    const first = source.fetchImpl.mock.calls[0]?.[0];
+    expect(first === undefined ? "" : urlOf(first)).not.toContain("session-token");
     stream.close();
   });
 

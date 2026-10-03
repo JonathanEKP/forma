@@ -120,7 +120,7 @@ export function App() {
   return designId === null ? (
     <Projects onOpen={openDesign} />
   ) : (
-    <Editor designId={designId} onBack={() => setDesignId(null)} />
+    <Editor designId={designId} onBack={() => setDesignId(null)} agent={access.at === "ready"} />
   );
 }
 
