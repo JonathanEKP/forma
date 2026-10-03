@@ -1,7 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
 
-import { getIdentity } from "./api";
-import { listGrants, revokeGrant, supabase, type Grant } from "./identity";
+import { getIdentity, listProjects } from "./api";
+import { currentSession, listGrants, revokeGrant, supabase, type Grant } from "./identity";
+import { DevicePanel } from "./pontis/devices-panel";
 import { useApiKeys, useCreateApiKey, useRevokeApiKey } from "./queries";
 
 export function Agents() {
@@ -11,6 +12,7 @@ export function Agents() {
   const [name, setName] = useState("");
   const mcpUrl = `${window.location.origin}/mcp`;
   const grants = useGrants();
+  const pontis = usePontisEnabled();
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -106,6 +108,8 @@ export function Agents() {
           </div>
         </section>
       )}
+
+      {pontis && <DevicePanel />}
 
       <section className="rounded-2xl border border-edge bg-surface p-5">
         <h2 className="text-lg font-medium">Personal access tokens</h2>
@@ -253,6 +257,39 @@ function useGrants() {
   }
 
   return { list, available, error, pending, disconnect };
+}
+
+/**
+ * Whether this Forma has a Pontis to ask about: hosted identity, signed in, with
+ * an account.
+ *
+ * The same condition as `useUiChannel`'s gate in `App.tsx` (`access.at ===
+ * "ready"`), asked the same way — the cheapest authenticated read doubles as
+ * the account question. A local Forma fails the first step, and then the page
+ * shows nothing Pontis-related at all rather than a panel for a sidecar that
+ * cannot be there (plan §7.3, scenario S11).
+ */
+function usePontisEnabled(): boolean {
+  const [enabled, setEnabled] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      try {
+        const hosted = (await getIdentity()).required;
+        if (!hosted || !supabase || !(await currentSession())) return;
+        await listProjects();
+        if (live) setEnabled(true);
+      } catch {
+        // No server, no account or no session: the page works without the panel.
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  return enabled;
 }
 
 function Host({ name, children }: { name: string; children: React.ReactNode }) {

@@ -802,6 +802,7 @@ Read this before the list below; the list is the plan, this is what happened to 
 | 8 Manual and guidance (§6.1) | done | `ee7be64` |
 | 9 UI capability handlers (D8, D9) | done | `c852e91` |
 | 10 Device panel and in-app chat | **in progress** — two workers, see below | |
+| 10a Device panel and proxy routes | done, merged into `main` | `70dae4e`, `d6b000c`, `ad74373`, `f37b358`, `bd4cd8b`, `6edc1b6` (branch `JonathanEKP/pontis-10a-devices`) |
 | 11 Real Codex local run | not started; needs the owner (a real provider credential on their machine) | |
 | 12 PV-1 evidence | not started; follows 11 | |
 
@@ -832,6 +833,13 @@ Decisions taken for step 10, low-risk and delegated:
   session's context: the editor gets exactly that value, not a second derivation that could
   disagree. Built by 10b; proxied by 10a. (Also corrected: `/pons/v1/events` is a polled JSON page
   with an `after` cursor, not SSE.)
+- **Open from 10a: presence.** `GET /pons/v1/devices` returns the stored Device record, which has no
+  `online` (SEC-INV-009: presence is never durable), and the sidecar does not merge it in the way
+  Pontis's reference app does (`remote-server.ts`, `online: devices.isOnline(id)`). The panel shows
+  "presence not reported" rather than guess; it renders online/offline the moment the response
+  carries a boolean `online`. Merging it in is a sidecar change (`isOnline` is already used by
+  `intents.ts`), left to whoever owns `apps/pontis-sidecar`. `caddy validate` was not run (no Caddy
+  on the dev machine); `deploy/install.sh` does it on deploy.
 - **Only browser routes go through the proxy:** `/pons/v1/pairing/codes`, `/pons/v1/devices*`,
   `/pons/v1/events`, `/pons/v1/jobs*`, `/agent/intent`, `/agent/context`, `/pons/v1/ui/*`. The Runtime's own routes
   (`pairing/claim`, `device/*`) are a remote Device reaching the sidecar, which is PV-2 and not
