@@ -801,8 +801,10 @@ Read this before the list below; the list is the plan, this is what happened to 
 | 7 Sidecar composition, local run against FakeProvider | done | `c0c7744` |
 | 8 Manual and guidance (§6.1) | done | `ee7be64` |
 | 9 UI capability handlers (D8, D9) | done | `c852e91` |
-| 10 Device panel and in-app chat | **in progress** — two workers, see below | |
+| 10 Device panel and in-app chat | **in progress** — 10a and 10b merged, 10c (live delivery) dispatched | |
 | 10a Device panel and proxy routes | done, merged into `main` | `70dae4e`, `d6b000c`, `ad74373`, `f37b358`, `bd4cd8b`, `6edc1b6` (branch `JonathanEKP/pontis-10a-devices`) |
+| 10b In-app chat and `/agent/context` | done, merged into `main` | `93dde1a`, `58b754f`, `f081782`, `0a34a10`, `005d9d0` (branch `JonathanEKP/pontis-10b-chat`) |
+| 10c Live delivery and device presence | **in progress** — see below | branch `JonathanEKP/pontis-10c-live` |
 | 11 Real Codex local run | not started; needs the owner (a real provider credential on their machine) | |
 | 12 PV-1 evidence | not started; follows 11 | |
 
@@ -848,6 +850,18 @@ Decisions taken for step 10, low-risk and delegated:
   carries a boolean `online`. Merging it in is a sidecar change (`isOnline` is already used by
   `intents.ts`), left to whoever owns `apps/pontis-sidecar`. `caddy validate` was not run (no Caddy
   on the dev machine); `deploy/install.sh` does it on deploy.
+- **10c — live delivery and presence, found in review of 10a and 10b.** 10b polls the durable event
+  page and concluded the agent's reply could not stream. It can: Pontis's reference app
+  (`examples/reference-app/src/bin/remote-server.ts`) fans each Device notification out to the
+  person's own tabs with `uiClients.notifyContext` / `notifyPrincipal`, which arrives on the UI
+  stream of step 9 as a `pons.event` frame — `agent.output.delta` included, unsequenced because it
+  is never persisted. Forma's `sidecar.ts` builds its `DeviceGateway` without that fan-out. The
+  UI stream is delivery, the event page stays history: a frame with a `sequence` advances nothing
+  on its own, and a gap still resyncs from the page. The same review found the device panel's
+  "presence not reported": the sidecar does not merge `devices.isOnline` into `/pons/v1/devices`
+  the way the reference app does. Both are sidecar wiring the reference app already shows, so they
+  are one task, given to the 10b worker because it holds the chat's model. Also noted, not fixed:
+  the chat's state lives in `Editor`, so it resets when the person leaves a design.
 - **Only browser routes go through the proxy:** `/pons/v1/pairing/codes`, `/pons/v1/devices*`,
   `/pons/v1/events`, `/pons/v1/jobs*`, `/agent/intent`, `/agent/context`, `/pons/v1/ui/*`. The Runtime's own routes
   (`pairing/claim`, `device/*`) are a remote Device reaching the sidecar, which is PV-2 and not
