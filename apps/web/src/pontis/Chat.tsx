@@ -47,7 +47,7 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
   // New lines are at the bottom, and the person is reading there.
   useEffect(() => {
     if (log.current) log.current.scrollTop = log.current.scrollHeight;
-  }, [state.lines.length, state.working]);
+  }, [state.lines.length, state.working, state.streaming?.text]);
 
   if (!chat.enabled) return null;
 
@@ -77,7 +77,7 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
         </button>
       </header>
 
-      <Status connection={chat.connection} runtime={chat.runtime} />
+      <Status connection={chat.connection} live={chat.live} runtime={chat.runtime} />
 
       <ol ref={log} role="log" aria-live="polite" className="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-4 py-3">
         {state.lines.length === 0 && (
@@ -95,7 +95,13 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
             />
           </li>
         ))}
-        {state.working && (
+        {state.streaming && (
+          // The reply as it arrives. Replaced, not extended, by the final text.
+          <li data-kind="agent" data-streaming="true">
+            <Row line={{ kind: "agent", id: "streaming", text: state.streaming.text }} answering={false} onDecide={() => undefined} />
+          </li>
+        )}
+        {state.working && !state.streaming && (
           <li data-kind="working" className="text-xs text-faint">
             The agent is working…
           </li>
@@ -147,13 +153,13 @@ const CONNECTION: Record<Connection, { dot: string; text: string }> = {
  * Runtime, device, provider and how it is signed in: the first thing a person
  * wants to know before trusting a conversation to it.
  */
-function Status({ connection, runtime }: { connection: Connection; runtime: Runtime }) {
+function Status({ connection, live, runtime }: { connection: Connection; live: boolean; runtime: Runtime }) {
   const link = CONNECTION[connection];
   return (
     <section aria-label="Status" className="space-y-1.5 border-b border-edge px-4 py-3 text-[11px] text-muted">
       <div className="flex items-center gap-2">
         <span className={`h-[7px] w-[7px] rounded-full ${link.dot}`} />
-        <span>{link.text}</span>
+        <span>{connection === "live" && live ? "Connected · live" : link.text}</span>
       </div>
       <Device runtime={runtime} />
     </section>

@@ -14,6 +14,7 @@ vi.mock("../identity", () => ({
 }));
 
 import { Editor } from "../editor/Editor";
+import { liveFeed } from "./channel";
 import { ChatPanel, ChatToggle } from "./Chat";
 import { useChat } from "./useChat";
 
@@ -22,6 +23,7 @@ const SESSION = "ses_1";
 
 interface Call {
   readonly path: string;
+  readonly search: string;
   readonly method: string;
   readonly body: unknown;
 }
@@ -67,7 +69,7 @@ class Backend {
     const url = new URL(raw, "http://x");
     const method = init?.method ?? "GET";
     const body: unknown = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
-    this.calls.push({ path: url.pathname, method, body });
+    this.calls.push({ path: url.pathname, search: url.search, method, body });
     const json = (value: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(value), { status }));
     if (this.down) return Promise.reject(new TypeError("fetch failed"));
 
@@ -263,6 +265,97 @@ describe("a conversation", () => {
     backend.push(2, "approval.requested", { approvalId: "apr_2", invocationId: "i", capabilityId: "design.applyOperations", risk: "write", humanSummary: "Edit", importantArguments: [], affectedResourceCount: 1 });
     fireEvent.click(await screen.findByRole("button", { name: "Deny" }));
     await waitFor(() => expect(backend.intents()).toEqual([{ type: "approval.resolve", payload: { approvalId: "apr_2", decision: "deny" } }]));
+  });
+});
+
+describe("the live path", () => {
+  const scope = { kind: "application_context", applicationContextId: CONTEXT };
+  const durable = (sequence: number, type: string, payload: Record<string, unknown> = {}) => ({ type, sessionId: SESSION, sequence, scope, payload });
+  const delta = (text: string) => ({ type: "agent.output.delta", sessionId: SESSION, payload: { turnId: "t1", text } });
+  const pageReads = () => backend.calls.filter((call) => call.path === "/pons/v1/events");
+
+  afterEach(() => {
+    act(() => liveFeed.setState({ at: "offline" }));
+  });
+
+  async function connected() {
+    render(<Harness enabled />);
+    await screen.findByText(/Studio laptop/);
+    await waitFor(() => expect(pageReads().length).toBeGreaterThan(0));
+    act(() => liveFeed.setState({ at: "connected", clientId: "c" }));
+    await screen.findByText("Connected · live");
+  }
+
+  it("shows the reply as it streams, replaces it with the completed text, and ignores a repeat", async () => {
+    await connected();
+    act(() => {
+      liveFeed.publish(durable(1, "session.created"));
+      liveFeed.publish(durable(2, "session.started"));
+      liveFeed.publish(durable(3, "turn.started", { turnId: "t1" }));
+      liveFeed.publish(delta("Raising "));
+      liveFeed.publish(delta("the headline"));
+    });
+    // Nothing was stored for the page to serve: this came by the live path alone.
+    const streaming = await screen.findByText("Raising the headline");
+    expect(streaming.closest("li")?.getAttribute("data-streaming")).toBe("true");
+
+    act(() => liveFeed.publish(durable(4, "agent.output.completed", { turnId: "t1", text: "Raising the headline to 96pt." })));
+    await screen.findByText("Raising the headline to 96pt.");
+    expect(screen.queryByText("Raising the headline")).toBeNull();
+    expect(document.querySelector("[data-streaming]")).toBeNull();
+
+    // The same sequence again, as a poll would bring it back: one line, not two.
+    act(() => liveFeed.publish(durable(4, "agent.output.completed", { turnId: "t1", text: "Raising the headline to 96pt." })));
+    act(() => liveFeed.publish(delta(" late")));
+    expect(screen.getAllByText("Raising the headline to 96pt.")).toHaveLength(1);
+    expect(document.querySelector("[data-streaming]")).toBeNull();
+  });
+
+  it("does not apply a frame that skips ahead, and repairs from the page starting at the cursor", async () => {
+    await connected();
+    act(() => {
+      liveFeed.publish(durable(1, "session.created"));
+      liveFeed.publish(durable(2, "session.started"));
+    });
+    // The page has what the stream missed: 3 and 4, and the frame that arrives is 5.
+    backend.events = [
+      { sequence: 1, type: "session.created", sessionId: SESSION, payload: {} },
+      { sequence: 2, type: "session.started", sessionId: SESSION, payload: {} },
+      { sequence: 3, type: "agent.output.completed", sessionId: SESSION, payload: { turnId: "a", text: "Missed one" } },
+      { sequence: 4, type: "agent.output.completed", sessionId: SESSION, payload: { turnId: "b", text: "Missed two" } },
+      { sequence: 5, type: "agent.output.completed", sessionId: SESSION, payload: { turnId: "c", text: "Delivered live" } },
+    ];
+    act(() => liveFeed.publish(durable(5, "agent.output.completed", { turnId: "c", text: "Delivered live" })));
+    expect(screen.queryByText("Delivered live")).toBeNull(); // 5 was not applied ahead of 3 and 4
+
+    await screen.findByText("Delivered live");
+    const lines = screen.getAllByRole("listitem").map((item) => item.textContent);
+    expect(lines.filter((text) => text?.includes("Missed") || text?.includes("Delivered"))).toEqual([
+      expect.stringContaining("Missed one") as string,
+      expect.stringContaining("Missed two") as string,
+      expect.stringContaining("Delivered live") as string,
+    ]);
+    expect(pageReads().some((call) => call.search.includes("after=2"))).toBe(true);
+  });
+
+  it("reads the page slowly while the stream is connected, and still reads it", async () => {
+    await connected();
+    await act(() => new Promise((resolve) => setTimeout(resolve, 120)));
+    const settled = pageReads().length;
+    await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
+    // Polling at 20ms would have read ten more times in that window.
+    expect(pageReads().length).toBe(settled);
+  });
+
+  it("ignores another context's frame, and a principal frame whose sequence is its own", async () => {
+    await connected();
+    act(() => {
+      liveFeed.publish({ type: "session.created", sessionId: SESSION, sequence: 1, scope: { kind: "application_context", applicationContextId: "someone-else" }, payload: {} });
+      liveFeed.publish({ type: "device.revoked", sequence: 1, scope: { kind: "principal" }, payload: {} });
+      liveFeed.publish(durable(1, "session.created"));
+      liveFeed.publish(durable(2, "agent.output.completed", { turnId: "t", text: "Mine" }));
+    });
+    await screen.findByText("Mine");
   });
 });
 

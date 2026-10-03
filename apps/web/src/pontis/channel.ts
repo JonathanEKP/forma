@@ -57,6 +57,12 @@ export interface ChannelOptions {
   readonly fetchImpl?: typeof fetch;
   /** Told what the channel is doing, for the editor's own status line. */
   readonly onState?: (state: ChannelState) => void;
+  /**
+   * Each `pons.event` frame, parsed and otherwise untouched. The sidecar fans the
+   * Device's notifications out to the person's windows on this same stream; what
+   * the frames mean is the subscriber's to decide, and none of them is an action.
+   */
+  readonly onEvent?: (frame: unknown) => void;
 }
 
 export type ChannelState =
@@ -162,6 +168,11 @@ export function openChannel(options: ChannelOptions): Channel {
         state({ at: "connected", clientId });
         continue;
       }
+      if (frame.event === "pons.event") {
+        const delivered = parse(frame.data);
+        if (delivered !== null) options.onEvent?.(delivered);
+        continue;
+      }
       if (frame.event !== "ui.action" || clientId === null) continue;
       const action = parse(frame.data);
       if (!isRecord(action) || typeof action.invocationId !== "string" || typeof action.capabilityId !== "string") {
@@ -196,6 +207,44 @@ export function openChannel(options: ChannelOptions): Channel {
     },
   };
 }
+
+/**
+ * Where the channel's two outputs wait for whoever wants them.
+ *
+ * The channel is opened once, high up, because a UI action is addressed to the
+ * window; the chat is mounted in the editor, lower down and only sometimes. A
+ * subscription in between keeps the channel from knowing about the chat and the
+ * chat from owning the connection — and a frame with nobody listening is simply
+ * dropped, because the page it duplicates is the record.
+ */
+export interface LiveFeed {
+  subscribe(listener: { readonly frame?: (frame: unknown) => void; readonly state?: (state: ChannelState) => void }): () => void;
+  publish(frame: unknown): void;
+  setState(state: ChannelState): void;
+  state(): ChannelState;
+}
+
+export function createLiveFeed(): LiveFeed {
+  const listeners = new Set<{ readonly frame?: (frame: unknown) => void; readonly state?: (state: ChannelState) => void }>();
+  let current: ChannelState = { at: "offline" };
+  return {
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => void listeners.delete(listener);
+    },
+    publish: (frame) => {
+      for (const listener of [...listeners]) listener.frame?.(frame);
+    },
+    setState: (state) => {
+      current = state;
+      for (const listener of [...listeners]) listener.state?.(state);
+    },
+    state: () => current,
+  };
+}
+
+/** The window's one feed: `useUiChannel` fills it and the chat reads it. */
+export const liveFeed: LiveFeed = createLiveFeed();
 
 interface Frame {
   readonly event: string;

@@ -8,7 +8,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
-import { frames, openChannel, type ChannelState } from "./channel";
+import { createLiveFeed, frames, openChannel, type ChannelState } from "./channel";
 
 const CLIENT = "uic_1";
 
@@ -57,7 +57,7 @@ describe("the SSE framing", () => {
  * A fetch that answers the three routes, with the stream held open so the
  * channel behaves as it does against a real sidecar.
  */
-function fakeSidecar(options: { actions?: readonly unknown[]; onPost?: (path: string, body: unknown) => void } = {}) {
+function fakeSidecar(options: { actions?: readonly unknown[]; events?: readonly unknown[]; onPost?: (path: string, body: unknown) => void } = {}) {
   const encoder = new TextEncoder();
   let push: ((chunk: string) => void) | undefined;
   const posts: { path: string; body: unknown; headers: Record<string, string> }[] = [];
@@ -72,6 +72,9 @@ function fakeSidecar(options: { actions?: readonly unknown[]; onPost?: (path: st
           push(`event: ui.connected\ndata: ${JSON.stringify({ clientId: CLIENT })}\n\n`);
           for (const action of options.actions ?? []) {
             push(`event: ui.action\ndata: ${JSON.stringify(action)}\n\n`);
+          }
+          for (const event of options.events ?? []) {
+            push(`event: pons.event\ndata: ${JSON.stringify(event)}\n\n`);
           }
         },
       });
@@ -96,6 +99,74 @@ async function until(condition: () => boolean, attempts = 50): Promise<void> {
   }
   throw new Error("the channel never got there");
 }
+
+describe("live frames", () => {
+  it("forwards each pons.event frame, parsed and untouched, and keeps handling actions beside them", async () => {
+    const delta = { type: "agent.output.delta", sessionId: "ses_1", payload: { text: "Rais" } };
+    const stored = { type: "agent.output.completed", sequence: 4, scope: { kind: "application_context", applicationContextId: "c" }, payload: {} };
+    const sidecar = fakeSidecar({
+      events: [delta, stored],
+      actions: [{ invocationId: "inv_9", capabilityId: "ui.setZoom", input: {} }],
+    });
+    const received: unknown[] = [];
+    const channel = openChannel({
+      handlers: { "ui.setZoom": () => ({ outcome: "handled" }) },
+      token: () => Promise.resolve(null),
+      baseUrl: "http://sidecar.test",
+      fetchImpl: sidecar.fetchImpl,
+      onEvent: (frame) => received.push(frame),
+    });
+    try {
+      await until(() => received.length === 2);
+      expect(received).toEqual([delta, stored]);
+      await until(() => sidecar.posts.some(({ path }) => path.endsWith("/ack")));
+    } finally {
+      channel.close();
+    }
+  });
+
+  it("ignores a frame that is not JSON rather than dying on it", async () => {
+    const sidecar = fakeSidecar();
+    const received: unknown[] = [];
+    const channel = openChannel({
+      handlers: {},
+      token: () => Promise.resolve(null),
+      baseUrl: "http://sidecar.test",
+      fetchImpl: sidecar.fetchImpl,
+      onEvent: (frame) => received.push(frame),
+    });
+    try {
+      await until(() => sidecar.posts.length > 0);
+      sidecar.push("event: pons.event\ndata: {not json\n\n");
+      sidecar.push('event: pons.event\ndata: {"type":"x"}\n\n');
+      await until(() => received.length === 1);
+      expect(received).toEqual([{ type: "x" }]);
+    } finally {
+      channel.close();
+    }
+  });
+});
+
+describe("the live feed", () => {
+  it("hands frames and state to whoever is subscribed, and to nobody after they leave", () => {
+    const feed = createLiveFeed();
+    const frames: unknown[] = [];
+    const states: string[] = [];
+    const leave = feed.subscribe({ frame: (frame) => frames.push(frame), state: (state) => states.push(state.at) });
+    feed.publish({ a: 1 });
+    feed.setState({ at: "connected", clientId: "c" });
+    expect(feed.state().at).toBe("connected");
+    leave();
+    feed.publish({ a: 2 });
+    feed.setState({ at: "offline" });
+    expect(frames).toEqual([{ a: 1 }]);
+    expect(states).toEqual(["connected"]);
+  });
+
+  it("drops a frame nobody is listening for: the page it duplicates is the record", () => {
+    expect(() => createLiveFeed().publish({ type: "x" })).not.toThrow();
+  });
+});
 
 describe("the channel", () => {
   it("registers its handler ids after the stream announces the client, not before", async () => {

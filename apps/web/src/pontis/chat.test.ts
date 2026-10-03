@@ -318,3 +318,45 @@ describe("the transcript keeps the five kinds of line apart", () => {
     expect(state.session?.status).toBe("ended");
   });
 });
+
+describe("the reply as it streams", () => {
+  const live = (state: ChatState, text: string, turnId = "t1", sessionId = SESSION) => chatReducer(state, { type: "delta", sessionId, turnId, text });
+  const open = () => fold(emptyChat, ev(1, "session.created"), ev(2, "session.started"), ev(3, "turn.started", { turnId: "t1" }));
+
+  it("accumulates deltas for the turn, transiently, and is working while it does", () => {
+    const state = live(live(open(), "Raising "), "the headline");
+    expect(state.streaming).toEqual({ turnId: "t1", text: "Raising the headline" });
+    expect(state.working).toBe(true);
+    expect(state.lines).toEqual([]);
+  });
+
+  it("is replaced, not extended, by the completed text — the final text is the whole of it", () => {
+    const state = fold(live(live(open(), "Raising "), "the head"), ev(4, "agent.output.completed", { turnId: "t1", text: "Raising the headline to 96pt." }));
+    expect(state.streaming).toBeNull();
+    expect(state.lines).toEqual([{ kind: "agent", id: "e4", text: "Raising the headline to 96pt." }]);
+  });
+
+  it("ignores a delta that lands after its own completion, which the two routes allow", () => {
+    const state = live(fold(open(), ev(4, "agent.output.completed", { turnId: "t1", text: "Done." })), " Done.");
+    expect(state.streaming).toBeNull();
+    expect(state.lines).toHaveLength(1);
+  });
+
+  it("starts the next turn's text fresh", () => {
+    const state = live(fold(live(open(), "one"), ev(4, "agent.output.completed", { turnId: "t1", text: "one" })), "two", "t2");
+    expect(state.streaming).toEqual({ turnId: "t2", text: "two" });
+  });
+
+  it("drops what never completed when the turn ends, fails, is cancelled or is stopped", () => {
+    for (const end of [ev(4, "turn.completed"), ev(4, "turn.failed", { error: { message: "x" } }), ev(4, "turn.cancelled"), ev(4, "session.cancelled")]) {
+      expect(fold(live(open(), "half"), end).streaming).toBeNull();
+    }
+    expect(chatReducer(live(open(), "half"), { type: "stopped", id: "l" }).streaming).toBeNull();
+  });
+
+  it("is for the open session only", () => {
+    expect(live(open(), "x", "t1", "another").streaming).toBeNull();
+    expect(live(emptyChat, "x").streaming).toBeNull();
+    expect(live(fold(open(), ev(4, "session.completed")), "late").streaming).toBeNull();
+  });
+});

@@ -25,7 +25,8 @@ import {
   type Decision,
   type RuntimeView,
 } from "./chat";
-import { openEventStream, RETRY_MS, type StreamState } from "./events";
+import { liveFeed } from "./channel";
+import { asDurable, openEventStream, parseLiveFrame, RETRY_MS, type EventStream, type StreamState } from "./events";
 
 /** How often the device list is re-read: presence changes slowly, and a turn does not need it. */
 export const DEVICES_MS = 10_000;
@@ -46,6 +47,8 @@ export interface Chat {
   readonly enabled: boolean;
   readonly state: ChatState;
   readonly connection: Connection;
+  /** The UI stream is delivering, so the page is read slowly instead of quickly. */
+  readonly live: boolean;
   readonly runtime: Runtime;
   /** Approvals waiting on the person, for the toggle's badge. */
   readonly pending: number;
@@ -91,7 +94,10 @@ export function useChat({ enabled, client, pollMs }: ChatOptions): Chat {
   const [stream, setStream] = useState<Connection>("connecting");
   const [runtime, setRuntime] = useState<Runtime>({ at: "unknown" });
   const [answering, setAnswering] = useState<ReadonlySet<string>>(new Set());
+  const [live, setLive] = useState(() => liveFeed.state().at === "connected");
   const seq = useRef(0);
+  // The reader and the context it reads, for the live path to hand frames to.
+  const reader = useRef<{ stream: EventStream; context: string } | null>(null);
   const queued = useRef<{ sessionId: string; text: string } | null>(null);
 
   const agent = useMemo(() => client ?? createAgentClient({ token: accessToken }), [client]);
@@ -127,7 +133,12 @@ export function useChat({ enabled, client, pollMs }: ChatOptions): Chat {
         onState: (next) => setStream(next.at),
         ...(pollMs === undefined ? {} : { pollMs }),
       });
-      close = () => opened.close();
+      opened.setLive(liveFeed.state().at === "connected");
+      reader.current = { stream: opened, context: context.value };
+      close = () => {
+        reader.current = null;
+        opened.close();
+      };
     };
     setStream("connecting");
     void connect();
@@ -142,6 +153,38 @@ export function useChat({ enabled, client, pollMs }: ChatOptions): Chat {
     const answer = await agent.devices();
     setRuntime(answer.ok ? answer.value : { at: "unreachable" });
   }, [agent]);
+
+  // The live path: what the sidecar fans out to this window while the agent
+  // works. A frame with a sequence goes to the reader, which applies it only if
+  // it is the next one; one without — a delta, a presence announcement — is
+  // never stored and so is handled here and nowhere else.
+  useEffect(() => {
+    if (!enabled) return;
+    return liveFeed.subscribe({
+      state: (next) => {
+        const connected = next.at === "connected";
+        setLive(connected);
+        reader.current?.stream.setLive(connected);
+      },
+      frame: (raw) => {
+        const frame = parseLiveFrame(raw);
+        if (!frame) return;
+        const held = reader.current;
+        const durable = held ? asDurable(frame, held.context) : null;
+        if (durable) {
+          held?.stream.offer(durable);
+        } else if (frame.sequence === undefined && frame.type === "agent.output.delta") {
+          const { turnId, text } = frame.payload;
+          if (frame.sessionId && typeof turnId === "string" && typeof text === "string") {
+            dispatch({ type: "delta", sessionId: frame.sessionId, turnId, text });
+          }
+        } else if (frame.type.startsWith("device.")) {
+          // Presence changed; the device list is the answer, and it is cheap.
+          void refreshRuntime();
+        }
+      },
+    });
+  }, [enabled, refreshRuntime]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -238,6 +281,7 @@ export function useChat({ enabled, client, pollMs }: ChatOptions): Chat {
     enabled,
     state,
     connection: stream,
+    live,
     runtime,
     pending: pendingApprovals(state).length,
     answering,
