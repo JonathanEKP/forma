@@ -20,6 +20,7 @@ import type { Log } from './log.ts';
 import type { Person, ResolvePerson } from './person.ts';
 
 export const INTENT_PATH = '/agent/intent';
+export const CONTEXT_PATH = '/agent/context';
 
 const MAX_BODY_BYTES = 64 * 1024;
 
@@ -72,6 +73,27 @@ export function createIntentRoute(options: {
       delivered: delivery.delivered,
       ...(intent.type === 'session.start' ? { sessionId: intent.sessionId } : {}),
     });
+  };
+}
+
+/**
+ * Which application context the person's session is bound to: the one value the
+ * event stream asks the browser to name and the browser has no way to learn.
+ *
+ * `GET /pons/v1/events?scope=application_context` refuses a context the caller
+ * does not already hold, and every session event lives in that scope. It is
+ * served from here, off the same `resolvePerson` the Control Plane routes ask,
+ * rather than derived a second way in forma-server — so the page is told exactly
+ * what the session is bound to and the two cannot disagree. The answer carries
+ * the id and nothing else: no user, no role.
+ */
+export function createContextRoute(options: { readonly resolvePerson: ResolvePerson }): IntentHandler {
+  return async (request, response) => {
+    if ((request.url ?? '').split('?')[0] !== CONTEXT_PATH) return false;
+    if (request.method !== 'GET') return reply(response, 405, { error: 'method_not_allowed' });
+    const person = await options.resolvePerson(request);
+    if (!person) return reply(response, 403, { error: 'not_authenticated' });
+    return reply(response, 200, { applicationContextId: person.applicationContextId });
   };
 }
 

@@ -18,7 +18,7 @@ This is plan §11 **steps 7 to 9**. What is left before PV-1 is the editor's own
 | `src/ui.ts` | the four editor actions, which have no execution binding at all: they are routed to the person's window, and what is Forma's is who may aim one |
 | `src/boundary.ts` | the Boundary F client: fixed operations, bounded answers, Forma's refusals as registry errors |
 | `src/person.ts` | who is behind a browser request, asked of `GET /api/v1/service/resolve` |
-| `src/intents.ts` | the browser's route to its Runtime: start, input, cancel, approve |
+| `src/intents.ts` | the browser's route to its Runtime: start, input, cancel, approve — and `GET /agent/context`, the application context the event stream has to be asked for by name |
 | `src/sidecar.ts` | the composition |
 | `src/guidance.ts` | the `ApplicationAgentGuidance`: the opening context only; the manual is `forma.guide` |
 | `test-driver/` | a test-only Pontis Runtime with FakeProvider, in Rust |

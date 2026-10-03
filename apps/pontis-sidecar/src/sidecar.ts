@@ -21,7 +21,7 @@ import { createRemoteGatewayHandler, createUiRequestHandler, defineAgentApp, typ
 import { FormaBoundary } from './boundary.ts';
 import { formaCapabilities, isUuid, type FormaUser } from './capabilities.ts';
 import { GUIDANCE } from './guidance.ts';
-import { createIntentRoute } from './intents.ts';
+import { createContextRoute, createIntentRoute } from './intents.ts';
 import type { Log } from './log.ts';
 import { personResolver } from './person.ts';
 import { uiCapabilities } from './ui.ts';
@@ -102,6 +102,7 @@ export async function startSidecar(options: SidecarOptions): Promise<Sidecar> {
     },
   });
   const intentRoute = createIntentRoute({ controlPlane, devices, resolvePerson, log: options.log });
+  const contextRoute = createContextRoute({ resolvePerson });
 
   // The frontend hop, and a genuinely different one from the gateway's: the
   // caller is a browser, so `Origin` is always present and is checked, where the
@@ -150,6 +151,7 @@ export async function startSidecar(options: SidecarOptions): Promise<Sidecar> {
   const dispatch = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     if (await controlRoutes(request, response)) return;
     if (await intentRoute(request, response)) return;
+    if (await contextRoute(request, response)) return;
     if (await uiRoute(request, response)) return;
     if (await gatewayRoutes(request, response)) return;
     respond(response, 404, { error: 'not_found' });
