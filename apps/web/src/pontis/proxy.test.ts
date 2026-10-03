@@ -27,6 +27,7 @@ const BROWSER = [
   "/pons/v1/ui/actions",
   "/pons/v1/ui/ack",
   "/agent/intent",
+  "/agent/context",
 ];
 
 /** A remote Device reaching the sidecar, not a person at the editor (PV-2). */
@@ -39,7 +40,7 @@ const RUNTIME = [
 ];
 
 /** Near misses: a prefix match would let these through. */
-const NEAR = ["/pons/v1/devicesx", "/pons/v1/eventsx", "/pons/v1/jobsx", "/agent/intentx", "/pons/v1/pairing"];
+const NEAR = ["/pons/v1/devicesx", "/pons/v1/eventsx", "/pons/v1/jobsx", "/agent/intentx", "/agent/contextx", "/agent/other", "/pons/v1/pairing"];
 
 function viteMatches(path: string): boolean {
   const proxy = config.server?.proxy ?? {};
@@ -83,7 +84,7 @@ describe("the Pontis proxy routes", () => {
   });
 
   it("flushes the streams and only reaches the sidecar by loopback", () => {
-    expect(stream).toEqual(["/pons/v1/events", "/pons/v1/ui/*"]);
+    expect(stream).toEqual(["/pons/v1/ui/*"]);
     const block = caddyfile.slice(caddyfile.indexOf("handle @pontis_stream"));
     expect(block.slice(0, block.indexOf("}\n\t}") + 3)).toContain("flush_interval -1");
     expect(caddyfile).not.toMatch(/reverse_proxy (?!127\.0\.0\.1:)\S*4767/);

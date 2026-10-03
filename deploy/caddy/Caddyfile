@@ -51,10 +51,10 @@
 	# "devices" is spelled out with its slash so it cannot match "device/", the
 	# Runtime's.
 
-	# Server-Sent Events: the event stream and the UI action channel. Buffering
-	# would hold an event until a buffer filled, which is the difference between
-	# the person's canvas moving now and moving a minute from now.
-	@pontis_stream path /pons/v1/events /pons/v1/ui/*
+	# Server-Sent Events: the UI action channel. Buffering would hold an action
+	# until a buffer filled, which is the difference between the person's canvas
+	# moving now and moving a minute from now.
+	@pontis_stream path /pons/v1/ui/*
 	handle @pontis_stream {
 		reverse_proxy 127.0.0.1:4767 {
 			flush_interval -1
@@ -62,8 +62,9 @@
 	}
 
 	# Request and response, no stream: the device panel, pairing, the chat's
-	# jobs and the intent a message becomes.
-	@pontis_api path /pons/v1/pairing/codes /pons/v1/devices /pons/v1/devices/* /pons/v1/jobs /pons/v1/jobs/* /agent/intent
+	# jobs, the polled event page (/pons/v1/events returns JSON, not a stream),
+	# and the intent and context routes a message goes through.
+	@pontis_api path /pons/v1/pairing/codes /pons/v1/devices /pons/v1/devices/* /pons/v1/events /pons/v1/jobs /pons/v1/jobs/* /agent/intent /agent/context
 	handle @pontis_api {
 		reverse_proxy 127.0.0.1:4767
 	}

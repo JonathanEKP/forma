@@ -71,7 +71,8 @@ capabilities answer `ui_unavailable`: no window can connect, which is the fail-c
 missing setting rather than an open one.
 
 Which paths those are: `/pons/v1/pairing/codes`, `/pons/v1/devices` and `/pons/v1/devices/*`,
-`/pons/v1/events`, `/pons/v1/jobs` and `/pons/v1/jobs/*`, `/pons/v1/ui/*` and `/agent/intent` — in
+`/pons/v1/events`, `/pons/v1/jobs` and `/pons/v1/jobs/*`, `/pons/v1/ui/*`, `/agent/intent` and
+`/agent/context` — in
 `deploy/caddy/Caddyfile` and `apps/web/vite.config.ts`, kept equal by
 `apps/web/src/pontis/proxy.test.ts`. The Runtime's routes (`/pons/v1/pairing/claim`,
 `/pons/v1/device/*`) are deliberately not proxied: a remote machine reaching the sidecar is PV-2.
