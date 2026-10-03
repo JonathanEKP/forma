@@ -6,7 +6,7 @@
  * compete with Figma.
  */
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { ApiError, conflictDetails, type Asset, type DesignOperation } from "../api";
 import {
@@ -19,6 +19,8 @@ import {
   useValidation,
 } from "../queries";
 import { useEditor, type DraftFrame } from "../store";
+import { ChatPanel, ChatToggle } from "../pontis/Chat";
+import { useChat } from "../pontis/useChat";
 import { findPage } from "../types";
 import { Assets } from "./Assets";
 import { Brand } from "./Brand";
@@ -28,12 +30,27 @@ import { addImageOperation } from "./insert";
 import { PagesAndLayers, Panel, Properties } from "./Panels";
 import { Validation } from "./Validation";
 
-export function Editor({ designId, onBack }: { designId: string; onBack: () => void }) {
+export function Editor({
+  designId,
+  onBack,
+  agent = false,
+}: {
+  designId: string;
+  onBack: () => void;
+  /** Whether there is an agent to talk to: a hosted Forma, signed in, with an account. */
+  agent?: boolean;
+}) {
   const { data: record, isLoading, error, refetch } = useDesign(designId);
   const { selectedPageId, selectPage, panel, setPanel, zoom, setZoom } = useEditor();
 
   const apply = useApplyOperations(designId);
   const undo = useUndo(designId);
+
+  // Held here, above the panel, so an approval that arrives with the chat closed
+  // still reaches the toggle. Closed by default: it is never in the canvas's way
+  // unless it was asked for.
+  const chat = useChat({ enabled: agent });
+  const [chatOpen, setChatOpen] = useState(false);
 
   const page = useMemo(() => (record ? findPage(record, selectedPageId) : null), [record, selectedPageId]);
 
@@ -139,6 +156,8 @@ export function Editor({ designId, onBack }: { designId: string; onBack: () => v
           Undo
         </button>
 
+        <ChatToggle chat={chat} open={chatOpen} onToggle={() => setChatOpen((open) => !open)} />
+
         {(["properties", "validation", "assets", "brand"] as const).map((name) => (
           <button
             key={name}
@@ -220,6 +239,8 @@ export function Editor({ designId, onBack }: { designId: string; onBack: () => v
             disabled={busy}
           />
         )}
+
+        {chatOpen && <ChatPanel chat={chat} onClose={() => setChatOpen(false)} />}
       </div>
     </div>
   );
