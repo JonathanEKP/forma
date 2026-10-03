@@ -808,6 +808,10 @@ Read this before the list below; the list is the plan, this is what happened to 
 **Step 10, as dispatched (2026-10-03).** Run by a coordinating agent through Orca, each worker in
 its own worktree, merged into `main` as it lands. Split so the two never edit the same file:
 
+Branches `JonathanEKP/pontis-10a-devices` and `JonathanEKP/pontis-10b-chat`, worktrees under
+`/home/vertex/orca/workspaces/forma/`, Orca run `run_a75a43683949`. Workers are Claude Sonnet 5.5 at
+high effort; the coordinator reviews and merges each branch into `main` and records the commit here.
+
 - **10a — device panel**, on the Agents page beside the existing MCP connection UI, plus the
   proxy routes every browser-facing Pontis path needs (Caddy and Vite). Owns `Agents.tsx`,
   `deploy/caddy/Caddyfile`, `apps/web/vite.config.ts`, `apps/web/src/pontis/devices*`.
