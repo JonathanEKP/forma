@@ -23,6 +23,7 @@ import { formaCapabilities, isUuid, type FormaUser } from './capabilities.ts';
 import { GUIDANCE } from './guidance.ts';
 import { createContextRoute, createIntentRoute } from './intents.ts';
 import type { Log } from './log.ts';
+import { createDevicesRoute, fanOutDurable, liveNotification } from './live.ts';
 import { personResolver } from './person.ts';
 import { uiCapabilities } from './ui.ts';
 
@@ -87,7 +88,13 @@ export async function startSidecar(options: SidecarOptions): Promise<Sidecar> {
   });
 
   const controlPlane = new ControlPlane({ applicationId: APPLICATION_ID, audience: origin });
-  const devices = new DeviceGateway({ controlPlane });
+  // Delivery to the person's open windows, in two halves the way Pontis's
+  // reference app does it: what is stored is fanned out from the store with its
+  // `sequence`, and what is not — output deltas, presence — from the Device's own
+  // notification. `agentApp.uiClients` is the registry the UI stream registers in.
+  const windows = agentApp.uiClients;
+  const devices = new DeviceGateway({ controlPlane, onNotification: liveNotification(controlPlane, windows) });
+  const stopFanOut = fanOutDurable(controlPlane, windows);
   devices.attach(server);
 
   const controlRoutes = createControlPlaneRoutes({
@@ -103,6 +110,7 @@ export async function startSidecar(options: SidecarOptions): Promise<Sidecar> {
   });
   const intentRoute = createIntentRoute({ controlPlane, devices, resolvePerson, log: options.log });
   const contextRoute = createContextRoute({ resolvePerson });
+  const devicesRoute = createDevicesRoute({ controlPlane, devices, resolvePerson });
 
   // The frontend hop, and a genuinely different one from the gateway's: the
   // caller is a browser, so `Origin` is always present and is checked, where the
@@ -149,6 +157,8 @@ export async function startSidecar(options: SidecarOptions): Promise<Sidecar> {
   });
 
   const dispatch = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
+    // Ahead of the Control Plane's routes: it answers this one without presence.
+    if (await devicesRoute(request, response)) return;
     if (await controlRoutes(request, response)) return;
     if (await intentRoute(request, response)) return;
     if (await contextRoute(request, response)) return;
@@ -175,6 +185,7 @@ export async function startSidecar(options: SidecarOptions): Promise<Sidecar> {
     agentApp,
     controlPlane,
     close: async () => {
+      stopFanOut();
       const closed = await Promise.allSettled([
         devices.close(),
         new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))),

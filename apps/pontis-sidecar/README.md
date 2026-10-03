@@ -19,6 +19,7 @@ This is plan §11 **steps 7 to 9**. What is left before PV-1 is the editor's own
 | `src/boundary.ts` | the Boundary F client: fixed operations, bounded answers, Forma's refusals as registry errors |
 | `src/person.ts` | who is behind a browser request, asked of `GET /api/v1/service/resolve` |
 | `src/intents.ts` | the browser's route to its Runtime: start, input, cancel, approve — and `GET /agent/context`, the application context the event stream has to be asked for by name |
+| `src/live.ts` | what the person's open windows hear while the agent works (durable events from the store with their `sequence`, deltas and presence from the Device's own notification), and `GET /pons/v1/devices` with `online` merged from the live sockets |
 | `src/sidecar.ts` | the composition |
 | `src/guidance.ts` | the `ApplicationAgentGuidance`: the opening context only; the manual is `forma.guide` |
 | `test-driver/` | a test-only Pontis Runtime with FakeProvider, in Rust |
