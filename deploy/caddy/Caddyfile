@@ -33,21 +33,39 @@
 		}
 	}
 
-	# The Pontis UI action channel (Pontis plan section 10(b) D9). Routed here
-	# so the editor and these three routes share an origin: the sidecar's
-	# transport refuses a cross-origin Origin and validates Host against the
-	# same list, which is its DNS-rebinding defence, and the editor's bearer
-	# travels in a header rather than a query string because of it.
+	# What the browser says to the Pontis sidecar (Pontis plan section 10(b) D9,
+	# section 11 step 10). Routed here so the editor and these paths share an
+	# origin: the sidecar's transport refuses a cross-origin Origin and validates
+	# Host against the same list, which is its DNS-rebinding defence, and the
+	# session bearer travels in a header rather than a query string because of it.
 	#
-	# Only /pons/v1/ui/*. The gateway hop the agent runtime uses is not a
-	# browser route and is not exposed here.
-	handle /pons/v1/ui/* {
+	# Exactly the paths a browser calls, and no wider. A prefix such as
+	# /pons/v1/* would also publish the Runtime's own routes -- the pairing claim
+	# (/pons/v1/pairing/claim) and the Device protocol (/pons/v1/device/*) --
+	# which are a remote machine reaching the sidecar, not a person at the
+	# editor. That is PV-2, and PV-2 is not authorized yet, so those fall through
+	# to forma-server and answer 404. Listing the paths one by one is what keeps
+	# a route added to the sidecar later from becoming public by default.
+	#
+	# /pons/v1/devices/* is the revoke route and /pons/v1/jobs/* the cancel one;
+	# "devices" is spelled out with its slash so it cannot match "device/", the
+	# Runtime's.
+
+	# Server-Sent Events: the event stream and the UI action channel. Buffering
+	# would hold an event until a buffer filled, which is the difference between
+	# the person's canvas moving now and moving a minute from now.
+	@pontis_stream path /pons/v1/events /pons/v1/ui/*
+	handle @pontis_stream {
 		reverse_proxy 127.0.0.1:4767 {
-			# Server-Sent Events. Buffering would hold a UI action until a
-			# buffer filled, which is the difference between the person's
-			# canvas moving now and moving a minute from now.
 			flush_interval -1
 		}
+	}
+
+	# Request and response, no stream: the device panel, pairing, the chat's
+	# jobs and the intent a message becomes.
+	@pontis_api path /pons/v1/pairing/codes /pons/v1/devices /pons/v1/devices/* /pons/v1/jobs /pons/v1/jobs/* /agent/intent
+	handle @pontis_api {
+		reverse_proxy 127.0.0.1:4767
 	}
 
 	# The REST API and the built editor, from one origin (plan section 58).
