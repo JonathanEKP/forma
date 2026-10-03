@@ -826,8 +826,14 @@ Decisions taken for step 10, low-risk and delegated:
   chat lives in the editor, where the person is looking at the work it acts on.
 - **D8 holds for both surfaces.** Neither depends on `@pontis/react`; both reuse
   `apps/web/src/pontis/channel.ts`'s `frames` rather than writing a second SSE parser.
+- **The editor learns its `applicationContextId` from the sidecar, `GET /agent/context`.** 10b
+  found that nothing exposed it, and the Control Plane's event page requires it for every session
+  event. Served by the sidecar rather than forma-server because the sidecar is what binds the
+  session's context: the editor gets exactly that value, not a second derivation that could
+  disagree. Built by 10b; proxied by 10a. (Also corrected: `/pons/v1/events` is a polled JSON page
+  with an `after` cursor, not SSE.)
 - **Only browser routes go through the proxy:** `/pons/v1/pairing/codes`, `/pons/v1/devices*`,
-  `/pons/v1/events`, `/pons/v1/jobs*`, `/agent/intent`, `/pons/v1/ui/*`. The Runtime's own routes
+  `/pons/v1/events`, `/pons/v1/jobs*`, `/agent/intent`, `/agent/context`, `/pons/v1/ui/*`. The Runtime's own routes
   (`pairing/claim`, `device/*`) are a remote Device reaching the sidecar, which is PV-2 and not
   authorized by this plan.
 
