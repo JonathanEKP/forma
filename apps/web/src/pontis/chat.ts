@@ -338,12 +338,28 @@ export interface ChatState {
   readonly working: boolean;
   /** What each invocation asked with, for rebuilding an approval card the request left bare. */
   readonly inputs: Readonly<Record<string, unknown>>;
+  /**
+   * The agent's reply as it arrives, before it is final.
+   *
+   * Transient by construction: a delta is never stored, so this is never rebuilt
+   * from history and never outlives its turn. `agent.output.completed` carries the
+   * whole authoritative text and replaces it — it is not appended to it.
+   */
+  readonly streaming: { readonly turnId: string; readonly text: string } | null;
+  /**
+   * Turns whose final output has been seen. The two arrive by different routes, so
+   * a delta can land after its own completion, and without this it would bring
+   * the finished reply back as a second, half-sized one.
+   */
+  readonly completed: readonly string[];
 }
 
-export const emptyChat: ChatState = { lines: [], session: null, owned: null, working: false, inputs: {} };
+export const emptyChat: ChatState = { lines: [], session: null, owned: null, working: false, inputs: {}, streaming: null, completed: [] };
 
 export type ChatAction =
   | { readonly type: "events"; readonly events: readonly DurableEvent[] }
+  /** An `agent.output.delta` from the live stream: unsequenced, never stored. */
+  | { readonly type: "delta"; readonly sessionId: string; readonly turnId: string; readonly text: string }
   | { readonly type: "person"; readonly id: string; readonly text: string }
   /** This window started a session, and the sidecar has answered with its id. */
   | { readonly type: "started"; readonly sessionId: string }
@@ -356,6 +372,8 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
   switch (action.type) {
     case "events":
       return action.events.reduce(applyEvent, state);
+    case "delta":
+      return applyDelta(state, action.sessionId, action.turnId, action.text);
     case "person":
       return { ...state, lines: [...state.lines, { kind: "person", id: action.id, text: action.text }] };
     case "started":
@@ -372,6 +390,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       return {
         ...state,
         working: false,
+        streaming: null,
         session: state.session ? { ...state.session, status: "ended" } : null,
         lines: [...state.lines, { kind: "notice", id: action.id, tone: "info", text: "You stopped the agent." }],
       };
@@ -379,6 +398,13 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
 }
 
 const isUi = (capabilityId: string) => capabilityId.startsWith("ui.");
+
+function applyDelta(state: ChatState, sessionId: string, turnId: string, text: string): ChatState {
+  if (state.session?.id !== sessionId || state.session.status === "ended") return state;
+  if (state.completed.includes(turnId)) return state;
+  const streaming = state.streaming?.turnId === turnId ? { turnId, text: state.streaming.text + text } : { turnId, text };
+  return { ...state, working: true, streaming };
+}
 
 function setApproval(lines: readonly Line[], approvalId: string, status: ApprovalStatus): readonly Line[] {
   return lines.map((line) => (line.kind === "approval" && line.approval.approvalId === approvalId ? { ...line, status } : line));
@@ -405,26 +431,36 @@ function applyEvent(state: ChatState, event: DurableEvent): ChatState {
     case "session.started":
       return state.session.status === "ended" ? state : status("live");
     case "session.completed":
-      return { ...status("ended"), working: false, lines: [...state.lines, { kind: "notice", id, tone: "info", text: "The session ended." }] };
+      return { ...status("ended"), working: false, streaming: null, lines: [...state.lines, { kind: "notice", id, tone: "info", text: "The session ended." }] };
     case "session.cancelled":
-      return { ...status("ended"), working: false };
+      return { ...status("ended"), working: false, streaming: null };
     case "session.failed":
       return {
         ...status("ended"),
         working: false,
+        streaming: null,
         lines: [...state.lines, { kind: "notice", id, tone: "error", text: `The session failed: ${errorText(payload.error)}` }],
       };
     case "turn.started":
       return { ...state, working: true };
     case "turn.completed":
     case "turn.cancelled":
-      return { ...state, working: false };
+      return { ...state, working: false, streaming: null };
     case "turn.failed":
-      return { ...state, working: false, lines: [...state.lines, { kind: "notice", id, tone: "error", text: `The agent's turn failed: ${errorText(payload.error)}` }] };
-    case "agent.output.completed":
+      return { ...state, working: false, streaming: null, lines: [...state.lines, { kind: "notice", id, tone: "error", text: `The agent's turn failed: ${errorText(payload.error)}` }] };
+    case "agent.output.completed": {
+      // Replaces whatever was streaming for the turn: the final text is the whole
+      // of it, so appending would say everything twice.
+      const turnId = typeof payload.turnId === "string" ? payload.turnId : null;
+      const settled: ChatState = {
+        ...state,
+        streaming: turnId === null || state.streaming?.turnId === turnId ? null : state.streaming,
+        completed: turnId === null ? state.completed : [...state.completed, turnId],
+      };
       return typeof payload.text === "string" && payload.text.length > 0
-        ? { ...state, lines: [...state.lines, { kind: "agent", id, text: payload.text }] }
-        : state;
+        ? { ...settled, lines: [...state.lines, { kind: "agent", id, text: payload.text }] }
+        : settled;
+    }
     case "capability.requested":
       return requested(state, id, payload);
     case "capability.completed":

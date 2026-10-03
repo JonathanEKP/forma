@@ -15,7 +15,7 @@
 import { useEffect, useRef } from "react";
 
 import { accessToken } from "../identity";
-import { openChannel, type ActionHandler, type ChannelState } from "./channel";
+import { liveFeed, openChannel, type ActionHandler, type ChannelState } from "./channel";
 
 export interface UiChannelOptions {
   /** `false` where there is nothing to connect to: local mode has no sidecar. */
@@ -43,8 +43,15 @@ export function useUiChannel({ enabled, handlers, onState }: UiChannelOptions): 
     const channel = openChannel({
       handlers: stable,
       token: accessToken,
-      onState: (state) => report.current?.(state),
+      onState: (state) => {
+        liveFeed.setState(state);
+        report.current?.(state);
+      },
+      onEvent: (frame) => liveFeed.publish(frame),
     });
-    return () => channel.close();
+    return () => {
+      channel.close();
+      liveFeed.setState({ at: "offline" });
+    };
   }, [enabled, registered]);
 }

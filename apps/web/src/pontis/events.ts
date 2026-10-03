@@ -12,6 +12,17 @@
  * The cost is that `agent.output.delta` — which is never durable — does not
  * exist for this reader: output arrives whole, as `agent.output.completed`.
  *
+ * # Delivery is a second path to the same cursor
+ *
+ * The UI stream (`channel.ts`) also carries `pons.event` frames — the sidecar
+ * fans each Device notification out to the person's windows. A frame that has a
+ * `sequence` is offered to this reader and goes through the same three rules as
+ * a page, against the same cursor: it is applied only if it is the next one, a
+ * duplicate is dropped, and one that skips ahead is *not* applied but makes the
+ * reader re-read from the cursor at once. The page stays the record; the frame
+ * only gets there sooner. So while the stream is up the page is read slowly,
+ * never not at all — a frame that never arrives must cost latency, not history.
+ *
  * # The three rules that matter
  *
  * Applied to the one scope this reads, the person's application context:
@@ -45,6 +56,14 @@ const EVENTS_PATH = "/pons/v1/events";
 
 /** Between polls once caught up. A turn is seconds long; this is what "streaming" costs here. */
 export const POLL_MS = 1_500;
+
+/**
+ * Between polls while the UI stream is connected and delivering.
+ *
+ * Slower, not stopped: a frame can be lost between the Device and the window
+ * without either side knowing, and this read is what notices.
+ */
+export const LIVE_POLL_MS = 10_000;
 
 /** Before retrying a page that could not be read at all. */
 export const RETRY_MS = 5_000;
@@ -145,11 +164,20 @@ export interface EventStreamOptions {
   readonly baseUrl?: string;
   readonly fetchImpl?: typeof fetch;
   readonly pollMs?: number;
+  /** The slower interval while the UI stream is connected. */
+  readonly livePollMs?: number;
   readonly retryMs?: number;
 }
 
 export interface EventStream {
   close(): void;
+  /**
+   * A sequenced event delivered live. Applied if it is the next one, dropped if
+   * already applied, and a gap re-reads from the cursor instead of skipping.
+   */
+  offer(event: DurableEvent): void;
+  /** Whether the UI stream is connected, which slows the poll and never stops it. */
+  setLive(connected: boolean): void;
 }
 
 /**
@@ -166,6 +194,10 @@ export function openEventStream(options: EventStreamOptions): EventStream {
   const base = options.baseUrl ?? "";
   const pollMs = options.pollMs ?? POLL_MS;
   const retryMs = options.retryMs ?? RETRY_MS;
+  const livePollMs = options.livePollMs ?? LIVE_POLL_MS;
+  let live = false;
+  /** A nudge arrived while a read was in flight: read again the moment it ends. */
+  let again = false;
   let closed = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let abort: AbortController | undefined;
@@ -197,7 +229,25 @@ export function openEventStream(options: EventStreamOptions): EventStream {
   };
 
   const schedule = (ms: number) => {
-    if (!closed) timer = setTimeout(() => void tick(), ms);
+    if (closed) return;
+    const wait = again ? 0 : ms;
+    again = false;
+    timer = setTimeout(() => {
+      timer = undefined;
+      void tick();
+    }, wait);
+  };
+
+  /** Read now rather than at the next interval, or straight after the read in flight. */
+  const nudge = () => {
+    if (closed) return;
+    if (timer === undefined) {
+      again = true;
+      return;
+    }
+    clearTimeout(timer);
+    timer = undefined;
+    schedule(0);
   };
 
   const tick = async (): Promise<void> => {
@@ -230,17 +280,77 @@ export function openEventStream(options: EventStreamOptions): EventStream {
     // More behind the head than one page held: keep reading without the pause.
     // A page that moved nothing is not behind, whatever `head` says — the
     // alternative is asking for the same page forever.
-    schedule(result.fresh.length > 0 && cursor < page.head ? 0 : pollMs);
+    schedule(result.fresh.length > 0 && cursor < page.head ? 0 : live ? livePollMs : pollMs);
   };
 
   state({ at: "connecting" });
   void tick();
 
   return {
+    offer: (event) => {
+      if (closed) return;
+      const result = reconcile(cursor, [event]);
+      if (result.fresh.length > 0) {
+        options.onEvents(result.fresh);
+        cursor = result.cursor;
+      } else if (result.gap) {
+        // Not applied: event N+2 is not state until N+1 is. The page has both.
+        nudge();
+      }
+    },
+    setLive: (connected) => {
+      if (live === connected) return;
+      live = connected;
+      // Either way a poll now: losing the stream may have lost frames, and
+      // gaining it again may have followed a stretch with none.
+      nudge();
+    },
     close: () => {
       closed = true;
       if (timer !== undefined) clearTimeout(timer);
       abort?.abort();
     },
   };
+}
+
+/**
+ * A `pons.event` frame, as far as the chat reads it.
+ *
+ * Durable ones carry a `sequence` and the scope it is in; a delta or a presence
+ * announcement carries neither, because it is never stored.
+ */
+export interface LiveFrame {
+  readonly type: string;
+  readonly sessionId?: string;
+  readonly sequence?: number;
+  readonly scope?: { readonly kind: string; readonly applicationContextId?: string };
+  readonly payload: Readonly<Record<string, unknown>>;
+}
+
+export function parseLiveFrame(raw: unknown): LiveFrame | null {
+  if (!isRecord(raw) || typeof raw.type !== "string") return null;
+  const { scope } = raw;
+  return {
+    type: raw.type,
+    ...(typeof raw.sessionId === "string" ? { sessionId: raw.sessionId } : {}),
+    ...(typeof raw.sequence === "number" && Number.isSafeInteger(raw.sequence) ? { sequence: raw.sequence } : {}),
+    ...(isRecord(scope) && typeof scope.kind === "string"
+      ? { scope: { kind: scope.kind, ...(typeof scope.applicationContextId === "string" ? { applicationContextId: scope.applicationContextId } : {}) } }
+      : {}),
+    payload: isRecord(raw.payload) ? raw.payload : {},
+  };
+}
+
+/**
+ * The frame as a durable event of this context, or `null`.
+ *
+ * Sequences are only comparable within one scope, so a frame is accepted only
+ * when it names the context being read. A principal-scoped `device.revoked`
+ * has a sequence of its own and would otherwise look like a gap, or worse a
+ * duplicate, in this one.
+ */
+export function asDurable(frame: LiveFrame, applicationContextId: string): DurableEvent | null {
+  if (frame.sequence === undefined || frame.sequence < 1) return null;
+  if (frame.scope?.kind !== "application_context" || frame.scope.applicationContextId !== applicationContextId) return null;
+  return { sequence: frame.sequence, type: frame.type, ...(frame.sessionId ? { sessionId: frame.sessionId } : {}), payload: frame.payload };
 }
