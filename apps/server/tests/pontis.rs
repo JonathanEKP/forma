@@ -19,13 +19,14 @@ use design_core::{
 use forma_server::auth::{APPLICATION_CONTEXT_HEADER, REPRESENTED_USER_HEADER};
 use forma_server::config::AuthMode;
 use forma_server::routes::pontis::{
-    bounds, DESIGN_GET, DESIGN_VALIDATE, INVOCATION_HEADER, INVOCATION_OUTCOME_HEADER,
+    bounds, DESIGN_GET, DESIGN_VALIDATE, FORMA_GUIDE, INVOCATION_HEADER, INVOCATION_OUTCOME_HEADER,
     MAX_CONCURRENT_VALIDATIONS, PROJECT_LIST, TIMEOUT_HEADER,
 };
 use forma_server::{routes, state::AppState};
 use persistence::{
-    AccountRepository, ApiKeyRepository, DesignRepository, InvocationLedger, InvocationRequest,
-    ProjectRepository, ServiceCredentialRepository, SqliteInvocationLedger,
+    AccountRepository, ApiKeyRepository, AssetRequestRepository, DesignRepository,
+    InvocationLedger, InvocationRequest, ProjectRepository, ServiceCredentialRepository,
+    SqliteInvocationLedger,
 };
 use renderer::FontRegistry;
 use serde_json::{json, Value};
@@ -1457,4 +1458,297 @@ async fn a_report_over_its_declared_bound_is_refused_though_its_design_is_not() 
         body["error"]["details"]["max_bytes"],
         bounds(DESIGN_VALIDATE).max_result_bytes
     );
+}
+
+/// `forma.guide` (plan §6.1): the manual rendered for the Pontis door, whole,
+/// with its revision — through the same arm, and the same account check, as
+/// every other capability.
+#[actix_web::test]
+async fn the_guide_answers_the_pontis_manual_and_its_revision() {
+    let (state, _dir) = hosted().await;
+    let them = person(&state, 1).await;
+    let other = person(&state, 1).await;
+    let token = sidecar_token(&state).await;
+    let app = serve!(state.clone());
+    let read = || {
+        as_sidecar(
+            TestRequest::get().uri("/api/v1/pontis/guide"),
+            &token,
+            &them,
+        )
+    };
+
+    let response = test::call_service(&app, read().to_request()).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let first = test::read_body(response).await;
+    let answer: Value = serde_json::from_slice(&first).expect("JSON");
+
+    let manual = agent_catalog::manual::pontis();
+    // Exactly two fields: no timestamp, no capability list.
+    assert_eq!(
+        answer,
+        json!({ "revision": manual.revision, "text": manual.text })
+    );
+    let text = answer["text"].as_str().expect("text");
+    assert_eq!(
+        answer["revision"],
+        agent_catalog::manual::revision(text),
+        "the revision is the hash of the text it came with"
+    );
+    // Rendered for this door: capability ids, never MCP tool names.
+    assert!(text.contains("`design.get`"));
+    assert!(!text.contains("get_design"));
+    assert!(!text.contains("render_preview"));
+    assert!(first.len() <= bounds(FORMA_GUIDE).max_result_bytes as usize);
+
+    // Two reads are byte-identical, so the ledger's fingerprint sees one answer.
+    let response = test::call_service(&app, read().to_request()).await;
+    assert_eq!(test::read_body(response).await, first);
+
+    // Account-scoped like everything else: a context the person is not in is
+    // refused before the route runs.
+    let response = test::call_service(
+        &app,
+        TestRequest::get()
+            .uri("/api/v1/pontis/guide")
+            .insert_header(("authorization", format!("Bearer {token}")))
+            .insert_header((REPRESENTED_USER_HEADER, them.user.to_string()))
+            .insert_header((APPLICATION_CONTEXT_HEADER, other.account.to_string()))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    // And only the sidecar reads it here; anyone else has the /skill route.
+    let pat = state
+        .api_keys
+        .create(them.account, Some(them.user), "automation")
+        .await
+        .expect("pat")
+        .token;
+    let response = test::call_service(
+        &app,
+        TestRequest::get()
+            .uri("/api/v1/pontis/guide")
+            .insert_header(("authorization", format!("Bearer {pat}")))
+            .to_request(),
+    )
+    .await;
+    refused(
+        response,
+        StatusCode::FORBIDDEN,
+        "SERVICE_CREDENTIAL_REQUIRED",
+        "authorization_denied",
+    )
+    .await;
+}
+
+// --- brand.get and assetRequest.create ----------------------------------------
+
+/// `brand.get` answers the kit **and** the font catalog, as forma-mcp's
+/// `get_brand` does. Without the catalog, the guidance's "use only families
+/// from the catalog" would be unfollowable on this door.
+#[actix_web::test]
+async fn the_brand_comes_with_the_font_catalog() {
+    let (state, _dir) = hosted().await;
+    let them = person(&state, 1).await;
+    let other = person(&state, 1).await;
+    let token = sidecar_token(&state).await;
+    let app = serve!(state.clone());
+    let read = |project: ProjectId| {
+        as_sidecar(
+            TestRequest::get().uri(&format!("/api/v1/pontis/projects/{project}/brand")),
+            &token,
+            &them,
+        )
+        .to_request()
+    };
+    let fonts = json!(state.fonts.families());
+    assert!(
+        !state.fonts.families().is_empty(),
+        "the test needs a catalog to see"
+    );
+
+    // No kit yet: the catalog is still there, because it is what the agent
+    // uses instead of $brand.* tokens.
+    let response = test::call_service(&app, read(them.project)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: Value = test::read_body_json(response).await;
+    assert_eq!(body, json!({ "brand": null, "fonts": fonts }));
+
+    with_brand(&state, &them).await;
+    let response = test::call_service(&app, read(them.project)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: Value = test::read_body_json(response).await;
+    assert_eq!(body["brand"]["typography"]["display"], "Geist");
+    assert_eq!(body["brand"]["colors"]["accent"], "#FF5436");
+    assert_eq!(body["fonts"], fonts);
+    assert_eq!(
+        body.as_object().map(|o| o.len()),
+        Some(2),
+        "the kit and the catalog, nothing else"
+    );
+
+    // Another account's project is indistinguishable from none.
+    let response = test::call_service(&app, read(other.project)).await;
+    refused(
+        response,
+        StatusCode::NOT_FOUND,
+        "PROJECT_NOT_FOUND",
+        "not_found",
+    )
+    .await;
+}
+
+fn asset_request(
+    token: &str,
+    person: &Person,
+    invocation: Option<&str>,
+    body: Value,
+) -> actix_http::Request {
+    let request = as_sidecar(
+        TestRequest::post()
+            .uri(&format!(
+                "/api/v1/pontis/projects/{}/asset-requests",
+                person.project
+            ))
+            .set_json(body),
+        token,
+        person,
+    );
+    match invocation {
+        Some(invocation) => request.insert_header((INVOCATION_HEADER, invocation)),
+        None => request,
+    }
+    .to_request()
+}
+
+fn hero_photo(person: &Person) -> Value {
+    json!({
+        "design_id": person.design,
+        "purpose": "hero photo",
+        "description": "A wet street at dusk, headlights blurred, room for a headline at the top.",
+    })
+}
+
+async fn requests_of(state: &AppState, person: &Person) -> usize {
+    state
+        .asset_requests
+        .list_for_project(person.account, person.project)
+        .await
+        .expect("asset requests")
+        .len()
+}
+
+/// Idempotent like `design.applyOperations`: a replayed invocation answers the
+/// first request and opens no second one for a person to resolve twice.
+#[actix_web::test]
+async fn an_asset_request_replayed_is_created_once() {
+    let (state, _dir) = hosted().await;
+    let them = person(&state, 1).await;
+    let token = sidecar_token(&state).await;
+    let app = serve!(state.clone());
+
+    let first = test::call_service(
+        &app,
+        asset_request(&token, &them, Some("inv_photo"), hero_photo(&them)),
+    )
+    .await;
+    assert_eq!(first.status(), StatusCode::OK);
+    assert_eq!(
+        first
+            .headers()
+            .get(INVOCATION_OUTCOME_HEADER)
+            .expect("header"),
+        "executed"
+    );
+    let first: Value = test::read_body_json(first).await;
+    assert_eq!(first["status"], "pending");
+    assert_eq!(first["project_id"], them.project.to_string());
+
+    let second = test::call_service(
+        &app,
+        asset_request(&token, &them, Some("inv_photo"), hero_photo(&them)),
+    )
+    .await;
+    assert_eq!(second.status(), StatusCode::OK);
+    assert_eq!(
+        second
+            .headers()
+            .get(INVOCATION_OUTCOME_HEADER)
+            .expect("header"),
+        "replayed"
+    );
+    let second: Value = test::read_body_json(second).await;
+    assert_eq!(second, first, "the replay is the first answer");
+    assert_eq!(requests_of(&state, &them).await, 1, "created once");
+
+    // The same id for a different request is refused, and creates nothing.
+    let mut other = hero_photo(&them);
+    other["purpose"] = json!("logo");
+    let response =
+        test::call_service(&app, asset_request(&token, &them, Some("inv_photo"), other)).await;
+    refused(
+        response,
+        StatusCode::CONFLICT,
+        "INVOCATION_REUSED",
+        "invocation_already_completed",
+    )
+    .await;
+
+    // A command with no idempotency key is refused before anything runs.
+    let response =
+        test::call_service(&app, asset_request(&token, &them, None, hero_photo(&them))).await;
+    refused(
+        response,
+        StatusCode::BAD_REQUEST,
+        "INVOCATION_ID_REQUIRED",
+        "validation_error",
+    )
+    .await;
+    assert_eq!(requests_of(&state, &them).await, 1);
+}
+
+/// A refused request settles nothing, so the same invocation may come back
+/// corrected — as a rejected batch does.
+#[actix_web::test]
+async fn a_refused_asset_request_frees_its_invocation() {
+    let (state, _dir) = hosted().await;
+    let them = person(&state, 1).await;
+    let token = sidecar_token(&state).await;
+    let app = serve!(state.clone());
+
+    let mut empty = hero_photo(&them);
+    empty["description"] = json!("   ");
+    let response =
+        test::call_service(&app, asset_request(&token, &them, Some("inv_fix"), empty)).await;
+    refused(
+        response,
+        StatusCode::BAD_REQUEST,
+        "INVALID_OP",
+        "validation_error",
+    )
+    .await;
+    assert_eq!(requests_of(&state, &them).await, 0);
+
+    let response = test::call_service(
+        &app,
+        asset_request(&token, &them, Some("inv_fix"), hero_photo(&them)),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(requests_of(&state, &them).await, 1);
+
+    // A field the schema does not have is refused rather than ignored.
+    let mut extra = hero_photo(&them);
+    extra["risk"] = json!("read");
+    let response =
+        test::call_service(&app, asset_request(&token, &them, Some("inv_extra"), extra)).await;
+    refused(
+        response,
+        StatusCode::BAD_REQUEST,
+        "INVALID_BODY",
+        "validation_error",
+    )
+    .await;
 }

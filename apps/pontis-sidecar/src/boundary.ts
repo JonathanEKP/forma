@@ -13,9 +13,13 @@
  * so nothing here caches an authorization decision.
  */
 import { CapabilityError, isCapabilityErrorCode } from '@pontis/core';
+import type { AgentManual } from '@forma/bindings/AgentManual';
+import type { AssetRequest } from '@forma/bindings/AssetRequest';
 import type { DesignRecord } from '@forma/bindings/DesignRecord';
 import type { PontisApplyRequest } from '@forma/bindings/PontisApplyRequest';
 import type { PontisApplyResult } from '@forma/bindings/PontisApplyResult';
+import type { PontisAssetRequestBody } from '@forma/bindings/PontisAssetRequestBody';
+import type { PontisBrand } from '@forma/bindings/PontisBrand';
 import type { Project } from '@forma/bindings/Project';
 import type { SubjectResolution } from '@forma/bindings/SubjectResolution';
 import type { ValidationReport } from '@forma/bindings/ValidationReport';
@@ -89,6 +93,49 @@ export class FormaBoundary {
       signal,
     });
     return await this.#answer<DesignRecord>(response, maxBytes);
+  }
+
+  /** The manual for this door and its revision (plan §6.1). */
+  async guide(who: Represented, maxBytes: number, signal: AbortSignal): Promise<AgentManual> {
+    const response = await this.#send('forma.guide', '/api/v1/pontis/guide', {
+      method: 'GET',
+      headers: representing(who),
+      signal,
+    });
+    return await this.#answer<AgentManual>(response, maxBytes);
+  }
+
+  /** A project's Brand Kit with the font catalog the renderer can draw. */
+  async getBrand(who: Represented, projectId: string, maxBytes: number, signal: AbortSignal): Promise<PontisBrand> {
+    const response = await this.#send('brand.get', `/api/v1/pontis/projects/${encodeURIComponent(projectId)}/brand`, {
+      method: 'GET',
+      headers: representing(who),
+      signal,
+    });
+    return await this.#answer<PontisBrand>(response, maxBytes);
+  }
+
+  /** A write, ledgered like a batch: `invocationId` is its idempotency key. */
+  async createAssetRequest(
+    who: Represented,
+    projectId: string,
+    request: PontisAssetRequestBody,
+    invocationId: string,
+    maxBytes: number,
+    signal: AbortSignal,
+  ): Promise<AssetRequest> {
+    const response = await this.#send(
+      'assetRequest.create',
+      `/api/v1/pontis/projects/${encodeURIComponent(projectId)}/asset-requests`,
+      {
+        method: 'POST',
+        headers: { ...representing(who), [INVOCATION_HEADER]: invocationId, 'content-type': 'application/json' },
+        body: JSON.stringify(request),
+        signal,
+      },
+      invocationId,
+    );
+    return await this.#answer<AssetRequest>(response, maxBytes);
   }
 
   /**

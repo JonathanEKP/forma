@@ -10,7 +10,8 @@
 //!   as `{design.get}`, and rendering swaps in that operation's name on the door.
 //!   That is a substitution and nothing else — no conditionals, no defaults, no
 //!   formatting. A name that does not resolve, or names an operation the door
-//!   does not expose, is an error rather than a stray brace in front of a model.
+//!   does not expose, is an error rather than a stray brace in front of a model;
+//!   `{{` and `}}` are how text says a brace it means.
 //! - **Schema dialect.** forma-mcp's schemas are what rmcp generates: JSON
 //!   Schema 2020-12 with a `$schema` key and schemars' numeric `format`
 //!   annotations (`uint64`, `float`, …). Pontis compiles input schemas with Ajv
@@ -18,6 +19,9 @@
 //!   the Pontis door drops them. Neither changes what an input may be: the
 //!   annotations are not assertions, and `minimum: 0` already carries what
 //!   `uint64` would.
+//!
+//! The manual has one difference more, and it lives in [`crate::manual`]
+//! rather than here, because no operation's description may use it.
 
 use serde_json::{Map, Value};
 
@@ -41,30 +45,70 @@ pub fn name_on(operation: &Operation, door: Door) -> Option<&'static str> {
 }
 
 /// Swaps every `{operation.id}` in `text` for that operation's name on `door`.
+///
+/// `{{` and `}}` are a literal brace, as in Rust's `format!`. Descriptions never
+/// need one; the manual does, because its examples are JSON.
 pub fn render_text(text: &str, door: Door) -> Result<String, String> {
     let mut out = String::with_capacity(text.len());
+    for piece in pieces(text)? {
+        match piece {
+            Piece::Text(text) => out.push_str(text),
+            Piece::Name(id) => {
+                let operation = REGISTRY
+                    .iter()
+                    .find(|operation| operation.id == id)
+                    .ok_or_else(|| format!("{{{id}}} names no operation in the registry"))?;
+                let name = name_on(operation, door).ok_or_else(|| {
+                    format!("{{{id}}} is not reachable through the {door:?} door")
+                })?;
+                out.push_str(name);
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Every `{operation.id}` that `text` names, in order, whether or not it
+/// resolves — read by the same parser `render_text` uses, so a check written
+/// against this cannot disagree with rendering about what a name is.
+pub fn names(text: &str) -> Result<Vec<&str>, String> {
+    Ok(pieces(text)?
+        .into_iter()
+        .filter_map(|piece| match piece {
+            Piece::Name(id) => Some(id),
+            Piece::Text(_) => None,
+        })
+        .collect())
+}
+
+enum Piece<'a> {
+    Text(&'a str),
+    Name(&'a str),
+}
+
+fn pieces(text: &str) -> Result<Vec<Piece<'_>>, String> {
+    let mut pieces = Vec::new();
     let mut rest = text;
-    while let Some(open) = rest.find('{') {
-        out.push_str(&rest[..open]);
-        let after = &rest[open + 1..];
+    while let Some(at) = rest.find(['{', '}']) {
+        pieces.push(Piece::Text(&rest[..at]));
+        let brace = &rest[at..at + 1];
+        let after = &rest[at + 1..];
+        if after.starts_with(brace) {
+            pieces.push(Piece::Text(brace));
+            rest = &after[1..];
+            continue;
+        }
+        if brace == "}" {
+            return Err(format!("unopened '}}' in {text:?}"));
+        }
         let close = after
             .find('}')
             .ok_or_else(|| format!("unclosed '{{' in {text:?}"))?;
-        let id = &after[..close];
-        let operation = REGISTRY
-            .iter()
-            .find(|operation| operation.id == id)
-            .ok_or_else(|| format!("{{{id}}} names no operation in the registry"))?;
-        let name = name_on(operation, door)
-            .ok_or_else(|| format!("{{{id}}} is not reachable through the {door:?} door"))?;
-        out.push_str(name);
+        pieces.push(Piece::Name(&after[..close]));
         rest = &after[close + 1..];
     }
-    if rest.contains('}') {
-        return Err(format!("unopened '}}' in {text:?}"));
-    }
-    out.push_str(rest);
-    Ok(out)
+    pieces.push(Piece::Text(rest));
+    Ok(pieces)
 }
 
 /// The operation's input schema as `door` publishes it.

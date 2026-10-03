@@ -55,7 +55,8 @@ use actix_web::{get, http::StatusCode, post, web, HttpRequest, HttpResponse, Res
 use agent_catalog::{CapabilityBounds, CapabilityRisk};
 use application::{ApplicationError, Cancellation};
 use design_core::{
-    AccountId, AuthKind, AuthUserId, DesignId, DesignOperation, InvocationId, ProjectId, Version,
+    AccountId, AssetRequest, AuthKind, AuthUserId, BrandKit, DesignId, DesignOperation,
+    InvocationId, ProjectId, Version,
 };
 use persistence::{
     Claim, InvocationLedger, InvocationRequest, PersistenceError, SqliteInvocationLedger,
@@ -64,7 +65,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::error::ApiError;
-use crate::routes::{actor_from, design_id};
+use crate::routes::{actor_from, design_id, parse_id};
 use crate::state::AppState;
 use crate::telemetry;
 
@@ -100,9 +101,20 @@ pub const PROJECT_LIST: &str = "project.list";
 pub const DESIGN_GET: &str = "design.get";
 pub const DESIGN_VALIDATE: &str = "design.validate";
 pub const APPLY_OPERATIONS: &str = "design.applyOperations";
+pub const FORMA_GUIDE: &str = "forma.guide";
+pub const BRAND_GET: &str = "brand.get";
+pub const ASSET_REQUEST_CREATE: &str = "assetRequest.create";
 
 /// Every capability Boundary F serves, one per route.
-pub const SERVED: [&str; 4] = [PROJECT_LIST, DESIGN_GET, DESIGN_VALIDATE, APPLY_OPERATIONS];
+pub const SERVED: [&str; 7] = [
+    PROJECT_LIST,
+    DESIGN_GET,
+    DESIGN_VALIDATE,
+    APPLY_OPERATIONS,
+    FORMA_GUIDE,
+    BRAND_GET,
+    ASSET_REQUEST_CREATE,
+];
 
 /// What the agent catalog declares for a capability: the one source of its
 /// result size, list length and timeout. The measurements behind the numbers
@@ -447,6 +459,57 @@ async fn get_design(
     let who = represented(&request, &state)?;
     let record = application::designs::get(&*state.designs, who.account, design_id(&path)?).await?;
     respond(DESIGN_GET, &record)
+}
+
+/// The manual (plan §6.1): the template compiled into this binary, rendered for
+/// the Pontis door, with its revision.
+///
+/// It holds nothing of the account's, and is still served only to a
+/// represented person in an account they belong to, like every other
+/// capability: there is no exception to carve out and then remember. Reading
+/// it is not a precondition for anything — no write is refused because the
+/// manual went unread, since a read proves delivery, not comprehension.
+#[get("/guide")]
+async fn guide(
+    state: web::Data<AppState>,
+    request: HttpRequest,
+) -> Result<HttpResponse, PontisError> {
+    represented(&request, &state)?;
+    respond(FORMA_GUIDE, agent_catalog::manual::pontis())
+}
+
+/// What `brand.get` answers: the kit **and** the font families the renderer
+/// can draw, as forma-mcp's `get_brand` answers them.
+///
+/// The catalog travels with the kit because a family the renderer lacks is a
+/// `FONT_NOT_FOUND` the agent could have avoided, and the guidance tells the
+/// agent to use only families from it. A bare kit would make that instruction
+/// unfollowable on this door. `brand` is `null` when the project has no kit,
+/// and then `$brand.*` tokens do not resolve.
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+pub struct PontisBrand {
+    pub brand: Option<BrandKit>,
+    pub fonts: Vec<String>,
+}
+
+/// A project's Brand Kit and the font catalog.
+#[get("/projects/{id}/brand")]
+async fn get_brand(
+    state: web::Data<AppState>,
+    request: HttpRequest,
+    path: web::Path<String>,
+) -> Result<HttpResponse, PontisError> {
+    let who = represented(&request, &state)?;
+    let project = ProjectId(parse_id(&path, "project id")?);
+    let brand = application::projects::get_brand(&*state.projects, who.account, project).await?;
+    respond(
+        BRAND_GET,
+        &PontisBrand {
+            brand,
+            fonts: state.fonts.families().to_vec(),
+        },
+    )
 }
 
 /// The caller's deadline: absent means the ceiling, and one over the ceiling is
@@ -1029,6 +1092,137 @@ async fn apply_operations(
         .body(bounded(APPLY_OPERATIONS, &result)?))
 }
 
+/// `assetRequest.create` at Boundary F: the request body, with the project in
+/// the path. Unknown fields are refused, as for a batch.
+#[derive(Debug, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+#[ts(export)]
+pub struct PontisAssetRequestBody {
+    #[serde(default)]
+    pub design_id: Option<DesignId>,
+    pub purpose: String,
+    pub description: String,
+    #[serde(default)]
+    pub suggested_prompt: Option<String>,
+    #[serde(default)]
+    pub requested_width: Option<u32>,
+    #[serde(default)]
+    pub requested_height: Option<u32>,
+}
+
+/// Claim, create, record, for an asset request — `claim_and_apply`'s shape,
+/// for the same reason: a retry of a request that committed must answer the
+/// first request rather than open a second one a person then has to resolve
+/// twice.
+async fn claim_and_request(
+    state: web::Data<AppState>,
+    account: AccountId,
+    invocation: InvocationId,
+    claim: InvocationRequest,
+    new: application::asset_requests::NewAssetRequest,
+) -> Result<Delivered, PontisError> {
+    let ledger = SqliteInvocationLedger::new(state.pool.clone());
+    match ledger.claim(account, &invocation, &claim).await? {
+        Claim::Execute => {}
+        Claim::Replay(result) => return Ok(Delivered::Replayed(result)),
+        duplicate => return Err(refuse_duplicate(duplicate)),
+    }
+
+    let created: AssetRequest = match application::asset_requests::create(
+        &*state.projects,
+        &*state.designs,
+        &*state.asset_requests,
+        account,
+        new,
+    )
+    .await
+    {
+        Ok(created) => created,
+        // One insert, and the last thing that can fail: nothing landed, so the
+        // claim is released and the same id may come back corrected.
+        Err(error) => {
+            if let Err(release) = ledger.release(account, &invocation).await {
+                tracing::error!(error = %release, %invocation, "a refused asset request's claim could not be released");
+            }
+            return Err(error.into());
+        }
+    };
+
+    let result = serde_json::to_value(&created).map_err(|error| {
+        PontisError::from(ApiError::internal(
+            "SERIALIZATION_FAILED",
+            error.to_string(),
+        ))
+    })?;
+    if let Err(error) = ledger.complete(account, &invocation, None, &result).await {
+        tracing::error!(%error, %invocation, "an asset request was created and its result was not recorded; the invocation will answer as in flight");
+    }
+    Ok(Delivered::Executed(result))
+}
+
+/// `assetRequest.create`: the write that records an image the design needs.
+///
+/// Ledgered like `design.applyOperations`. The claim names no design even
+/// when the request is pinned to one: its target is the project, and a
+/// replay after that design was deleted still describes a request that was
+/// made, rather than one the ledger should call deleted.
+#[post("/projects/{id}/asset-requests")]
+async fn create_asset_request(
+    state: web::Data<AppState>,
+    request: HttpRequest,
+    path: web::Path<String>,
+    body: web::Json<PontisAssetRequestBody>,
+) -> Result<HttpResponse, PontisError> {
+    let who = represented(&request, &state)?;
+    let project = ProjectId(parse_id(&path, "project id")?);
+    let invocation = invocation_id(&request)?;
+    let body = body.into_inner();
+
+    let mut input = serde_json::to_value(&body).map_err(|error| {
+        PontisError::from(ApiError::internal(
+            "SERIALIZATION_FAILED",
+            error.to_string(),
+        ))
+    })?;
+    input["project_id"] = serde_json::json!(project);
+    let claim = InvocationRequest {
+        represented_user: who.user,
+        capability: ASSET_REQUEST_CREATE.to_string(),
+        design: None,
+        input,
+    };
+    let new = application::asset_requests::NewAssetRequest {
+        project_id: project,
+        design_id: body.design_id,
+        purpose: body.purpose,
+        description: body.description,
+        suggested_prompt: body.suggested_prompt,
+        requested_width: body.requested_width,
+        requested_height: body.requested_height,
+    };
+
+    let delivered = actix_web::rt::spawn(claim_and_request(
+        state.clone(),
+        who.account,
+        invocation,
+        claim,
+        new,
+    ))
+    .await
+    .map_err(|error| {
+        PontisError::from(ApiError::internal("EXECUTION_FAILED", error.to_string()))
+    })??;
+
+    let (outcome, result) = match delivered {
+        Delivered::Executed(result) => ("executed", result),
+        Delivered::Replayed(result) => ("replayed", result),
+    };
+    Ok(HttpResponse::Ok()
+        .insert_header((INVOCATION_OUTCOME_HEADER, outcome))
+        .content_type("application/json")
+        .body(bounded(ASSET_REQUEST_CREATE, &result)?))
+}
+
 /// One count per account of validations running now.
 #[derive(Debug, Default)]
 pub struct ValidationGate {
@@ -1116,6 +1310,9 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .service(get_design)
             .service(validate)
             .service(apply_operations)
+            .service(guide)
+            .service(get_brand)
+            .service(create_asset_request)
             .default_service(web::route().to(no_such_operation)),
     );
 }

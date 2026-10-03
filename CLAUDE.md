@@ -328,6 +328,16 @@ agent that was not told to open it by path. Symlinks at both locations fix that 
 moving anything — copies of a 400-line document diverge, and `skill_matches_the_code.rs`
 asserts they are symlinks that still resolve.
 
+**`skills/forma/SKILL.md` is generated; do not edit it.** The source is the
+template `crates/agent-catalog/manual/SKILL.md`, which names operations as
+`{capability.id}` and is rendered per door (Pontis plan §6.1): with MCP tool names
+into `skills/forma/SKILL.md` by `cargo test`, drift-checked by
+`scripts/check-bindings.sh`, and with capability ids for the Pontis door, served
+whole by the `forma.guide` capability. Lines between `<!-- mcp-only -->` markers
+reach the MCP door only, and may name only the two operations Pontis lacks;
+`crates/agent-catalog/tests/manual.rs` holds that and refuses any literal MCP tool
+name in the template.
+
 A skill that drifts from the code is worse than none, because an agent follows it
 confidently and is wrong. `apps/mcp/tests/skill_matches_the_code.rs` asserts that every
 tool, operation, brand token, error code and layer field the skill names actually exists,

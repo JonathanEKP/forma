@@ -12,7 +12,7 @@ import { capabilityCatalog } from '../../../bindings/generated/capabilityCatalog
 import { FormaBoundary } from './boundary.ts';
 import { SERVED, formaApproval, formaCapabilities, isUuid, removals } from './capabilities.ts';
 import { fakeForma } from './fake-forma.ts';
-import { PLACEHOLDER_GUIDANCE } from './guidance.ts';
+import { GUIDANCE } from './guidance.ts';
 import { startSidecar } from './sidecar.ts';
 import { silentLog } from './log.ts';
 
@@ -21,6 +21,17 @@ const CONTEXT = '22222222-2222-4222-8222-222222222222';
 const DESIGN = '33333333-3333-4333-8333-333333333333';
 const LAYER = '44444444-4444-4444-8444-444444444444';
 const SESSION = 'ses_capabilities';
+const MANUAL = { revision: 'blake3:0000', text: '# Forma\n' };
+const PROJECT = '55555555-5555-4555-8555-555555555555';
+const BRAND = { brand: null, fonts: ['Geist', 'Geist Mono'] };
+const REQUESTED = {
+  id: '66666666-6666-4666-8666-666666666666',
+  project_id: PROJECT,
+  purpose: 'hero photo',
+  description: 'A wet street at dusk.',
+  status: 'pending',
+  created_at: '2026-10-01T00:00:00Z',
+};
 
 describe('the catalog, as registered', () => {
   it('declares exactly what the generated catalog says, for each operation Boundary F serves', () => {
@@ -45,7 +56,7 @@ describe('the catalog, as registered', () => {
     }
   });
 
-  it('holds every catalog entry, not just the served four, to what Pontis accepts at registration', () => {
+  it('holds every catalog entry, not just the served ones, to what Pontis accepts at registration', () => {
     // The step 6 catalog shipped four ids defineCapability refuses. This is the
     // Pontis-side half of the guard whose Rust half is
     // `every_id_is_one_pontis_will_register`: it runs the real registration.
@@ -70,7 +81,7 @@ describe('the catalog, as registered', () => {
       }
     }
     // And Pontis's application registration, guidance included, accepts the set.
-    defineAgentApp({ id: 'forma', guidance: PLACEHOLDER_GUIDANCE, capabilities: [], resolveUser: () => undefined });
+    defineAgentApp({ id: 'forma', guidance: GUIDANCE, capabilities: [], resolveUser: () => undefined });
   });
 
   it('counts removals by operation, ignoring anything it does not recognise', () => {
@@ -116,11 +127,17 @@ describe('the gateway in front of Boundary F', () => {
     const forma = await fakeForma(({ path }) =>
       path.endsWith('/operations')
         ? { status: 200, body: { design_id: DESIGN, project_id: DESIGN, version: 2, updated_at: '2026-10-01T00:00:00Z' } }
-        : { status: 200, body: [] },
+        : path.endsWith('/guide')
+          ? { status: 200, body: MANUAL }
+          : path.endsWith('/brand')
+            ? { status: 200, body: BRAND }
+            : path.endsWith('/asset-requests')
+              ? { status: 200, body: REQUESTED }
+              : { status: 200, body: [] },
     );
     const app = defineAgentApp({
       id: 'forma',
-      guidance: PLACEHOLDER_GUIDANCE,
+      guidance: GUIDANCE,
       capabilities: formaCapabilities(new FormaBoundary(forma.url, 'forma_svc_test', silentLog)),
       resolveUser: (userId) => (isUuid(userId) ? { id: userId } : undefined),
     });
@@ -179,11 +196,64 @@ describe('the gateway in front of Boundary F', () => {
     });
   });
 
+  it('reads the manual as an ordinary resource: no consent, no idempotency key, exactly what Forma answered', async () => {
+    await withGateway(async (invoke, requests) => {
+      const outcome = await invoke('forma.guide', {}, 'inv_guide');
+      assert.equal(outcome.status, 'completed');
+      assert.deepEqual(outcome.status === 'completed' ? outcome.result : undefined, MANUAL);
+      assert.deepEqual(requests(), ['GET /api/v1/pontis/guide ']);
+    });
+  });
+
+  it('reads the Brand Kit with the font catalog the renderer can draw', async () => {
+    await withGateway(async (invoke, requests) => {
+      const outcome = await invoke('brand.get', { project_id: PROJECT }, 'inv_brand');
+      assert.equal(outcome.status, 'completed');
+      assert.deepEqual(outcome.status === 'completed' ? outcome.result : undefined, BRAND);
+      assert.deepEqual(requests(), [`GET /api/v1/pontis/projects/${PROJECT}/brand `]);
+    });
+  });
+
+  it('requests an asset as a write carrying its invocation id, with the project in the path', async () => {
+    const forma = await fakeForma(() => ({ status: 200, body: REQUESTED }));
+    const app = defineAgentApp({
+      id: 'forma',
+      guidance: GUIDANCE,
+      capabilities: formaCapabilities(new FormaBoundary(forma.url, 'forma_svc_test', silentLog)),
+      resolveUser: (userId) => (isUuid(userId) ? { id: userId } : undefined),
+    });
+    try {
+      const outcome = await app.gateway.invoke({
+        invocationId: 'inv_asset',
+        sessionId: SESSION,
+        applicationContextId: CONTEXT,
+        userId: USER,
+        capabilityId: 'assetRequest.create',
+        input: { project_id: PROJECT, purpose: 'hero photo', description: 'A wet street at dusk.' },
+      });
+      assert.equal(outcome.status, 'completed');
+      const [sent] = forma.requests;
+      assert.equal(sent?.path, `/api/v1/pontis/projects/${PROJECT}/asset-requests`);
+      assert.equal(sent?.headers['x-forma-invocation-id'], 'inv_asset');
+      // Every field Forma's body declares, and nothing it would refuse.
+      assert.deepEqual(JSON.parse(sent?.body ?? '{}'), {
+        design_id: null,
+        purpose: 'hero photo',
+        description: 'A wet street at dusk.',
+        suggested_prompt: null,
+        requested_width: null,
+        requested_height: null,
+      });
+    } finally {
+      await forma.close();
+    }
+  });
+
   it('refuses a context that is not an account before any domain work', async () => {
     await withGateway(async (_invoke, requests) => {
       const app = defineAgentApp({
         id: 'forma',
-        guidance: PLACEHOLDER_GUIDANCE,
+        guidance: GUIDANCE,
         capabilities: formaCapabilities(new FormaBoundary('http://127.0.0.1:1', 'unused', silentLog)),
         resolveUser: (userId) => ({ id: userId }),
       });
@@ -202,7 +272,7 @@ describe('the gateway in front of Boundary F', () => {
 });
 
 describe('the composition', () => {
-  it('starts one process holding the gateway, control plane and device socket, publishing only the four', async () => {
+  it('starts one process holding the gateway, control plane and device socket, publishing only what Boundary F serves', async () => {
     const sidecar = await startSidecar({
       formaUrl: 'http://127.0.0.1:1',
       serviceCredential: 'forma_svc_test',

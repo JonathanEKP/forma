@@ -183,6 +183,12 @@ const EXPORT: CapabilityBounds = bounds(64 * KIB, 120_000);
 const PREVIEW: CapabilityBounds = bounds(16 * 1024 * KIB, 30_000);
 /// An editor action, which answers with a fixed acknowledgement.
 const UI: CapabilityBounds = bounds(4 * KIB, 5_000);
+/// The whole manual, which is never cut into sections (plan §6.1). It measured
+/// 22,103 bytes as JSON when this bound was set, a third of it.
+/// `the_manual_has_room_to_grow` fails at 75%, so growth is announced by a test
+/// long before a read is refused; at that point the choice is a larger bound
+/// or a shorter manual, made on purpose — never sections cut to fit.
+const GUIDE: CapabilityBounds = bounds(64 * KIB, 5_000);
 
 use CapabilityKind::{Command, Resource, Ui};
 use CapabilityRisk::{Read, Write};
@@ -202,6 +208,24 @@ pub static REGISTRY: &[Operation] = &[
         input: no_input,
         presentation: None,
         bounds: READ,
+    },
+    Operation {
+        id: "forma.guide",
+        // Pontis only: on the MCP door the same manual is the skill the host
+        // already loads, and that door stays at fourteen tools (plan §6.1).
+        doors: Doors::PontisOnly,
+        kind: Resource,
+        risk: Read,
+        description: "Read Forma's manual: how a design is structured, every operation and \
+                      field, what each error means and how to recover, and the design \
+                      judgement behind the rules, with the reasons and a worked session. \
+                      Read it before your first edit, and come back to it when an error or a \
+                      validation issue is one you do not know how to handle. It answers the \
+                      whole manual as Markdown and a revision, which changes only when the \
+                      manual does.",
+        input: no_input,
+        presentation: None,
+        bounds: GUIDE,
     },
     Operation {
         id: "project.list",

@@ -8,7 +8,9 @@ license.workspace = true
 # Deliberately no rmcp and no design-core: the catalog describes operations, it
 # neither serves them nor implements them, and the Pontis sidecar consumes it
 # through generated TypeScript without caring which MCP library forma-mcp uses.
+# blake3 is the manual's revision, the same hash the rest of the workspace uses.
 [dependencies]
+blake3.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 schemars.workspace = true

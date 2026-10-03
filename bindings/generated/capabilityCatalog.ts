@@ -3,6 +3,20 @@ import type { CapabilitySpec } from "./CapabilitySpec";
 
 export const capabilityCatalog: ReadonlyArray<CapabilitySpec> = [
   {
+    "id": "forma.guide",
+    "kind": "resource",
+    "description": "Read Forma's manual: how a design is structured, every operation and field, what each error means and how to recover, and the design judgement behind the rules, with the reasons and a worked session. Read it before your first edit, and come back to it when an error or a validation issue is one you do not know how to handle. It answers the whole manual as Markdown and a revision, which changes only when the manual does.",
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "risk": "read",
+    "bounds": {
+      "maxResultBytes": 65536,
+      "timeoutMs": 5000
+    }
+  },
+  {
     "id": "project.list",
     "kind": "resource",
     "description": "List the projects on this Forma. Each is a workspace with its own Brand Kit, assets and designs.",

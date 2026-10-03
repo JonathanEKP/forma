@@ -19,6 +19,7 @@
 //! the MCP one, when the registry is upstream of both.
 
 pub mod descriptor;
+pub mod manual;
 pub mod operations;
 pub mod params;
 pub mod surface;

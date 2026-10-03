@@ -7,19 +7,19 @@ Realtime Gateway, composed from public Pontis packages. It reaches Forma only th
 (`/api/v1/pontis`, authenticated with a `forma_svc_` credential). forma-server stays the domain
 authority and does not depend on this process.
 
-This is plan §11 **step 7**. Guidance (step 8) is a placeholder, and the UI capabilities (step 9)
-are not registered. Do not deploy it before both.
+This is plan §11 **steps 7 and 8**. The UI capabilities (step 9)
+are not registered yet. Do not deploy it before they are.
 
 ## What is Forma's here
 
 | File | What it is |
 |---|---|
-| `src/capabilities.ts` | the four operations Boundary F serves, built from `bindings/generated/capabilityCatalog.ts`; output schemas and bindings |
+| `src/capabilities.ts` | the operations Boundary F serves (`forma.guide`, `brand.get` and `assetRequest.create` among them), built from `bindings/generated/capabilityCatalog.ts`; output schemas and bindings |
 | `src/boundary.ts` | the Boundary F client: fixed operations, bounded answers, Forma's refusals as registry errors |
 | `src/person.ts` | who is behind a browser request, asked of `GET /api/v1/service/resolve` |
 | `src/intents.ts` | the browser's route to its Runtime: start, input, cancel, approve |
 | `src/sidecar.ts` | the composition |
-| `src/guidance.ts` | **placeholder** guidance, until step 8 |
+| `src/guidance.ts` | the `ApplicationAgentGuidance`: the opening context only; the manual is `forma.guide` |
 | `test-driver/` | a test-only Pontis Runtime with FakeProvider, in Rust |
 
 Everything else is Pontis, imported from `@pontis/core`, `@pontis/server` and
@@ -72,6 +72,8 @@ person through the sidecar's routes and reads the durable event stream and Forma
 | Scenario | What is asserted |
 |---|---|
 | read | `project.list` and `design.get` complete through Boundary F |
+| manual | `forma.guide` answers the Pontis rendering of the manual and a `blake3:` revision, through Boundary F |
+| brand | `brand.get` answers the kit and the font catalog; `assetRequest.create` leaves one pending request in Forma |
 | write | one batch, one new version, the font size changed in Forma |
 | cancel | the Runtime abandons `design.validate` mid-flight; the sidecar drops the Boundary F request before Forma answers |
 | deny | approval is requested; nothing reaches Boundary F and the design is unchanged, before and after the refusal |

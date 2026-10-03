@@ -20,7 +20,7 @@ import { createRemoteGatewayHandler, defineAgentApp, type AgentApp } from '@pont
 
 import { FormaBoundary } from './boundary.ts';
 import { formaCapabilities, isUuid, type FormaUser } from './capabilities.ts';
-import { PLACEHOLDER_GUIDANCE } from './guidance.ts';
+import { GUIDANCE } from './guidance.ts';
 import { createIntentRoute } from './intents.ts';
 import type { Log } from './log.ts';
 import { personResolver } from './person.ts';
@@ -62,7 +62,7 @@ export async function startSidecar(options: SidecarOptions): Promise<Sidecar> {
 
   const agentApp = defineAgentApp({
     id: APPLICATION_ID,
-    guidance: PLACEHOLDER_GUIDANCE,
+    guidance: GUIDANCE,
     capabilities: formaCapabilities(boundary),
     // The represented user arrives inside a delegation this process issued
     // for a person it resolved through Forma, so the id is a Forma subject.

@@ -126,6 +126,22 @@ fn a_name_resolves_only_on_a_door_that_has_it() {
 }
 
 #[test]
+fn a_doubled_brace_is_a_literal_one() {
+    assert_eq!(
+        render_text(r#"{design.get} {{ "design_id": "d1" }}"#, Door::Mcp).unwrap(),
+        r#"get_design { "design_id": "d1" }"#
+    );
+    // Escaped, an id is text: it names nothing and so cannot fail to resolve.
+    assert_eq!(
+        render_text("{{design.nonexistent}}", Door::Pontis).unwrap(),
+        "{design.nonexistent}"
+    );
+    assert_eq!(render_text("}}{{", Door::Mcp).unwrap(), "}{");
+    // One brace of a pair is still a stray.
+    assert!(render_text("{{ half }", Door::Mcp).is_err());
+}
+
+#[test]
 fn the_doors_are_the_ones_the_plan_settled() {
     let mcp_only: Vec<&str> = REGISTRY
         .iter()
@@ -156,6 +172,8 @@ fn the_doors_are_the_ones_the_plan_settled() {
         "ui.selectLayer",
         "ui.setPanel",
         "ui.setZoom",
+        // Plan §6.1: the manual, on this door only.
+        "forma.guide",
     ] {
         assert!(pontis.contains(id), "plan §3 lists {id}");
     }

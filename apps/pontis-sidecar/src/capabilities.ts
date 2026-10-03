@@ -10,8 +10,11 @@
  *
  * Registered, and why only these:
  *
- * - The four operations Boundary F serves today. A catalog entry with no route
+ * - The operations Boundary F serves today. A catalog entry with no route
  *   behind it would be a tool that can only fail.
+ * - `forma.guide`, the manual (plan §6.1). The guidance is only the opening
+ *   context; this is where the agent reads the rest, as an ordinary `read`
+ *   resource. Nothing gates a write on having called it.
  * - **No `ui.*` capability.** Pontis would answer `ui_unavailable` for them, and
  *   that answer is meant for "no window of yours is connected right now" — a
  *   state the person can fix by opening Forma. With no handler written anywhere
@@ -30,7 +33,15 @@ import { capabilityCatalog } from '../../../bindings/generated/capabilityCatalog
 import type { FormaBoundary, Represented } from './boundary.ts';
 
 /** The capabilities Boundary F serves (`SERVED` in `apps/server/src/routes/pontis.rs`). */
-export const SERVED = ['project.list', 'design.get', 'design.validate', 'design.applyOperations'] as const;
+export const SERVED = [
+  'project.list',
+  'design.get',
+  'design.validate',
+  'design.applyOperations',
+  'forma.guide',
+  'brand.get',
+  'assetRequest.create',
+] as const;
 
 export type ServedCapability = (typeof SERVED)[number];
 
@@ -141,6 +152,20 @@ const OBJECT = { type: 'object' } as const;
 
 interface DesignInput {
   readonly design_id: string;
+}
+
+interface ProjectInput {
+  readonly project_id: string;
+}
+
+interface AssetRequestInput {
+  readonly project_id: string;
+  readonly design_id?: string | null;
+  readonly purpose: string;
+  readonly description: string;
+  readonly suggested_prompt?: string | null;
+  readonly requested_width?: number | null;
+  readonly requested_height?: number | null;
 }
 
 interface ApplyInput {
@@ -262,5 +287,74 @@ export function formaCapabilities(boundary: FormaBoundary): Capability[] {
     },
   });
 
-  return [projectList, designGet, designValidate, applyOperations];
+  const guide = defineCapability<Record<string, never>, unknown, FormaUser>({
+    ...declared('forma.guide'),
+    // Exactly what Forma answers: no timestamp and no capability list
+    // (`AgentManual`), so two reads are identical and the session catalog stays
+    // the only answer to what can be called.
+    output: {
+      type: 'object',
+      properties: { revision: { type: 'string' }, text: { type: 'string' } },
+      required: ['revision', 'text'],
+      additionalProperties: false,
+    },
+    authorize,
+    execute: async ({ user, applicationContextId, signal }) =>
+      await boundary.guide(representing(user, applicationContextId), spec('forma.guide').bounds.maxResultBytes, signal),
+  });
+
+  const brandGet = defineCapability<ProjectInput, unknown, FormaUser>({
+    ...declared('brand.get'),
+    // The kit and the font catalog together, as forma-mcp answers them: the
+    // guidance's "only families from the catalog" needs the catalog here.
+    output: {
+      type: 'object',
+      properties: {
+        brand: { type: ['object', 'null'] },
+        fonts: { type: 'array', items: { type: 'string' } },
+      },
+      required: ['brand', 'fonts'],
+      additionalProperties: false,
+    },
+    authorize,
+    execute: async ({ user, applicationContextId, input, signal }) =>
+      await boundary.getBrand(
+        representing(user, applicationContextId),
+        input.project_id,
+        spec('brand.get').bounds.maxResultBytes,
+        signal,
+      ),
+  });
+
+  const assetRequestCreate = defineCapability<AssetRequestInput, unknown, FormaUser>({
+    ...declared('assetRequest.create'),
+    output: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        project_id: { type: 'string' },
+        status: { type: 'string' },
+      },
+      required: ['id', 'project_id', 'status'],
+    },
+    authorize,
+    execute: async ({ user, applicationContextId, input, invocationId, signal }) =>
+      await boundary.createAssetRequest(
+        representing(user, applicationContextId),
+        input.project_id,
+        {
+          design_id: input.design_id ?? null,
+          purpose: input.purpose,
+          description: input.description,
+          suggested_prompt: input.suggested_prompt ?? null,
+          requested_width: input.requested_width ?? null,
+          requested_height: input.requested_height ?? null,
+        },
+        invocationId,
+        spec('assetRequest.create').bounds.maxResultBytes,
+        signal,
+      ),
+  });
+
+  return [projectList, designGet, designValidate, applyOperations, guide, brandGet, assetRequestCreate];
 }

@@ -48,6 +48,8 @@ const WRITE = 'Raise the headline to 96pt.';
 const CANCEL = 'Validate the long design.';
 const DENY = 'Remove the tagline. I will say no.';
 const APPROVE = 'Remove the headline.';
+const GUIDE = 'Read the manual first.';
+const BRAND = 'Read my brand, and ask me for a hero photo.';
 
 /** Pages in the design whose validation is cancelled: enough that it is still running when the cancel lands. */
 const LONG_PAGES = 120;
@@ -84,6 +86,7 @@ let credential = '';
 let account = '';
 let forma = '';
 let sidecar = '';
+let projectId = '';
 let design: Design | undefined;
 let longDesign = '';
 let layer = '';
@@ -114,6 +117,7 @@ describe('the sidecar, run locally against FakeProvider', () => {
     await until('forma-server to answer', async () => (await asPerson('GET', '/api/v1/status').catch(() => undefined))?.ok === true, server);
 
     const project = (await json(await asPerson('POST', '/api/v1/projects', { name: 'Local run' }))) as { id: string };
+    projectId = project.id;
     layer = randomUUID();
     tagline = randomUUID();
     design = (await json(
@@ -145,6 +149,7 @@ describe('the sidecar, run locally against FakeProvider', () => {
       FORMA_PONTIS_ORIGIN: sidecar,
       FORMA_PONTIS_APPLICATION_ID: pairing.applicationId,
       FORMA_DRIVER_PAIRING_CODE: pairing.code,
+      FORMA_DRIVER_PROJECT: project.id,
       FORMA_DRIVER_DESIGN: design.id,
       FORMA_DRIVER_LONG_DESIGN: longDesign,
       FORMA_DRIVER_LAYER: layer,
@@ -179,6 +184,34 @@ describe('the sidecar, run locally against FakeProvider', () => {
     const [projects, read] = completed.map((event) => JSON.stringify(event.payload.result));
     assert.ok(projects?.includes('Local run'), projects);
     assert.ok(read?.includes(layer), 'the design comes back with its headline');
+  });
+
+  it('reads the manual: forma.guide answers the Pontis rendering and its revision, through Boundary F', async () => {
+    const events = await turn(GUIDE, 'turn.completed');
+    const completed = events.filter((event) => event.type === 'capability.completed');
+    assert.deepEqual(completed.map((event) => event.payload.capabilityId), ['forma.guide']);
+    const result = completed[0]?.payload.result as { revision?: unknown; text?: unknown } | undefined;
+    assert.deepEqual(Object.keys(result ?? {}).sort(), ['revision', 'text'], 'no timestamp, no capability list');
+    assert.match(String(result?.revision), /^blake3:[0-9a-f]{64}$/u);
+    const text = String(result?.text);
+    // Rendered for this door: capability ids, never the MCP door's tool names.
+    assert.ok(text.includes('`design.applyOperations`'));
+    assert.ok(!text.includes('apply_operations') && !text.includes('render_preview'));
+    assert.equal(boundaryCalls('forma.guide').filter((line) => line.status === 200).length, 1);
+  });
+
+  it('reads the brand with its font catalog, and asks for an image, through Boundary F', async () => {
+    const events = await turn(BRAND, 'turn.completed');
+    const completed = events.filter((event) => event.type === 'capability.completed');
+    assert.deepEqual(completed.map((event) => event.payload.capabilityId), ['brand.get', 'assetRequest.create']);
+    const brand = completed[0]?.payload.result as { brand?: unknown; fonts?: unknown } | undefined;
+    // No kit on this project, and the catalog anyway: it is what the agent
+    // uses in place of $brand.* tokens.
+    assert.equal(brand?.brand, null);
+    assert.ok(Array.isArray(brand?.fonts) && brand.fonts.includes('Geist'), JSON.stringify(brand?.fonts));
+    // One request, pending, in Forma itself.
+    const requests = (await json(await asPerson('GET', `/api/v1/projects/${projectId}/asset-requests`))) as { status: string; purpose: string }[];
+    assert.deepEqual(requests.map(({ status, purpose }) => [status, purpose]), [['pending', 'hero photo']]);
   });
 
   it('writes: one batch, one new version, applied by Forma', async () => {

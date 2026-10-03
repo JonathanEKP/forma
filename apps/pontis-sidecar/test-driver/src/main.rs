@@ -42,6 +42,8 @@ const WRITE: &str = "Raise the headline to 96pt.";
 const CANCEL: &str = "Validate the long design.";
 const DENY: &str = "Remove the tagline. I will say no.";
 const APPROVE: &str = "Remove the headline.";
+const GUIDE: &str = "Read the manual first.";
+const BRAND: &str = "Read my brand, and ask me for a hero photo.";
 
 /// Prints what the Runtime refused, one line each, so the test can read it.
 ///
@@ -68,6 +70,7 @@ fn env(name: &str) -> String {
 /// remembers a refusal of the identical action for the rest of the session and
 /// will not ask again, which is the behaviour a person would want.
 fn provider(
+    project: &str,
     design: &str,
     long_design: &str,
     layer: &str,
@@ -90,6 +93,32 @@ fn provider(
                 .call("design.get", json!({ "design_id": design }))
                 .expect_tool_result_status(ExpectedOutcome::Completed)
                 .emit("You have one project, and the design has a headline.")
+                .complete(),
+        )
+        .script(
+            GUIDE,
+            FakeScript::new()
+                .call("forma.guide", json!({}))
+                .expect_tool_result_status(ExpectedOutcome::Completed)
+                .emit("I have read the manual.")
+                .complete(),
+        )
+        .script(
+            BRAND,
+            FakeScript::new()
+                .call("brand.get", json!({ "project_id": project }))
+                .expect_tool_result_status(ExpectedOutcome::Completed)
+                .call(
+                    "assetRequest.create",
+                    json!({
+                        "project_id": project,
+                        "design_id": design,
+                        "purpose": "hero photo",
+                        "description": "A wet street at dusk, with room for a headline at the top.",
+                    }),
+                )
+                .expect_tool_result_status(ExpectedOutcome::Completed)
+                .emit("I read the brand and asked you for a hero photo.")
                 .complete(),
         )
         .script(
@@ -145,6 +174,7 @@ async fn main() {
         .parse()
         .expect("FORMA_DRIVER_BASE_VERSION is a version number");
     let provider = provider(
+        &env("FORMA_DRIVER_PROJECT"),
         &env("FORMA_DRIVER_DESIGN"),
         &env("FORMA_DRIVER_LONG_DESIGN"),
         &env("FORMA_DRIVER_LAYER"),
