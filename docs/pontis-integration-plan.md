@@ -804,7 +804,7 @@ Read this before the list below; the list is the plan, this is what happened to 
 | 10 Device panel and in-app chat | **in progress** — 10a and 10b merged, 10c (live delivery) dispatched | |
 | 10a Device panel and proxy routes | done, merged into `main` | `70dae4e`, `d6b000c`, `ad74373`, `f37b358`, `bd4cd8b`, `6edc1b6` (branch `JonathanEKP/pontis-10a-devices`) |
 | 10b In-app chat and `/agent/context` | done, merged into `main` | `93dde1a`, `58b754f`, `f081782`, `0a34a10`, `005d9d0` (branch `JonathanEKP/pontis-10b-chat`) |
-| 10c Live delivery and device presence | **in progress** — see below | branch `JonathanEKP/pontis-10c-live` |
+| 10c Live delivery and device presence | built and tested; not yet seen in a browser against a real Runtime (see below) | `f501cc9`, `ce96b88`, `93731c2` (branch `JonathanEKP/pontis-10c-live`) |
 | 11 Real Codex local run | not started; needs the owner (a real provider credential on their machine) | |
 | 12 PV-1 evidence | not started; follows 11 | |
 
@@ -860,7 +860,18 @@ Decisions taken for step 10, low-risk and delegated:
   on its own, and a gap still resyncs from the page. The same review found the device panel's
   "presence not reported": the sidecar does not merge `devices.isOnline` into `/pons/v1/devices`
   the way the reference app does. Both are sidecar wiring the reference app already shows, so they
-  are one task, given to the 10b worker because it holds the chat's model. Also noted, not fixed:
+  are one task, given to the 10b worker because it holds the chat's model.
+  **10c state:** `apps/pontis-sidecar/src/live.ts` does both. Stored events are fanned out from
+  `controlPlane.events.subscribeAll` with their `sequence` (so a runtime's redelivery is never sent
+  twice), deltas and presence from the gateway's `onNotification` only to the context the session
+  was started in, after the reference app's three checks; `/pons/v1/devices` is answered ahead of the
+  Control Plane's route with `online` from `devices.isOnline`. In the editor the channel forwards
+  `pons.event` to a feed, the chat offers sequenced frames to the event reader (same cursor, same
+  rules, a skip re-reads from the cursor) and shows `agent.output.delta` in a transient slot that
+  `agent.output.completed` replaces; the page is read every 10s instead of 1.5s while the stream is
+  connected, and at once whenever that changes. Frames are trimmed to position, scope, type, session
+  and payload — the store's id, stream key and origin message id are not sent. Every public API the
+  reference app uses was exported, so nothing was invented. Also noted, not fixed:
   the chat's state lives in `Editor`, so it resets when the person leaves a design.
 - **Only browser routes go through the proxy:** `/pons/v1/pairing/codes`, `/pons/v1/devices*`,
   `/pons/v1/events`, `/pons/v1/jobs*`, `/agent/intent`, `/agent/context`, `/pons/v1/ui/*`. The Runtime's own routes
