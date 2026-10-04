@@ -36,6 +36,9 @@ class Backend {
   calls: Call[] = [];
   events: Record<string, unknown>[] = [];
   down = false;
+  unauthenticatedPaths = new Set<string>();
+  cancelGate: Promise<Response> | null = null;
+  startGate: Promise<Response> | null = null;
   /** What `session.input` and `session.cancel` are answered with instead of delivery, as the sidecar's refusal code. */
   refuse: string | null = null;
   devices: unknown = {
@@ -77,6 +80,7 @@ class Backend {
     this.calls.push({ path: url.pathname, search: url.search, method, body });
     const json = (value: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(value), { status }));
     if (this.down) return Promise.reject(new TypeError("fetch failed"));
+    if (this.unauthenticatedPaths.has(url.pathname)) return json({ error: { code: "unauthenticated" } }, 401);
 
     switch (url.pathname) {
       case "/agent/context":
@@ -93,6 +97,8 @@ class Backend {
       }
       case "/agent/intent": {
         const type = isRecord(body) ? body.type : undefined;
+        if (type === "session.start" && this.startGate !== null) return this.startGate;
+        if (type === "session.cancel" && this.cancelGate !== null) return this.cancelGate;
         if (this.refuse !== null && (type === "session.input" || type === "session.cancel")) {
           return json({ error: this.refuse }, this.refuse === "not_authorized" ? 403 : 409);
         }
@@ -188,6 +194,14 @@ describe("the status block", () => {
     fireEvent.change(screen.getByLabelText("Message the agent"), { target: { value: "hello" } });
     expect(screen.getByRole<HTMLButtonElement>("button", { name: "Send" }).disabled).toBe(true);
   });
+
+  it("says to sign in again when the context and device routes return 401", async () => {
+    backend.unauthenticatedPaths.add("/agent/context");
+    backend.unauthenticatedPaths.add("/pons/v1/devices");
+    render(<Harness enabled />);
+
+    expect(await screen.findByText("Your sign-in has expired. Sign in again.")).toBeTruthy();
+  });
 });
 
 describe("when the sidecar is unreachable", () => {
@@ -239,6 +253,35 @@ describe("a conversation", () => {
     await waitFor(() => expect(kinds()).toEqual(expect.arrayContaining(["person", "agent", "capability", "result", "navigation", "approval", "working"])));
   });
 
+  it("restores a draft after reload while its first send is pending, without resending it", async () => {
+    const text = "Read the manual first.";
+    backend.startGate = new Promise<Response>(() => undefined);
+    const first = render(<Harness enabled />);
+    await screen.findByText(/Studio laptop/);
+    fireEvent.change(screen.getByLabelText("Message the agent"), { target: { value: text } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(backend.intents()).toEqual([{ type: "session.start", payload: { providerId: "codex" } }]));
+    expect(sessionStorage.getItem("forma.chat.draft")).toBe(text);
+
+    first.unmount();
+    backend.startGate = null;
+    render(<Harness enabled />);
+    const draft = await screen.findByRole<HTMLTextAreaElement>("textbox", { name: "Message the agent" });
+    expect(draft.value).toBe(text);
+    expect(backend.intents()).toEqual([{ type: "session.start", payload: { providerId: "codex" } }]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(backend.intents()).toEqual([{ type: "session.start", payload: { providerId: "codex" } }, { type: "session.start", payload: { providerId: "codex" } }]));
+    backend.push(1, "session.created");
+    backend.push(2, "session.started");
+    await waitFor(() => expect(backend.intents()).toEqual([
+      { type: "session.start", payload: { providerId: "codex" } },
+      { type: "session.start", payload: { providerId: "codex" } },
+      { type: "session.input", payload: { sessionId: SESSION, text } },
+    ]));
+    await waitFor(() => expect(sessionStorage.getItem("forma.chat.draft")).toBeNull());
+  });
+
   it("tells the window's channel which session this chat started, and lets go when the chat goes", async () => {
     agentBinding.set(null);
     const { unmount } = render(<Harness enabled />);
@@ -285,11 +328,43 @@ describe("a conversation", () => {
     await waitFor(() =>
       expect(backend.intents()).toContainEqual({ type: "approval.resolve", payload: { approvalId: "apr_1", decision: "approveOnce" } }),
     );
+    expect(scope.getByText("Sending…")).toBeTruthy();
     // Held until the Runtime's own event says it landed, so it cannot be answered twice.
     expect(scope.getByRole<HTMLButtonElement>("button", { name: "Deny" }).disabled).toBe(true);
 
     backend.push(4, "approval.resolved", { approvalId: "apr_1", status: "approved" });
     await screen.findByText("Approved");
+  });
+
+  it("lets a pending approval be answered again when the device does not confirm it", async () => {
+    await attach();
+    await ready();
+    backend.push(1, "session.created");
+    backend.push(2, "session.started");
+    backend.push(3, "approval.requested", {
+      approvalId: "apr_1",
+      invocationId: "i3",
+      capabilityId: "design.applyOperations",
+      risk: "write",
+      humanSummary: "Edit this design",
+      importantArguments: [],
+      affectedResourceCount: 1,
+    });
+
+    const card = await screen.findByText("Needs your approval");
+    const scope = within(card.closest("li") as HTMLElement);
+    vi.useFakeTimers();
+    fireEvent.click(scope.getByRole("button", { name: "Approve once" }));
+    expect(scope.getByText("Sending…")).toBeTruthy();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20_000);
+    });
+
+    expect(scope.getByText("Not confirmed by your device")).toBeTruthy();
+    expect(scope.getByRole<HTMLButtonElement>("button", { name: "Approve once" }).disabled).toBe(false);
+    expect(scope.getByRole<HTMLButtonElement>("button", { name: "Deny" }).disabled).toBe(false);
+    vi.useRealTimers();
   });
 
   it("stop sends session.cancel for the live session", async () => {
@@ -301,6 +376,70 @@ describe("a conversation", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Stop" }));
     await waitFor(() => expect(backend.intents()).toEqual([{ type: "session.cancel", payload: { sessionId: SESSION } }]));
     await screen.findByText("You stopped the agent.");
+  });
+
+  it("keeps Send disabled while a turn runs and leaves Stop available", async () => {
+    await inSession();
+    backend.push(3, "turn.started");
+    await screen.findByText("The agent is working…");
+    const box = screen.getByLabelText("Message the agent");
+    fireEvent.change(box, { target: { value: "wait until this turn ends" } });
+
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Send" }).disabled).toBe(true);
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Stop" }).disabled).toBe(false);
+    fireEvent.keyDown(box, { key: "Enter", shiftKey: false });
+    expect(backend.intents().filter((intent) => (intent as { type: string }).type === "session.input")).toHaveLength(1);
+  });
+
+  it("ignores a second Stop while the first cancel is pending", async () => {
+    await inSession();
+    backend.push(3, "turn.started");
+    let finish!: (response: Response) => void;
+    backend.cancelGate = new Promise((resolve) => {
+      finish = resolve;
+    });
+
+    const stop = await screen.findByRole("button", { name: "Stop" });
+    fireEvent.click(stop);
+    fireEvent.click(stop);
+    await waitFor(() => expect(backend.intents().filter((intent) => (intent as { type: string }).type === "session.cancel")).toHaveLength(1));
+    finish(new Response(JSON.stringify({ delivered: true }), { status: 200 }));
+
+    await screen.findByText("You stopped the agent.");
+    expect(screen.getAllByText("You stopped the agent.")).toHaveLength(1);
+  });
+
+  it("maps an intent 401 to the sign-in expiry message", async () => {
+    await inSession();
+    backend.unauthenticatedPaths.add("/agent/intent");
+    fireEvent.change(screen.getByLabelText("Message the agent"), { target: { value: "try again" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(await screen.findByText("Your sign-in has expired. Sign in again.")).toBeTruthy();
+  });
+
+  it("keeps an oversized UTF-8 draft and refuses to send it", async () => {
+    await ready();
+    const draft = "😀".repeat(16_385);
+    fireEvent.change(screen.getByLabelText("Message the agent"), { target: { value: draft } });
+
+    expect(await screen.findByText("That message is too long (max 64 KB).")).toBeTruthy();
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Send" }).disabled).toBe(true);
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message the agent" }).value).toBe(draft);
+    expect(backend.intents()).toEqual([]);
+  });
+
+  it("isolates the direction of person and agent text", async () => {
+    await inSession();
+    const bidi = "plain \u202eright-to-left\u202c text";
+    backend.push(3, "agent.output.completed", { turnId: "t1", text: bidi });
+
+    const person = await screen.findByText("work on it");
+    const agent = await screen.findByText(bidi);
+    for (const bubble of [person, agent]) {
+      expect(bubble.getAttribute("dir")).toBe("auto");
+      expect(bubble.style.unicodeBidi).toBe("plaintext");
+    }
   });
 
   it("deny sends deny", async () => {
@@ -592,12 +731,19 @@ describe("a session that cannot be carried on", () => {
     expect(backend.intents().filter((intent) => (intent as { type: string }).type === "session.start")).toHaveLength(1);
   });
 
-  it("is not a stopped session: after the person's own Stop the next message simply starts one", async () => {
+  it("continues the same session after the person's own Stop", async () => {
     await inSession();
     backend.push(3, "turn.started");
     fireEvent.click(await screen.findByRole("button", { name: "Stop" }));
     await screen.findByText("You stopped the agent.");
     expect(screen.queryByRole("region", { name: "Session ended" })).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("Message the agent"), { target: { value: "continue here" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(backend.intents().filter((intent) => (intent as { type: string }).type === "session.input")).toHaveLength(2));
+    expect(backend.intents()).toContainEqual({ type: "session.input", payload: { sessionId: SESSION, text: "continue here" } });
+    expect(backend.intents().filter((intent) => (intent as { type: string }).type === "session.start")).toHaveLength(1);
   });
 });
 
@@ -676,5 +822,18 @@ describe("a window's session", () => {
     await screen.findByText(/Studio laptop/);
     expect(screen.queryByText("their secret")).toBeNull();
     expect(screen.getByRole("log").querySelectorAll("li")).toHaveLength(1); // only the empty-state text
+  });
+});
+
+describe("an unsent draft", () => {
+  it("survives a reload in this tab", async () => {
+    await attach();
+    const first = render(<Harness enabled />);
+    await screen.findByText(/Studio laptop/);
+    fireEvent.change(screen.getByLabelText("Message the agent"), { target: { value: "keep this draft" } });
+    first.unmount();
+
+    render(<Harness enabled />);
+    expect((await screen.findByRole<HTMLTextAreaElement>("textbox", { name: "Message the agent" })).value).toBe("keep this draft");
   });
 });

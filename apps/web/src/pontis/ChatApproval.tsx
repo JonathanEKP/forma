@@ -25,12 +25,15 @@ export function ApprovalCard({
   approval,
   status,
   answering,
+  unconfirmed,
   onDecide,
 }: {
   approval: ApprovalView;
   status: ApprovalStatus;
   /** An answer was sent and the Runtime has not confirmed it yet. */
   answering: boolean;
+  /** The approval stayed pending after the confirmation window elapsed. */
+  unconfirmed: boolean;
   onDecide: (decision: "approveOnce" | "deny") => void;
 }) {
   const heavy = approval.risk === "destructive" || approval.risk === "external_side_effect" || approval.risk === "sensitive";
@@ -86,7 +89,8 @@ export function ApprovalCard({
           >
             Deny
           </button>
-          {answering && <span className="self-center text-[11px] text-faint">Sent. Waiting for the Runtime…</span>}
+          {answering && <span className="self-center text-[11px] text-faint">Sending…</span>}
+          {!answering && unconfirmed && <span className="self-center text-[11px] text-faint">Not confirmed by your device</span>}
         </div>
       ) : (
         <p className="mt-3 text-[11px] font-semibold text-muted">{SETTLED[status]}</p>

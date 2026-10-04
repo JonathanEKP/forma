@@ -152,7 +152,7 @@ export function liveNotification(controlPlane: ControlPlane, windows: Windows, l
  * never durable (SEC-INV-009), so it is not on the stored record, and it is read
  * from the live sockets here at the moment of asking and merged in — never
  * written down. Registered ahead of the Control Plane's routes so this answer is
- * the one given; revoking and the rest of `/pons/v1/devices/*` are untouched.
+ * the one given; revoking and the rest of `/pons/v1/devices/*` keep the Control Plane's refusal vocabulary.
  */
 export function createDevicesRoute(options: {
   readonly controlPlane: ControlPlane;
@@ -163,8 +163,7 @@ export function createDevicesRoute(options: {
     if ((request.url ?? '').split('?')[0] !== DEVICES_PATH || request.method !== 'GET') return false;
     const person = await options.resolvePerson(request);
     if (!person) {
-      // Same refusal the Control Plane's own route gives, so a client cannot tell which one answered.
-      return reply(response, 403, { protocol: PONS_PROTOCOL_VERSION, error: { code: 'origin_not_allowed', category: 'transport', message: 'origin_not_allowed' } });
+      return reply(response, 401, { error: { code: 'unauthenticated' } });
     }
     const records = await options.controlPlane.listDevices(person.userId);
     return reply(response, 200, {

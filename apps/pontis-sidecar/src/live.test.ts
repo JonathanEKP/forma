@@ -348,14 +348,18 @@ describe('GET /pons/v1/devices', () => {
     });
   });
 
-  it('lists only the caller\'s own devices, and refuses a request with no session', async () => {
+  it('lists only the caller\'s devices and returns a typed 401 without a valid session', async () => {
     await withSidecar(async (sidecar) => {
       const device = await pairDevice(sidecar, USER);
       try {
         const theirs = await get(sidecar, '/pons/v1/devices', 'session-other');
         assert.deepEqual(isRecord(theirs.body) ? theirs.body.devices : null, []);
         const anonymous = await get(sidecar, '/pons/v1/devices');
-        assert.equal(anonymous.status, 403);
+        assert.equal(anonymous.status, 401);
+        assert.deepEqual(anonymous.body, { error: { code: 'unauthenticated' } });
+        const invalid = await get(sidecar, '/pons/v1/devices', 'not-a-session');
+        assert.equal(invalid.status, 401);
+        assert.deepEqual(invalid.body, { error: { code: 'unauthenticated' } });
       } finally {
         await device.close();
       }

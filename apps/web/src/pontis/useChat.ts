@@ -41,6 +41,8 @@ import { windowId } from "./window";
 
 /** How often the device list is re-read: presence changes slowly, and a turn does not need it. */
 export const DEVICES_MS = 10_000;
+/** A delivered approval resolve is only a socket write; wait for the durable approval event. */
+export const APPROVAL_CONFIRMATION_MS = 20_000;
 
 /**
  * Where the chat stands with its backend, said once.
@@ -52,7 +54,7 @@ export const DEVICES_MS = 10_000;
  */
 export type Connection = StreamState["at"];
 
-export type Runtime = RuntimeView | { readonly at: "unknown" } | { readonly at: "unreachable" };
+export type Runtime = RuntimeView | { readonly at: "unknown" } | { readonly at: "unreachable" } | { readonly at: "unauthenticated" };
 
 export interface Chat {
   readonly enabled: boolean;
@@ -63,8 +65,10 @@ export interface Chat {
   readonly runtime: Runtime;
   /** Approvals waiting on the person, for the toggle's badge. */
   readonly pending: number;
-  /** Approval ids already sent and not yet confirmed by the Runtime's own event. */
+  /** Approval ids whose resolve is being sent or is still awaiting the Runtime's event. */
   readonly answering: ReadonlySet<string>;
+  /** Approval ids still pending after the confirmation window elapsed. */
+  readonly unconfirmed: ReadonlySet<string>;
   /** Why a message cannot be sent right now, or `null` when it can. */
   readonly blocked: string | null;
   /**
@@ -75,7 +79,7 @@ export interface Chat {
   readonly sessionId: string | null;
   /** Why the session cannot be carried on, or `null`. Sending waits for `newSession` while it is set. */
   readonly dead: string | null;
-  readonly send: (text: string) => Promise<void>;
+  readonly send: (text: string, onAccepted?: () => void) => Promise<void>;
   readonly newSession: () => Promise<void>;
   readonly stop: () => Promise<void>;
   readonly decide: (approvalId: string, decision: Decision) => Promise<void>;
@@ -99,6 +103,7 @@ export interface ChatOptions {
 
 /** Why the current runtime cannot take a message, in words, or `null` if it can. */
 export function whyBlocked(connection: Connection, runtime: Runtime): string | null {
+  if (runtime.at === "unauthenticated") return "Your sign-in has expired. Sign in again.";
   if (connection === "offline") return "The agent service can't be reached.";
   switch (runtime.at) {
     case "unknown":
@@ -131,11 +136,22 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
   const [stream, setStream] = useState<Connection>("connecting");
   const [runtime, setRuntime] = useState<Runtime>({ at: "unknown" });
   const [answering, setAnswering] = useState<ReadonlySet<string>>(new Set());
+  const [unconfirmed, setUnconfirmed] = useState<ReadonlySet<string>>(new Set());
   const [live, setLive] = useState(() => liveFeed.state().at === "connected");
   const seq = useRef(0);
   // The reader and the context it reads, for the live path to hand frames to.
   const reader = useRef<{ stream: EventStream; context: string } | null>(null);
-  const queued = useRef<{ sessionId: string; text: string; view: ViewIds } | null>(null);
+  const queued = useRef<{ sessionId: string; text: string; view: ViewIds; onAccepted?: () => void } | null>(null);
+  const stopPending = useRef<string | null>(null);
+  const approvalTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+
+  useEffect(
+    () => () => {
+      for (const timer of approvalTimers.current.values()) clearTimeout(timer);
+      approvalTimers.current.clear();
+    },
+    [],
+  );
 
   const agent = useMemo(() => client ?? createAgentClient({ token: accessToken }), [client]);
   const localId = useCallback(() => {
@@ -159,6 +175,7 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
       const context = await agent.context();
       if (closed) return;
       if (!context.ok) {
+        if (context.failure.reason === "not_authenticated") setRuntime({ at: "unauthenticated" });
         setStream("offline");
         timer = setTimeout(() => void connect(), RETRY_MS);
         return;
@@ -175,9 +192,33 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
         token: accessToken,
         onEvents: (events) => {
           dispatch({ type: "events", events });
+          const confirmations = events.flatMap((event) => {
+            if (event.type !== "approval.resolved" && event.type !== "approval.cancelled") return [];
+            return typeof event.payload.approvalId === "string" ? [event.payload.approvalId] : [];
+          });
+          if (confirmations.length > 0) {
+            for (const approvalId of confirmations) {
+              const timer = approvalTimers.current.get(approvalId);
+              if (timer !== undefined) clearTimeout(timer);
+              approvalTimers.current.delete(approvalId);
+            }
+            setAnswering((current) => {
+              const next = new Set(current);
+              confirmations.forEach((approvalId) => next.delete(approvalId));
+              return next;
+            });
+            setUnconfirmed((current) => {
+              const next = new Set(current);
+              confirmations.forEach((approvalId) => next.delete(approvalId));
+              return next;
+            });
+          }
           for (const write of agentWrites(events)) writeRef.current?.(write);
         },
-        onState: (next) => setStream(next.at),
+        onState: (next) => {
+          setStream(next.at);
+          if (next.at === "live") dispatch({ type: "historyLoaded" });
+        },
         ...(pollMs === undefined ? {} : { pollMs }),
       });
       opened.setLive(liveFeed.state().at === "connected");
@@ -214,11 +255,12 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
   // Reads can overlap — a presence frame lands while the ten-second read is out — and the answer that
   // was asked for last is the one that is true: a slower, older one must not overwrite it.
   const reads = useRef(0);
-  const readDevices = useCallback(async (): Promise<RuntimeView | { readonly at: "unreachable" } | null> => {
+  const readDevices = useCallback(async (): Promise<RuntimeView | { readonly at: "unreachable" | "unauthenticated" } | null> => {
     reads.current += 1;
     const mine = reads.current;
     const answer = await agent.devices(state.deviceId);
-    return mine === reads.current ? (answer.ok ? answer.value : { at: "unreachable" }) : null;
+    const value = answer.ok ? answer.value : answer.failure.reason === "not_authenticated" ? { at: "unauthenticated" as const } : { at: "unreachable" as const };
+    return mine === reads.current ? value : null;
   }, [agent, state.deviceId]);
   const refreshRuntime = useCallback(async () => {
     const read = await readDevices();
@@ -307,6 +349,7 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
     queued.current = null;
     void agent.input(waiting.sessionId, waiting.text, waiting.view).then((answer) => {
       if (!answer.ok) refused(answer.failure);
+      else waiting.onAccepted?.();
     });
   }, [agent, session, refused]);
 
@@ -354,29 +397,30 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
   }, [agent, runtime, blocked, notice, refreshRuntime]);
 
   const send = useCallback(
-    async (raw: string) => {
+    async (raw: string, onAccepted?: () => void) => {
       const text = raw.trim();
-      if (text.length === 0 || dead !== null) return;
+      if (text.length === 0 || dead !== null || state.working) return;
       const seen = viewRef.current?.();
       dispatch({ type: "person", id: localId(), text, ...(seen?.chip ? { chip: seen.chip } : {}) });
       const ids = seen?.ids ?? {};
 
       if (session && session.status !== "ended") {
         if (session.status === "starting") {
-          queued.current = { sessionId: session.id, text, view: ids };
+          queued.current = { sessionId: session.id, text, view: ids, ...(onAccepted ? { onAccepted } : {}) };
           return;
         }
         const answer = await agent.input(session.id, text, ids);
         if (!answer.ok) refused(answer.failure);
+        else onAccepted?.();
         return;
       }
 
       const sessionId = await start();
       if (sessionId === null) return;
-      queued.current = { sessionId, text, view: ids };
+      queued.current = { sessionId, text, view: ids, ...(onAccepted ? { onAccepted } : {}) };
       dispatch({ type: "started", sessionId, id: localId() });
     },
-    [agent, session, dead, start, refused, localId],
+    [agent, session, dead, state.working, start, refused, localId],
   );
 
   // Nothing starts by itself: a dead session waits here, with its history above, until the
@@ -387,22 +431,52 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
   }, [start, localId]);
 
   const stop = useCallback(async () => {
-    if (!session) return;
-    const answer = await agent.cancel(session.id);
-    if (answer.ok) dispatch({ type: "stopped", id: localId() });
-    // Stopping is the person leaving the conversation: when the Runtime cannot even be told,
-    // it is over, and "your Runtime is offline" over a turn that stays running is the wedge.
-    else if (answer.failure.reason === "not_authorized") die(DEAD.notAuthorized);
-    else if (answer.failure.reason === "runtime_offline") die(DEAD.stopWhileOffline);
-    else notice("error", answer.failure.message);
-  }, [agent, session, notice, localId, die]);
+    if (!session || !state.working || stopPending.current === session.id) return;
+    const sessionId = session.id;
+    stopPending.current = sessionId;
+    try {
+      const answer = await agent.cancel(sessionId);
+      if (answer.ok) dispatch({ type: "stopped", id: localId() });
+      // If the Runtime cannot be told, the turn may still be running. End the local chat so it
+      // does not offer a message against a turn the person cannot stop.
+      else if (answer.failure.reason === "not_authorized") die(DEAD.notAuthorized);
+      else if (answer.failure.reason === "runtime_offline") die(DEAD.stopWhileOffline);
+      else notice("error", answer.failure.message);
+    } finally {
+      if (stopPending.current === sessionId) stopPending.current = null;
+    }
+  }, [agent, session, state.working, notice, localId, die]);
 
   const decide = useCallback(
     async (approvalId: string, decision: Decision) => {
+      if (approvalTimers.current.has(approvalId)) return;
       setAnswering((current) => new Set(current).add(approvalId));
+      setUnconfirmed((current) => {
+        const next = new Set(current);
+        next.delete(approvalId);
+        return next;
+      });
+      const timer = setTimeout(() => {
+        approvalTimers.current.delete(approvalId);
+        setAnswering((current) => {
+          const next = new Set(current);
+          next.delete(approvalId);
+          return next;
+        });
+        setUnconfirmed((current) => new Set(current).add(approvalId));
+      }, APPROVAL_CONFIRMATION_MS);
+      approvalTimers.current.set(approvalId, timer);
       const answer = await agent.approval(approvalId, decision);
       if (answer.ok) return;
+      const pendingTimer = approvalTimers.current.get(approvalId);
+      if (pendingTimer !== undefined) clearTimeout(pendingTimer);
+      approvalTimers.current.delete(approvalId);
       setAnswering((current) => {
+        const next = new Set(current);
+        next.delete(approvalId);
+        return next;
+      });
+      setUnconfirmed((current) => {
         const next = new Set(current);
         next.delete(approvalId);
         return next;
@@ -420,6 +494,7 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
     runtime,
     pending: pendingApprovals(state).length,
     answering,
+    unconfirmed,
     blocked,
     sessionId,
     dead,

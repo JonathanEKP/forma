@@ -16,6 +16,7 @@ import { isRecord } from "./events";
 import type { Remembered, Said, ViewChip } from "./chat";
 
 const KEY = "forma.chat";
+const DRAFT_KEY = "forma.chat.draft";
 
 export interface Store {
   getItem(key: string): string | null;
@@ -82,10 +83,30 @@ export function remembering(context: string, window: string, remembered: Remembe
   }
 }
 
+/** The unsent text in this tab. Unlike chat history, it has no server counterpart. */
+export function recallDraft(store: Store | null = browserStore()): string {
+  try {
+    return store?.getItem(DRAFT_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+/** Keep an unsent message across a reload, or remove it once the Runtime accepts it. */
+export function rememberDraft(text: string, store: Store | null = browserStore()): void {
+  try {
+    if (text.length === 0) store?.removeItem(DRAFT_KEY);
+    else store?.setItem(DRAFT_KEY, text);
+  } catch {
+    // A tab whose storage is blocked remains usable for this page load.
+  }
+}
+
 /** Ends the tab's chat: called on sign-out, because the conversation was the signed-in person's. */
 export function forgetChat(store: Store | null = browserStore()): void {
   try {
     store?.removeItem(KEY);
+    store?.removeItem(DRAFT_KEY);
   } catch {
     // Nothing to forget in a store that cannot be reached.
   }

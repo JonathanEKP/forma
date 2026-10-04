@@ -149,10 +149,14 @@ re-tested 2026-10-04: still open — upstream (Pontis), unchanged: FakeProvider 
 ## F-30-6 — A resolve that the Runtime refuses is answered 200 `delivered:true`, with a misleading code
 
 - **Severity:** low
-- **Status:** open
+- **Status:** partly fixed (566cdd8) — refusal code upstream (Pontis)
 - **Instance / provider:** instance 4, FakeProvider
 
 Replaying an approve/deny for a used, cancelled or expired approval returns `{"delivered":true}` (HTTP 200) from `/agent/intent`; the only trace is `driver-a.log`: `REFUSED approval_expired no approval apr_… is awaiting a decision on this Device` — "expired" for an approval that was already answered. State never changes (exactly-once holds), but a caller cannot tell it was ignored. A same-tick double click in the UI sends two resolves for the same reason (a real double click is probably guarded by the `answering` state; not tested with real clicks).
+
+Forma's durable event stream does carry `approval.resolved` (approved, denied or expired) and `approval.cancelled`; the real Codex step 11 record includes `approval.resolved` followed by `capability.completed` ([run 1](../pontis-step11-real-codex.md#s6--approval--pass-consent-and-one-approval-the-rest-of-s6-not-run)). After a click the card now says **Sending…** and settles only when one of those approval events arrives. A second click is ignored while the first resolve is awaiting confirmation. If the approval is still pending after 20 seconds, it says **Not confirmed by your device** and restores the buttons, so `delivered: true` is never presented as an approval result.
+
+The refusal-code part remains upstream: Pontis `DeviceGateway.sendIntentForContext` returns only `authorized` and `delivered`; the Runtime refusal code reaches its observer/log and is not sent as a protocol notification. Returning the actual refusal code requires a Pontis change, which this task forbids; the issue is recorded as item 11 in [the upstream report](../pontis-upstream-report.md#11-a-runtime-refused-approval-resolve-still-returns-delivered-true-to-the-host).
 
 ## F-30-7 — A pending approval is easy to miss; the card hides its deadline
 

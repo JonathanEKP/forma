@@ -38,13 +38,31 @@ describe('GET /agent/context', () => {
     });
   });
 
-  it('refuses a request with no session, in the shape /agent/intent does', async () => {
+  it('returns the same typed 401 for a missing or invalid session', async () => {
     await withSidecar(async (sidecar) => {
       for (const headers of [{}, { authorization: 'Bearer nobody' }]) {
-        const response = await fetch(`${sidecar.origin}/agent/context`, { headers });
-        assert.equal(response.status, 403);
-        assert.deepEqual(await response.json(), { error: 'not_authenticated' });
+        for (const [path, method] of [['/agent/context', 'GET'], ['/agent/intent', 'POST']] as const) {
+          const response = await fetch(`${sidecar.origin}${path}`, {
+            method,
+            headers: { ...headers, ...(method === 'POST' ? { 'content-type': 'application/json' } : {}) },
+            ...(method === 'POST' ? { body: '{}' } : {}),
+          });
+          assert.equal(response.status, 401);
+          assert.deepEqual(await response.json(), { error: { code: 'unauthenticated' } });
+        }
       }
+    });
+  });
+
+  it('answers an over-limit intent body with its typed 413 refusal', async () => {
+    await withSidecar(async (sidecar) => {
+      const response = await fetch(`${sidecar.origin}/agent/intent`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer session-user', 'content-type': 'application/json' },
+        body: JSON.stringify({ type: 'session.input', payload: { sessionId: 'ses_1', text: 'x'.repeat(64 * 1024) } }),
+      });
+      assert.equal(response.status, 413);
+      assert.deepEqual(await response.json(), { error: { code: 'message_too_large' } });
     });
   });
 

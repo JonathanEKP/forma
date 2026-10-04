@@ -82,6 +82,7 @@ function record(over: Partial<DeviceRecord> = {}): DeviceRecord {
 
 let devices: DeviceRecord[];
 let sidecarUp: boolean;
+let signInExpired: boolean;
 let accountless: boolean;
 let requests: Array<{ url: string; method: string }>;
 
@@ -97,6 +98,7 @@ function route(url: string, method: string): Response {
   if (url.endsWith("/api/v1/api-keys")) return json([]);
   if (url.startsWith("/pons/")) {
     if (!sidecarUp) return new Response("Bad Gateway", { status: 502 });
+    if (url === "/pons/v1/devices" && signInExpired) return json({ error: { code: "unauthenticated" } }, 401);
     if (url === "/pons/v1/devices") return json({ protocol: 1, devices });
     if (url === "/pons/v1/pairing/codes" && method === "POST") {
       return json({
@@ -129,6 +131,7 @@ describe("the device panel on the Agents page", () => {
   beforeEach(() => {
     devices = [record()];
     sidecarUp = true;
+    signInExpired = false;
     accountless = false;
     requests = [];
     identity.hosted = true;
@@ -221,6 +224,14 @@ describe("the device panel on the Agents page", () => {
     expect(screen.getByRole("heading", { name: "Personal access tokens" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Use Forma with your favourite AI" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Create pairing code" })).toBeNull();
+  });
+
+  it("asks the person to sign in again when the devices route answers 401", async () => {
+    signInExpired = true;
+    renderAgents();
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Your sign-in has expired. Sign in again.");
   });
 
   it("draws nothing Pontis-related on a local Forma, and does not ask the sidecar", async () => {

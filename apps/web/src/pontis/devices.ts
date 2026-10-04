@@ -89,7 +89,7 @@ export class PontisError extends Error {
     readonly code: string,
     readonly status: number,
   ) {
-    super(code);
+    super(status === 401 && code === "unauthenticated" ? "Your sign-in has expired. Sign in again." : code);
     this.name = "PontisError";
   }
 }
