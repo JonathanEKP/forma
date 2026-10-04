@@ -26,6 +26,7 @@ import {
   type RuntimeView,
 } from "./chat";
 import { liveFeed } from "./channel";
+import { useWindowBinding } from "./useWindowBinding";
 import { asDurable, openEventStream, parseLiveFrame, RETRY_MS, type EventStream, type StreamState } from "./events";
 
 /** How often the device list is re-read: presence changes slowly, and a turn does not need it. */
@@ -206,6 +207,8 @@ export function useChat({ enabled, client, pollMs }: ChatOptions): Chat {
   // provider is not there to take input until then, and sending it early is a
   // race the person would see as a message that vanished.
   const session = state.session;
+  // D-2: an agent's actions go to the window whose chat started the session.
+  useWindowBinding(session?.id ?? null);
   useEffect(() => {
     const waiting = queued.current;
     if (!waiting || !session || session.id !== waiting.sessionId) return;
