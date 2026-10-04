@@ -136,12 +136,13 @@ export function createIntentRoute(options: {
     if (request.method !== 'POST') return reply(response, 405, { error: 'method_not_allowed' });
 
     const person = await options.resolvePerson(request);
-    if (!person) return reply(response, 403, { error: 'not_authenticated' });
+    if (!person) return reply(response, 401, { error: { code: 'unauthenticated' } });
 
     let body: unknown;
     try {
       body = await readBody(request);
-    } catch {
+    } catch (cause) {
+      if (cause instanceof BodyTooLarge) return reply(response, 413, { error: { code: 'message_too_large' } });
       return reply(response, 400, { error: 'bad_request' });
     }
     const intent = rebuild(body, person);
@@ -195,7 +196,7 @@ export function createContextRoute(options: { readonly resolvePerson: ResolvePer
     if ((request.url ?? '').split('?')[0] !== CONTEXT_PATH) return false;
     if (request.method !== 'GET') return reply(response, 405, { error: 'method_not_allowed' });
     const person = await options.resolvePerson(request);
-    if (!person) return reply(response, 403, { error: 'not_authenticated' });
+    if (!person) return reply(response, 401, { error: { code: 'unauthenticated' } });
     return reply(response, 200, { applicationContextId: person.applicationContextId });
   };
 }
@@ -255,12 +256,14 @@ async function readBody(request: IncomingMessage): Promise<unknown> {
   for await (const chunk of request as AsyncIterable<unknown>) {
     if (!(chunk instanceof Uint8Array)) throw new Error('unreadable body');
     size += chunk.byteLength;
-    if (size > MAX_BODY_BYTES) throw new Error('body too large');
+    if (size > MAX_BODY_BYTES) throw new BodyTooLarge();
     chunks.push(Buffer.from(chunk));
   }
   const parsed: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'));
   return parsed;
 }
+
+class BodyTooLarge extends Error {}
 
 function reply(response: ServerResponse, status: number, body: unknown): true {
   const bytes = Buffer.from(JSON.stringify(body));
