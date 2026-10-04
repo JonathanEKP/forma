@@ -23,6 +23,7 @@ reproduction steps) is in Forma's findings files: `forma:docs/pontis-browser-fin
 | 9 | An oversize `/ui/actions` body resets the connection instead of answering `413` | low | F-50-9 |
 | 10 | A polyglot host has to write Rust to use FakeProvider | info | sidecar README |
 | 11 | A Runtime-refused approval resolve still returns `delivered: true` to the host | **low** | F-30-6 |
+| 12 | No per-session stop intent: a host cannot end one session without stopping its Device | low | S12 |
 
 ---
 
