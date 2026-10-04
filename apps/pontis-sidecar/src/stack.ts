@@ -117,10 +117,10 @@ export class Stack {
   }
 
   /**
-   * Pairs the driver as a Device, opens a session with `providerId` and waits for it to start.
+   * Pairs the driver as a Device and, given a `providerId`, opens a session and waits for it to start.
    * `driverEnvironment` is what that provider needs (`FORMA_DRIVER_*`).
    */
-  async attachDriver(driverEnvironment: Record<string, string>, providerId: string): Promise<void> {
+  async attachDriver(driverEnvironment: Record<string, string>, providerId?: string): Promise<void> {
     const pairing = (await json(await this.toSidecar('POST', '/pons/v1/pairing/codes', {}))) as { code: string; applicationId: string };
     const driver = this.start('test-driver', DRIVER, [], {
       PATH: process.env.PATH ?? '',
@@ -131,6 +131,11 @@ export class Stack {
     });
     await ready(driver);
 
+    if (providerId !== undefined) await this.startSession(providerId);
+  }
+
+  /** Opens a session with `providerId` through the sidecar, and waits for it to start. */
+  async startSession(providerId: string): Promise<void> {
     const started = (await json(await this.toSidecar('POST', '/agent/intent', { type: 'session.start', payload: { providerId } }))) as {
       sessionId: string;
       delivered: boolean;
@@ -194,14 +199,20 @@ export class Stack {
     return events.filter((event) => event.sequence > sent);
   }
 
+  /** Reads the durable event page into `seen`, and returns it. */
+  async refresh(): Promise<readonly DurableEvent[]> {
+    const page = (await json(
+      await this.toSidecar('GET', `/pons/v1/events?scope=application_context&applicationContextId=${this.account}&after=0`),
+    )) as { events: DurableEvent[] };
+    this.seen = page.events;
+    return this.seen;
+  }
+
   /** Waits for the next event of `type` past the cursor; returns everything read up to it. */
   async nextEvent(type: string, matches: (event: DurableEvent) => boolean = () => true): Promise<DurableEvent[]> {
     let found: DurableEvent | undefined;
     await this.until(`${type}`, async () => {
-      const page = (await json(
-        await this.toSidecar('GET', `/pons/v1/events?scope=application_context&applicationContextId=${this.account}&after=0`),
-      )) as { events: DurableEvent[] };
-      this.seen = page.events;
+      await this.refresh();
       found = this.seen.find(
         (event) => event.sequence > this.cursor && event.type === type && (event.sessionId ?? this.sessionId) === this.sessionId && matches(event),
       );
@@ -363,7 +374,7 @@ export function documentOf(pages: number, first: readonly string[]): unknown {
   const text = (id: string, line: number) => ({
     type: 'text',
     id,
-    name: line === 0 ? 'Headline' : `Line ${line}`,
+    name: line === 0 ? 'Headline' : line === 1 ? 'Tagline' : `Line ${line}`,
     transform: { x: 80, y: 160 + line * 260, width: 920, height: 220 },
     text: line === 0 ? 'HELLO' : 'A long line of\nset type to measure',
     font_family: 'Geist',

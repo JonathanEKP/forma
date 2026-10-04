@@ -7,3 +7,4 @@ typecheck of apps/pontis-sidecar (tsc)
 fmt and clippy of apps/pontis-sidecar/test-driver
 unit tests of apps/pontis-sidecar (Boundary F client, capabilities, composition, UI actions)
 the local run against FakeProvider (read, write, cancel, approval)
+the real Codex run (opt-in, FORMA_REAL_CODEX=1; spends the owner's tokens, needs the pinned Codex 0.158.0 and a signed-in account — never in CI or pnpm test)

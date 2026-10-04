@@ -7,7 +7,8 @@
     "start": "node src/main.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings 0",
-    "test": "node --test \"src/**/*.test.ts\""
+    "test": "node --test \"src/**/*.test.ts\"",
+    "test:real-codex": "FORMA_REAL_CODEX=1 node --test --test-concurrency=1 src/real-codex.test.ts"
   },
   "dependencies": {
     "@pontis/control-plane": "link:.pontis/services/control-plane",
