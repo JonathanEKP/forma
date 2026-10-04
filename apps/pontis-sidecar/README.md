@@ -22,7 +22,8 @@ the evidence (step 12).
 | `src/live.ts` | what the person's open windows hear while the agent works (durable events from the store with their `sequence`, deltas and presence from the Device's own notification), and `GET /pons/v1/devices` with `online` merged from the live sockets |
 | `src/sidecar.ts` | the composition |
 | `src/guidance.ts` | the `ApplicationAgentGuidance`: the opening context only; the manual is `forma.guide` |
-| `src/stack.ts`, `src/ui-window.ts` | test support: the processes of a local run and the person who drives them, and a stand-in for the editor's window. Shared by `local-run.test.ts`, `real-codex.test.ts` and `ui.test.ts`; nothing else may import them |
+| `src/stack.ts`, `src/ui-window.ts` | test support: the processes of a local run and the person who drives them, and a stand-in for the editor's window. Shared by `local-run.test.ts`, `real-codex.test.ts` and `ui.test.ts`; nothing else may import them, except `browser-stack.ts` |
+| `src/browser-stack.ts` | an isolated, multi-instance run for a person at a real browser: the same chain behind a fake identity provider, with Vite and seeded people. A harness, not a test; it names the driver and borrows `stack.ts`'s token minting. [docs/pontis-browser-testing.md](../../docs/pontis-browser-testing.md) |
 | `test-driver/` | a test-only Pontis Runtime, in Rust, with FakeProvider or — `FORMA_DRIVER_PROVIDER=codex` — the real Codex in `capability_only` |
 
 Everything else is Pontis, imported from `@pontis/core`, `@pontis/server` and
@@ -117,6 +118,15 @@ FORMA_REAL_CODEX_OUT=/tmp/record.json pnpm --filter forma-pontis-sidecar test:re
 
 [docs/pontis-step11-real-codex.md](../../docs/pontis-step11-real-codex.md) has the setup, what the
 run showed, and — as a section of its own — what it did not.
+
+## In a browser
+
+`src/browser-stack.ts` runs the same chain for a person at the editor rather than a test, one
+isolated instance per number so several can run at once, behind a fake identity provider so nothing
+reaches a real Supabase project: `node src/browser-stack.ts start 1 --provider codex`. How to start
+it, sign in, pick a provider and stop it, and what is not modelled, is in
+[docs/pontis-browser-testing.md](../../docs/pontis-browser-testing.md); what testers find goes in
+[docs/pontis-browser-findings/](../../docs/pontis-browser-findings/README.md).
 
 ## Decisions recorded here
 

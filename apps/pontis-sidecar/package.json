@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node src/main.ts",
+    "browser-stack": "node src/browser-stack.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings 0",
     "test": "node --test \"src/**/*.test.ts\"",

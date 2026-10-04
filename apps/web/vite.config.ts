@@ -28,7 +28,13 @@ export default defineConfig({
       // are not a browser's to call and are deliberately absent. The "devices"
       // pattern ends in a slash or the end of the path so it cannot match the
       // Runtime's "device/".
-      "^/(pons/v1/(pairing/codes|devices(/.*)?|events|jobs(/.*)?|ui/.*)|agent/(intent|context))$": pontis,
+      //
+      // Vite tests this against the URL *with its query string* (Caddy's path
+      // matcher does not see one), so the optional "?..." at the end is what
+      // lets the polled event page, "/pons/v1/events?scope=...&after=0", reach
+      // the sidecar. Without it Vite answers that request with index.html and
+      // the chat reads "can't reach the agent service" forever.
+      "^/(pons/v1/(pairing/codes|devices(/.*)?|events|jobs(/.*)?|ui/.*)|agent/(intent|context))(\\?.*)?$": pontis,
     },
   },
   build: {

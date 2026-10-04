@@ -806,6 +806,7 @@ Read this before the list below; the list is the plan, this is what happened to 
 | 10b In-app chat and `/agent/context` | done, merged into `main` | `93dde1a`, `58b754f`, `f081782`, `0a34a10`, `005d9d0` (branch `JonathanEKP/pontis-10b-chat`) |
 | 10c Live delivery and device presence | done, merged into `main` | `f501cc9`, `ce96b88`, `93731c2`, `821e33d` (branch `JonathanEKP/pontis-10c-live`) |
 | 11 Real Codex local run | **done** — Codex 0.158.0, `capability_only`, `gpt-6-luna` at low effort; posture verified 7/7; S1, S2, S6, S7, S8 and S13 passed on real turns (7 turns, one retry spent strengthening S8). What was *not* run is its own section in [pontis-step11-real-codex.md](pontis-step11-real-codex.md). Merged into `main` | `bc72278`, `d3d95c9`, `19c633c`, `748e862`, `7383789`, evidence `c089a10` |
+| Browser testing harness | **done** — `apps/pontis-sidecar/src/browser-stack.ts`: an isolated instance per number (ports `4800 + 10N`), fake identity provider, two seeded accounts, Runtime on FakeProvider or real Codex; proved in the Orca browser with a real Codex answer. How to use it: [pontis-browser-testing.md](pontis-browser-testing.md); testers' findings: [pontis-browser-findings/](pontis-browser-findings/README.md). Building it found and fixed two product bugs that kept the chat from working in a browser (Vite proxy, Codex auth `unknown`), see [00-harness.md](pontis-browser-findings/00-harness.md) | branch `JonathanEKP/pontis-b0-browser-harness` |
 | 12 PV-1 evidence | not started; follows 11 | |
 
 **Step 11, as dispatched (2026-10-03).** The owner authorized a real run on their Codex account
@@ -827,6 +828,14 @@ The run is opt-in — gated on an environment variable, never part of `pnpm test
 spends the owner's tokens. Budget: one real turn per scenario, at most one retry, and the worker
 stops and asks rather than looping. Transcripts are kept as evidence for step 12, with no token,
 header or credential in them.
+
+**Open from the browser harness (2026-10-04).** Pontis's Codex probe never reports authentication
+(`authenticated: false`, `authMode: unknown` for every installed Codex — App Server has no supported
+auth-status query), so the chat treated every Codex as signed out and could not send. Forma now treats
+`unknown` as usable and says "Sign-in not verified" (`76f2fd0`); a truly signed-out Codex fails at
+`session.start`. That is a Pontis-side observation to raise later — the Pontis repository was not
+touched. Also open: the chat's agent is not told which design is open and guesses ids
+([F-00-4](pontis-browser-findings/00-harness.md)).
 
 **Where it stands after step 10 (2026-10-03).** Everything up to step 10 is on `main` and green:
 161 web tests, 62 sidecar tests including the FakeProvider local run, and S11. What no test has

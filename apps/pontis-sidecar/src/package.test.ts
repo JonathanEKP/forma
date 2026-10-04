@@ -38,7 +38,7 @@ describe('the package boundary', () => {
     // `stack.ts` is the tests' shared harness: it starts the driver, so it names it. What keeps that
     // from being a leak is the second half — nothing that is not a test, or the harness itself,
     // may import it.
-    const support = ['stack.ts', 'ui-window.ts'];
+    const support = ['stack.ts', 'ui-window.ts', 'browser-stack.ts'];
     const isTest = ({ name }: { name: string }) => name.endsWith('.test.ts') || support.includes(name);
     for (const { name, text } of SOURCES.filter((source) => !isTest(source))) {
       assert.ok(!text.includes('test-driver'), `${name} names the test driver`);

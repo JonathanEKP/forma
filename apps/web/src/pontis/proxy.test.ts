@@ -83,6 +83,34 @@ describe("the Pontis proxy routes", () => {
     }
   });
 
+  it("routes a browser path that carries a query string, as Vite sees it", () => {
+    // Vite tests its proxy keys against the URL including the query; Caddy's path matcher never
+    // sees one, so only Vite needs this, and the event page is the request that has one.
+    for (const url of [
+      "/pons/v1/events?scope=application_context&applicationContextId=a&after=0",
+      "/pons/v1/devices?x=1",
+      "/pons/v1/jobs/job_1?x=1",
+      "/agent/context?x=1",
+    ]) {
+      expect(viteMatches(url), `Vite: ${url}`).toBe(true);
+      expect(caddy(url.slice(0, url.indexOf("?"))), `Caddy: ${url}`).toBe(true);
+    }
+  });
+
+  it("does not let a query string smuggle a Runtime route or a near miss through", () => {
+    for (const url of [
+      "/pons/v1/device/x?/pons/v1/events",
+      "/pons/v1/pairing/claim?x",
+      "/pons/v1/pairing/claim?/pons/v1/pairing/codes",
+      "/pons/v1/device/socket?/agent/context",
+      "/pons/v1/eventsx?x=1",
+      "/agent/contextx?x=1",
+      "/agent/other?/agent/context",
+    ]) {
+      expect(viteMatches(url), `Vite: ${url}`).toBe(false);
+    }
+  });
+
   it("flushes the streams and only reaches the sidecar by loopback", () => {
     expect(stream).toEqual(["/pons/v1/ui/*"]);
     const block = caddyfile.slice(caddyfile.indexOf("handle @pontis_stream"));

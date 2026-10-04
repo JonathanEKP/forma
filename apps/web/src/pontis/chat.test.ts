@@ -161,6 +161,21 @@ describe("runtime status", () => {
     expect(view).toMatchObject({ at: "online", provider: { usable: false, unusableBecause: "not signed in on this device" } });
   });
 
+  it("offers a provider whose sign-in cannot be known, and says it was not verified", () => {
+    // Pontis's Codex probe reports authenticated:false with authMode:"unknown" for every Codex.
+    const view = runtimeView({ devices: [device({ capabilities: [{ providerId: "codex", installed: true, compatible: true, authenticated: false, authMode: "unknown" }] })] });
+    expect(view).toMatchObject({ at: "online", provider: { id: "codex", authMode: "unknown", usable: true, signInNotVerified: true } });
+    expect(view).not.toMatchObject({ provider: { unusableBecause: expect.anything() as unknown } });
+  });
+
+  it("still refuses a provider that is not installed, not compatible, or known not to be signed in", () => {
+    const provider = (overrides: Record<string, unknown>) =>
+      runtimeView({ devices: [device({ capabilities: [{ providerId: "codex", installed: true, compatible: true, authenticated: false, authMode: "unknown", ...overrides }] })] });
+    expect(provider({ installed: false })).toMatchObject({ provider: { usable: false, unusableBecause: "not installed on this device" } });
+    expect(provider({ compatible: false })).toMatchObject({ provider: { usable: false } });
+    expect(provider({ authMode: "not_authenticated" })).toMatchObject({ provider: { usable: false, unusableBecause: "not signed in on this device" } });
+  });
+
   it("distinguishes offline, ambiguous and none, and ignores a revoked device", () => {
     expect(runtimeView({ devices: [device({ online: false })] })).toEqual({ at: "offline", name: "Studio laptop" });
     expect(runtimeView({ devices: [device(), device({ id: "dev_2" })] })).toEqual({ at: "ambiguous" });
