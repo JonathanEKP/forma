@@ -328,11 +328,43 @@ describe("a conversation", () => {
     await waitFor(() =>
       expect(backend.intents()).toContainEqual({ type: "approval.resolve", payload: { approvalId: "apr_1", decision: "approveOnce" } }),
     );
+    expect(scope.getByText("Sending…")).toBeTruthy();
     // Held until the Runtime's own event says it landed, so it cannot be answered twice.
     expect(scope.getByRole<HTMLButtonElement>("button", { name: "Deny" }).disabled).toBe(true);
 
     backend.push(4, "approval.resolved", { approvalId: "apr_1", status: "approved" });
     await screen.findByText("Approved");
+  });
+
+  it("lets a pending approval be answered again when the device does not confirm it", async () => {
+    await attach();
+    await ready();
+    backend.push(1, "session.created");
+    backend.push(2, "session.started");
+    backend.push(3, "approval.requested", {
+      approvalId: "apr_1",
+      invocationId: "i3",
+      capabilityId: "design.applyOperations",
+      risk: "write",
+      humanSummary: "Edit this design",
+      importantArguments: [],
+      affectedResourceCount: 1,
+    });
+
+    const card = await screen.findByText("Needs your approval");
+    const scope = within(card.closest("li") as HTMLElement);
+    vi.useFakeTimers();
+    fireEvent.click(scope.getByRole("button", { name: "Approve once" }));
+    expect(scope.getByText("Sending…")).toBeTruthy();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20_000);
+    });
+
+    expect(scope.getByText("Not confirmed by your device")).toBeTruthy();
+    expect(scope.getByRole<HTMLButtonElement>("button", { name: "Approve once" }).disabled).toBe(false);
+    expect(scope.getByRole<HTMLButtonElement>("button", { name: "Deny" }).disabled).toBe(false);
+    vi.useRealTimers();
   });
 
   it("stop sends session.cancel for the live session", async () => {
