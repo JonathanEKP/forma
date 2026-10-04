@@ -73,32 +73,72 @@ a long-idle Codex approval, mixed destructive+benign card reading.
 ## F-30-3 — The editor does not show an approved (or any) agent write
 
 - **Severity:** high
-- **Status:** open
+- **Status:** fixed (56d3e1c)
 - **Instance / provider:** instance 4, FakeProvider
 
 **Steps** — open the cover, ask "Raise the headline…" then "Remove the headline.", approve.
 **Actual** — chat says "Approved … Completed … The headline is gone"; Forma is at v3 without the layer; the editor stays at "v1" with the Headline in the list and canvas, indefinitely. Nothing invalidates the design query on agent writes (`queries.ts` only invalidates on the editor's own mutations). A human edit then gets "This design changed elsewhere. You were editing v1; it is now v3" (that recovery works).
 **Evidence** — A14-after-approve-editor-state.png, A15-stale-editor-conflict.png.
 
+**Fixed (fix batch 1, Task A)** with F-chat-2: the editor follows the agent's write (an approved
+removal included) and shows the new version without a conflict first.
+
 ## F-30-4 — With the Runtime dead, a pending card never expires and keeps live buttons
 
 - **Severity:** medium
-- **Status:** open
+- **Status:** fixed (56d3e1c)
 - **Instance / provider:** instance 4, FakeProvider (own driver killed with SIGKILL)
 
 **Steps** — raise a card, kill driver-a, wait past `expiresAt` (2 min), also reload.
 **Actual** — the expiry event is written by the Runtime, so none arrives. The card stays "Approve once / Deny", "The agent is working…" and Stop shows, for ever and across reloads; each click answers "Your Runtime is offline. Start it on your device, then try again." The card carries `expiresAt` but the UI never compares it with the clock.
 **Evidence** — A16-driver-dead-card-pending.png, A17-dead-driver-after-expiry.png.
 
+**Fixed (fix batch 1, Task A).** A Runtime that stays gone ends the conversation, and ending it turns
+every pending card into "Expired before you answered" with no buttons — across reloads, because the tab
+remembers that the session is over. (The clock is still not compared with `expiresAt`: the card does
+not guess at the server's deadline; the end of the session is what settles it.)
+
 ## F-30-5 — A chat session dies about 5 minutes after it starts, and nothing lets the person start another
 
 - **Severity:** high
-- **Status:** open (cause not confirmed; the test-driver's delegation lifetime may be the harness's, not production's)
+- **Status:** upstream (Pontis) — Forma side: the death is now legible and recoverable (56d3e1c)
 - **Instance / provider:** instance 4, both Codex and FakeProvider
 
 **Steps** — start a session, keep using it past ~5 minutes (Codex: started 03:02:29, last capability OK 03:06:54, failed 03:08:13; Fake: started 03:11:09, failed 03:16:56).
 **Actual** — every capability fails: "the application delegation has expired" (Codex) / "design.applyOperations · Failed: the remote application delegation has expired" (Fake), including the call that would raise an approval card. The agent says "Please reconnect Forma", but the UI has no such action, a reload reattaches to the same dead session, and Stop shows only mid-turn. The chat is unusable until the stack restarts. Approvals are caught by this: a card can never be raised in an old session.
 **Evidence** — C09-delegation-expired-chat.png; events 77–80 of the Codex run.
+
+**Cause found (fix batch 1, Task A) — it is Pontis's, and production has it.** Reproduced on instance 7
+with FakeProvider: a session started 06:58:25 made one capability call at 06:58:59 (the Runtime obtains
+its `AppDelegation`, 5 minutes, `APP_DELEGATION_TTL_MS`); the same call at 07:04:22 failed
+`delegation_expired` with `capability.requested` and `capability.failed` on the **same millisecond** —
+refused inside the Runtime, before any request to the sidecar. In `pontis/crates/runtime/src/delegation.rs`
+the refresh-15 s-early logic lives only in `SessionDelegations::bearer_for`, which is reached when a call
+goes out to the gateway. Every call first passes the synchronous `SessionDelegations::validate_session`
+(FakeProvider through `RemoteAppDelegation::validate_session`, Codex through
+`McpSessionBinding::validate_authority` in `mcp.rs`), which returns `DelegationExpired` as soon as the held
+grant is no longer `is_live` (≤ 15 s left). So once a grant goes stale the call is refused before
+`bearer_for` can ever replace it, and the session never recovers. It matches the Codex run above (grant
+≈03:02:29, last success 03:06:54, first failure 03:08:13). It is not the test-driver and not the sidecar's
+routes: the real `pontisd` Runtime shares the code path.
+
+Candidate fixes, both Pontis's: (1) `validate_session` should not treat a stale-but-refreshable grant as
+expired — let the call proceed to `bearer_for`, which refreshes — or (2) the Runtime refreshes proactively
+at TTL − 15 s for every live session. Not touched here (the Pontis repository is not Forma's to change), and
+the harness deliberately has no keep-alive, so the re-test can still see the defect.
+
+**Forma's side.** The chat recognises `delegation_expired` and ends the conversation with "This session
+expired: the permission it holds to work in Forma lasts about five minutes and was not renewed. Start a
+new session to carry on; what you have said so far stays above it." and a **New session** button, so the
+death is legible and recoverable instead of a wedge. Until Pontis fixes it, a session is good for about five
+minutes after its first call.
+
+Browser proof of Forma's side (instance 7, FakeProvider): a session's second call five minutes after its first
+failed "the remote application delegation has expired"; the chat showed the expiry notice and **New session**
+([screenshot](evidence/approvals/F-30-5-fixed-expired-session-recoverable.png)), and after a reload re-attached
+to the same tab's session with what the person had said, and the notice. **New session** started a working
+session with the old history above a divider. A session that lives past five minutes could not be shown, because
+the cause is upstream.
 
 ## F-30-6 — A resolve that the Runtime refuses is answered 200 `delivered:true`, with a misleading code
 

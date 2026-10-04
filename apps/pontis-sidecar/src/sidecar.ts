@@ -132,7 +132,7 @@ export async function startSidecar(options: SidecarOptions): Promise<Sidecar> {
       return person && person.userId === user.userId ? person.applicationContextId : undefined;
     },
   });
-  const intentRoute = createIntentRoute({ controlPlane, devices, resolvePerson, log: options.log });
+  const intentRoute = createIntentRoute({ boundary, controlPlane, devices, resolvePerson, log: options.log });
   const contextRoute = createContextRoute({ resolvePerson });
   const devicesRoute = createDevicesRoute({ controlPlane, devices, resolvePerson });
 

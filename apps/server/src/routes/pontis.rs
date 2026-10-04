@@ -98,6 +98,7 @@ pub const TIMEOUT_HEADER: &str = "x-forma-timeout-ms";
 pub const INVOCATION_OUTCOME_HEADER: &str = "x-forma-invocation";
 
 pub const PROJECT_LIST: &str = "project.list";
+pub const DESIGN_LIST: &str = "design.list";
 pub const DESIGN_GET: &str = "design.get";
 pub const DESIGN_VALIDATE: &str = "design.validate";
 pub const APPLY_OPERATIONS: &str = "design.applyOperations";
@@ -106,8 +107,9 @@ pub const BRAND_GET: &str = "brand.get";
 pub const ASSET_REQUEST_CREATE: &str = "assetRequest.create";
 
 /// Every capability Boundary F serves, one per route.
-pub const SERVED: [&str; 7] = [
+pub const SERVED: [&str; 8] = [
     PROJECT_LIST,
+    DESIGN_LIST,
     DESIGN_GET,
     DESIGN_VALIDATE,
     APPLY_OPERATIONS,
@@ -447,6 +449,42 @@ async fn list_projects(
         .with_details(serde_json::json!({ "items": projects.len(), "max_items": max_items })));
     }
     respond(PROJECT_LIST, &projects)
+}
+
+/// A project's designs, most recently changed first, without their documents.
+///
+/// What lets an agent turn "open my cover" into an id: nothing else on this door
+/// enumerates designs, so a design the person had not pasted an id for could not
+/// be reached at all (F-40-6). A project of another account is answered exactly
+/// as a project that does not exist, like `brand.get`.
+#[get("/projects/{id}/designs")]
+async fn list_designs(
+    state: web::Data<AppState>,
+    request: HttpRequest,
+    path: web::Path<String>,
+) -> Result<HttpResponse, PontisError> {
+    let who = represented(&request, &state)?;
+    let project = ProjectId(parse_id(&path, "project id")?);
+    application::projects::get(&*state.projects, who.account, project).await?;
+    let designs = application::designs::list(&*state.designs, who.account, project).await?;
+    let max_items = bounds(DESIGN_LIST).max_list_items;
+    if let Some(max_items) = max_items
+        .map(|max| max as usize)
+        .filter(|max| designs.len() > *max)
+    {
+        return Err(PontisError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "RESULT_TOO_LARGE",
+            CapabilityError::ResultTooLarge,
+            format!(
+                "this project has {} designs, over the {max_items}-item bound",
+                designs.len()
+            ),
+            "The list cannot be paged yet; read a design by id instead.",
+        )
+        .with_details(serde_json::json!({ "items": designs.len(), "max_items": max_items })));
+    }
+    respond(DESIGN_LIST, &designs)
 }
 
 /// One design, carrying the version a batch must echo as `base_version`.
@@ -1307,6 +1345,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         web::scope("/pontis")
             .app_data(json_config())
             .service(list_projects)
+            .service(list_designs)
             .service(get_design)
             .service(validate)
             .service(apply_operations)

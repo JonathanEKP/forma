@@ -22,6 +22,7 @@ import type { LogFields } from './log.ts';
 const CREDENTIAL = 'forma_svc_sentinel-credential-never-logged';
 const WHO = { userId: '11111111-1111-4111-8111-111111111111', applicationContextId: '22222222-2222-4222-8222-222222222222' };
 const DESIGN = '33333333-3333-4333-8333-333333333333';
+const PROJECT = '55555555-5555-4555-8555-555555555555';
 
 function never(): AbortSignal {
   return new AbortController().signal;
@@ -59,6 +60,7 @@ describe('Boundary F client', () => {
     try {
       const boundary = new FormaBoundary(forma.url, CREDENTIAL, log);
       await boundary.listProjects(WHO, 1024, never());
+      await boundary.listDesigns(WHO, PROJECT, 1024, never());
       await boundary.getDesign(WHO, DESIGN, 1024, never());
       await boundary.validate(WHO, DESIGN, 60_000, 1024, never());
       await boundary.applyOperations(WHO, DESIGN, { base_version: 1, operations: [], approval: null }, 'inv_1', 1024, never());
@@ -67,6 +69,7 @@ describe('Boundary F client', () => {
         forma.requests.map(({ method, path }) => `${method} ${path}`),
         [
           'GET /api/v1/pontis/projects',
+          `GET /api/v1/pontis/projects/${PROJECT}/designs`,
           `GET /api/v1/pontis/designs/${DESIGN}`,
           `POST /api/v1/pontis/designs/${DESIGN}/validate`,
           `POST /api/v1/pontis/designs/${DESIGN}/operations`,
@@ -79,9 +82,9 @@ describe('Boundary F client', () => {
         // Never marked as the MCP door: the service arm refuses that outright.
         assert.equal(request.headers['x-forma-entry'], undefined);
       }
-      assert.equal(forma.requests[2]?.headers[TIMEOUT_HEADER], '60000');
-      assert.equal(forma.requests[3]?.headers[INVOCATION_HEADER], 'inv_1');
-      assert.deepEqual(JSON.parse(forma.requests[3]?.body ?? ''), { base_version: 1, operations: [], approval: null });
+      assert.equal(forma.requests[3]?.headers[TIMEOUT_HEADER], '60000');
+      assert.equal(forma.requests[4]?.headers[INVOCATION_HEADER], 'inv_1');
+      assert.deepEqual(JSON.parse(forma.requests[4]?.body ?? ''), { base_version: 1, operations: [], approval: null });
     } finally {
       await forma.close();
     }

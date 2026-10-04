@@ -78,7 +78,13 @@ async function mayRead(
   designId: string,
   signal: AbortSignal,
 ): Promise<boolean> {
-  if (!addressable({ user, applicationContextId }) || !isUuid(designId)) return false;
+  if (!addressable({ user, applicationContextId })) return false;
+  // A string that is not an id names no resource, so there is nothing to disclose
+  // by saying so — and "you may not" for a typo sends an agent away rather than
+  // to fix the id (F-40-5). Same wording as `design.get`.
+  if (typeof designId !== 'string' || !isUuid(designId)) {
+    throw new CapabilityError('validation_error', `design id ${JSON.stringify(designId)} is not a UUID`);
+  }
   try {
     await boundary.getDesign(
       representing(user, applicationContextId),

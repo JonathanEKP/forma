@@ -71,7 +71,8 @@ export interface AgentClient {
   context(): Promise<Outcome<string>>;
   devices(): Promise<Outcome<RuntimeView>>;
   start(providerId: string): Promise<Outcome<{ sessionId: string }>>;
-  input(sessionId: string, text: string): Promise<Outcome<null>>;
+  /** `view` is what the editor shows; the sidecar turns it into the line in front of the text. */
+  input(sessionId: string, text: string, view?: ViewIds): Promise<Outcome<null>>;
   cancel(sessionId: string): Promise<Outcome<null>>;
   approval(approvalId: string, decision: Decision): Promise<Outcome<null>>;
 }
@@ -140,7 +141,7 @@ export function createAgentClient(options: AgentClientOptions): AgentClient {
       }
       return { ok: true, value: { sessionId: answer.value.sessionId } };
     },
-    input: (sessionId, text) => delivered("session.input", { sessionId, text }),
+    input: (sessionId, text, view) => delivered("session.input", { sessionId, text, ...(view && Object.keys(view).length > 0 ? { view } : {}) }),
     cancel: (sessionId) => delivered("session.cancel", { sessionId }),
     approval: (approvalId, decision) => delivered("approval.resolve", { approvalId, decision }),
   };
@@ -171,8 +172,10 @@ export interface ProviderView {
 }
 
 export type RuntimeView =
-  | { readonly at: "online"; readonly name: string; readonly runtimeVersion: string; readonly provider: ProviderView | null }
+  | { readonly at: "online"; readonly deviceId: string | null; readonly name: string; readonly runtimeVersion: string; readonly provider: ProviderView | null }
   | { readonly at: "offline"; readonly name: string }
+  /** Every device the person ever paired has been revoked: none will come back, and none is an instruction to pair. */
+  | { readonly at: "revoked"; readonly name: string }
   | { readonly at: "ambiguous" }
   | { readonly at: "none" };
 
@@ -206,19 +209,25 @@ function providerView(raw: unknown): ProviderView | null {
  */
 export function runtimeView(body: unknown): RuntimeView {
   const devices = isRecord(body) && Array.isArray(body.devices) ? (body.devices as unknown[]) : [];
-  const live = devices.filter(isRecord).filter((device) => typeof device.revokedAt !== "string");
+  const known = devices.filter(isRecord);
+  const live = known.filter((device) => typeof device.revokedAt !== "string");
   const online = live.filter((device) => device.online === true);
   if (online.length > 1) return { at: "ambiguous" };
   const [device] = online;
   if (!device) {
-    const [known] = live;
-    return known ? { at: "offline", name: typeof known.name === "string" ? known.name : "your device" } : { at: "none" };
+    const [waiting] = live;
+    if (waiting) return { at: "offline", name: typeof waiting.name === "string" ? waiting.name : "your device" };
+    // Revoked is not offline: a revoked Runtime never comes back, and "start it
+    // on your device" is the wrong advice for it (F-10-4).
+    const [revoked] = known;
+    return revoked ? { at: "revoked", name: typeof revoked.name === "string" ? revoked.name : "your device" } : { at: "none" };
   }
   const providers = (Array.isArray(device.capabilities) ? (device.capabilities as unknown[]) : [])
     .map(providerView)
     .filter((provider): provider is ProviderView => provider !== null);
   return {
     at: "online",
+    deviceId: typeof device.id === "string" ? device.id : null,
     name: typeof device.name === "string" ? device.name : "your device",
     runtimeVersion: typeof device.runtimeVersion === "string" ? device.runtimeVersion : "unknown",
     provider: providers.find((provider) => provider.usable) ?? providers[0] ?? null,
@@ -316,9 +325,30 @@ export function approvalView(payload: Readonly<Record<string, unknown>>, input: 
 
 export type ApprovalStatus = "pending" | "approved" | "denied" | "expired" | "cancelled";
 
+/** Where the person was when they said it, in the words they know: names, not ids. */
+export interface ViewChip {
+  readonly design?: string;
+  readonly page?: string;
+  readonly layer?: string;
+}
+
+/** What the editor reports with a message; the sidecar validates it and writes the line (`intents.ts`). */
+export interface ViewIds {
+  readonly projectId?: string;
+  readonly designId?: string;
+  readonly pageId?: string;
+  readonly layerId?: string;
+}
+
 export type Line =
-  /** What the person said. Echoed locally: no durable event carries it back. */
-  | { readonly kind: "person"; readonly id: string; readonly text: string }
+  /**
+   * What the person said, as typed. Echoed locally: no durable event carries it
+   * back, so the window keeps it (see `said`). The chip is the context that went
+   * with it.
+   */
+  | { readonly kind: "person"; readonly id: string; readonly text: string; readonly chip?: ViewChip }
+  /** Where an earlier session's history ends and a new one begins. */
+  | { readonly kind: "divider"; readonly id: string; readonly text: string }
   /** The agent's own words. */
   | { readonly kind: "agent"; readonly id: string; readonly text: string }
   /** The application running a capability the agent asked for. */
@@ -334,15 +364,49 @@ export type Line =
 
 export type SessionStatus = "starting" | "live" | "ended";
 
+/** One thing the person said, with where they were: kept by the window, because nothing else keeps it. */
+export interface Said {
+  readonly id: string;
+  readonly text: string;
+  readonly chip?: ViewChip;
+  /** The durable sequence applied when it was sent: it goes after that event when the history is replayed. */
+  readonly afterSeq: number;
+  /** The session it was said in; `null` while that session is still being started. */
+  readonly sessionId: string | null;
+}
+
 export interface ChatState {
   readonly lines: readonly Line[];
   readonly session: { readonly id: string; readonly status: SessionStatus } | null;
   /**
-   * The session this window started, if it has. Events of any other session are
-   * ignored: a replay of an earlier conversation must not replace the one the
-   * person just opened.
+   * The session this window started or was reattached to, if it has one. Events of
+   * any other session are ignored: a replay of an earlier conversation, or of
+   * another window's, must not replace the one the person has open.
    */
   readonly owned: string | null;
+  /**
+   * Why the session cannot be carried on, or `null`. A dead session is not a
+   * stopped one: the person did not choose it, and the Runtime will not answer
+   * it again, so the chat says so and offers a new one rather than a box that
+   * answers every message with the same refusal (F-chat-4, F-chat-5, F-10-2).
+   */
+  readonly dead: { readonly reason: string } | null;
+  /** The Device whose Runtime runs the session, as its own events say. */
+  readonly deviceId: string | null;
+  /** The highest durable sequence applied, of any session in the context. */
+  readonly seq: number;
+  /**
+   * A session is being started and its id is not known yet. The Runtime's `session.created`
+   * reaches the window before the sidecar's answer does, so what a session of unknown id says
+   * in this gap is held rather than taken for someone else's conversation and adopted, which
+   * wiped the person's first line (F-chat-1).
+   */
+  readonly starting: boolean;
+  readonly held: readonly DurableEvent[];
+  /** What the person said in this window, for the transcript to be rebuilt after a reload. */
+  readonly said: readonly Said[];
+  /** Said lines the replay has not yet reached the place of. */
+  readonly unplaced: readonly Said[];
   /** A turn is open: `turn.started` seen, no terminal event yet. */
   readonly working: boolean;
   /** What each invocation asked with, for rebuilding an approval card the request left bare. */
@@ -363,30 +427,156 @@ export interface ChatState {
   readonly completed: readonly string[];
 }
 
-export const emptyChat: ChatState = { lines: [], session: null, owned: null, working: false, inputs: {}, streaming: null, completed: [] };
+export const emptyChat: ChatState = {
+  lines: [],
+  session: null,
+  owned: null,
+  dead: null,
+  deviceId: null,
+  seq: 0,
+  starting: false,
+  held: [],
+  said: [],
+  unplaced: [],
+  working: false,
+  inputs: {},
+  streaming: null,
+  completed: [],
+};
+
+/** What a window keeps, per tab, to find its conversation again after a reload (D-1). */
+export interface Remembered {
+  readonly sessionId: string;
+  readonly deviceId: string | null;
+  readonly dead: string | null;
+  readonly said: readonly Said[];
+}
 
 export type ChatAction =
   | { readonly type: "events"; readonly events: readonly DurableEvent[] }
   /** An `agent.output.delta` from the live stream: unsequenced, never stored. */
   | { readonly type: "delta"; readonly sessionId: string; readonly turnId: string; readonly text: string }
-  | { readonly type: "person"; readonly id: string; readonly text: string }
+  | { readonly type: "person"; readonly id: string; readonly text: string; readonly chip?: ViewChip }
+  /** A session is about to be asked for. */
+  | { readonly type: "starting" }
+  /** The sidecar refused, or could not be reached: nothing was started. */
+  | { readonly type: "startFailed" }
   /** This window started a session, and the sidecar has answered with its id. */
-  | { readonly type: "started"; readonly sessionId: string }
+  | { readonly type: "started"; readonly sessionId: string; readonly id: string }
+  /** This tab had a session before the page was reloaded. */
+  | { readonly type: "restore"; readonly remembered: Remembered }
   | { readonly type: "notice"; readonly id: string; readonly tone: "info" | "error"; readonly text: string }
   | { readonly type: "approval"; readonly approvalId: string; readonly status: ApprovalStatus }
   /** The person pressed stop. The Runtime may take a moment to confirm, or never will (see `reduce`). */
-  | { readonly type: "stopped"; readonly id: string };
+  | { readonly type: "stopped"; readonly id: string }
+  /** The session cannot be carried on; `reason` is said to the person in plain words. */
+  | { readonly type: "dead"; readonly reason: string }
+  /** Nobody is signed in any more: the conversation was theirs and goes with them (D-1). */
+  | { readonly type: "reset" };
+
+/** Pending approvals of a session that is over cannot be answered; saying so is the card's whole honesty. */
+function expirePending(lines: readonly Line[]): readonly Line[] {
+  return lines.map((line) => (line.kind === "approval" && line.status === "pending" ? { ...line, status: "expired" as const } : line));
+}
+
+/** A call still "running" in a conversation that is over never finished: it says so, instead of running for ever. */
+function settle(lines: readonly Line[]): readonly Line[] {
+  return expirePending(lines).map((line) =>
+    (line.kind === "capability" || line.kind === "navigation") && line.status === "running" ? { ...line, status: "failed" as const } : line,
+  );
+}
+
+function die(state: ChatState, reason: string): ChatState {
+  if (state.dead) return state;
+  return {
+    ...state,
+    dead: { reason },
+    working: false,
+    streaming: null,
+    session: state.session ? { ...state.session, status: "ended" } : null,
+    lines: settle(state.lines),
+  };
+}
+
+/** The lines of what the person said once the replay has reached the event they came after. */
+function place(state: ChatState, sequence: number): ChatState {
+  if (state.unplaced.length === 0) return state;
+  const due = state.unplaced.filter((said) => said.afterSeq <= sequence);
+  if (due.length === 0) return state;
+  return {
+    ...state,
+    unplaced: state.unplaced.filter((said) => said.afterSeq > sequence),
+    lines: [...state.lines, ...due.map((said): Line => ({ kind: "person", id: said.id, text: said.text, ...(said.chip ? { chip: said.chip } : {}) }))],
+  };
+}
+
+function step(state: ChatState, event: DurableEvent): ChatState {
+  if (state.starting && event.sessionId !== undefined && event.sessionId !== state.session?.id) {
+    return { ...state, seq: Math.max(state.seq, event.sequence), held: [...state.held, event] };
+  }
+  let next = applyEvent(state, event);
+  // Nothing a dead session says afterwards can be answered or is still happening.
+  if (next.dead && next !== state) next = { ...next, working: false, streaming: null, lines: settle(next.lines) };
+  // The Device is learned from the session's own events; the first one names it.
+  if (next.deviceId === null && event.deviceId !== undefined && event.sessionId !== undefined && event.sessionId === next.session?.id) {
+    next = { ...next, deviceId: event.deviceId };
+  }
+  return place({ ...next, seq: Math.max(next.seq, event.sequence) }, event.sequence);
+}
 
 export function chatReducer(state: ChatState, action: ChatAction): ChatState {
   switch (action.type) {
     case "events":
-      return action.events.reduce(applyEvent, state);
+      return action.events.reduce(step, state);
     case "delta":
       return applyDelta(state, action.sessionId, action.turnId, action.text);
-    case "person":
-      return { ...state, lines: [...state.lines, { kind: "person", id: action.id, text: action.text }] };
-    case "started":
-      return { ...emptyChat, lines: state.lines, session: { id: action.sessionId, status: "starting" }, owned: action.sessionId };
+    case "person": {
+      const said: Said = { id: action.id, text: action.text, afterSeq: state.seq, sessionId: state.owned, ...(action.chip ? { chip: action.chip } : {}) };
+      return {
+        ...state,
+        said: [...state.said, said],
+        lines: [...state.lines, { kind: "person", id: action.id, text: action.text, ...(action.chip ? { chip: action.chip } : {}) }],
+      };
+    }
+    case "starting":
+      return { ...state, starting: true };
+    case "startFailed":
+      // What was heard in the meantime is read as it would have been: nothing here started it.
+      return state.held.reduce(step, { ...state, starting: false, held: [] });
+    case "started": {
+      // What was said while the session was still being started belongs to it; the history of
+      // every earlier one stays where it was, above a divider, so a new session reads as one.
+      const fresh = state.said.filter((said) => said.sessionId === null);
+      const freshIds = new Set(fresh.map((said) => said.id));
+      const earlier = state.lines.filter((line) => !freshIds.has(line.id));
+      const current = state.lines.filter((line) => freshIds.has(line.id));
+      const begun: ChatState = {
+        ...emptyChat,
+        seq: state.seq,
+        lines: [
+          ...settle(earlier),
+          ...(earlier.length > 0 ? [{ kind: "divider" as const, id: action.id, text: "New session" }] : []),
+          ...current,
+        ],
+        said: fresh.map((said) => ({ ...said, sessionId: action.sessionId })),
+        session: { id: action.sessionId, status: "starting" },
+        owned: action.sessionId,
+      };
+      // What the new session said before its id was known, in the order it said it.
+      return state.held.filter((event) => event.sessionId === action.sessionId).reduce(step, begun);
+    }
+    case "restore": {
+      const { remembered } = action;
+      const restored: ChatState = {
+        ...emptyChat,
+        session: { id: remembered.sessionId, status: "starting" },
+        owned: remembered.sessionId,
+        deviceId: remembered.deviceId,
+        said: remembered.said,
+        unplaced: remembered.said,
+      };
+      return remembered.dead === null ? restored : die(restored, remembered.dead);
+    }
     case "notice":
       return { ...state, lines: [...state.lines, { kind: "notice", id: action.id, tone: action.tone, text: action.text }] };
     case "approval":
@@ -403,7 +593,22 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         session: state.session ? { ...state.session, status: "ended" } : null,
         lines: [...state.lines, { kind: "notice", id: action.id, tone: "info", text: "You stopped the agent." }],
       };
+    case "dead":
+      return die(state, action.reason);
+    case "reset":
+      return emptyChat;
   }
+}
+
+/** What to keep of a chat, or `null` when there is nothing a reload could pick up. */
+export function remember(state: ChatState): Remembered | null {
+  if (state.owned === null) return null;
+  return {
+    sessionId: state.owned,
+    deviceId: state.deviceId,
+    dead: state.dead?.reason ?? null,
+    said: state.said.filter((said) => said.sessionId === state.owned),
+  };
 }
 
 const isUi = (capabilityId: string) => capabilityId.startsWith("ui.");
@@ -427,11 +632,9 @@ function applyEvent(state: ChatState, event: DurableEvent): ChatState {
   const { sessionId, payload } = event;
   const id = `e${event.sequence}`;
 
-  if (event.type === "session.created" && sessionId !== undefined && sessionId !== state.session?.id && state.owned === null) {
-    // The latest session's transcript replaces an earlier one, so a reload lands
-    // on the conversation that was open rather than the first one ever had.
-    state = { ...emptyChat, session: { id: sessionId, status: "starting" } };
-  }
+  // A session is this window's only if this window started it or was reattached to it (`restore`): a
+  // reload finds its own conversation, and another window's — or the tab this one was copied from —
+  // is not shown here, let alone spoken into. One chat per window (D-1).
   if (sessionId === undefined || sessionId !== state.session?.id) return state;
 
   const status = (next: SessionStatus): ChatState => ({ ...state, session: { id: sessionId, status: next } });
@@ -440,16 +643,12 @@ function applyEvent(state: ChatState, event: DurableEvent): ChatState {
     case "session.started":
       return state.session.status === "ended" ? state : status("live");
     case "session.completed":
-      return { ...status("ended"), working: false, streaming: null, lines: [...state.lines, { kind: "notice", id, tone: "info", text: "The session ended." }] };
+      return die(state, "The session ended. Start a new one to carry on.");
     case "session.cancelled":
-      return { ...status("ended"), working: false, streaming: null };
+      // Stopped by this window, which has already said so; from anywhere else it is news.
+      return state.session.status === "ended" ? state : die(state, "The session was stopped from another window. Start a new one to carry on.");
     case "session.failed":
-      return {
-        ...status("ended"),
-        working: false,
-        streaming: null,
-        lines: [...state.lines, { kind: "notice", id, tone: "error", text: `The session failed: ${errorText(payload.error)}` }],
-      };
+      return die(state, `The session failed: ${errorText(payload.error)}. Start a new one to carry on.`);
     case "turn.started":
       return { ...state, working: true };
     case "turn.completed":
@@ -473,8 +672,20 @@ function applyEvent(state: ChatState, event: DurableEvent): ChatState {
     case "capability.requested":
       return requested(state, id, payload);
     case "capability.completed":
-    case "capability.failed":
-      return answered(state, id, event.type === "capability.completed", payload);
+      return answered(state, id, true, payload);
+    case "capability.failed": {
+      const failed = answered(state, id, false, payload);
+      // The session's permission to act for the person has a lifetime of about five minutes, and
+      // the Runtime does not renew it once it has lapsed (F-30-5): every call after this one fails
+      // the same way, so the conversation is over and the person is told so, not left to read the
+      // same failure under each message.
+      const code = isRecord(payload.error) ? payload.error.code : undefined;
+      if (code === "delegation_expired") return die(failed, DEAD.expired);
+      // A call the person's Stop cancelled. Pontis writes no terminal event for the turn when a cancel
+      // lands (F-chat-3), so a window that did not press Stop — another tab — would stay "working"
+      // for ever; the cancelled call is the one sign it was given, and it ends the turn.
+      return code === "approval_cancelled" ? { ...failed, working: false, streaming: null } : failed;
+    }
     case "approval.requested": {
       const approval = approvalView(payload, typeof payload.invocationId === "string" ? state.inputs[payload.invocationId] : undefined);
       return approval ? { ...state, lines: [...state.lines, { kind: "approval", id, approval, status: "pending" }] } : state;
@@ -539,6 +750,71 @@ function answered(state: ChatState, id: string, ok: boolean, payload: Readonly<R
 
   const text = ok ? "Completed" : `Failed: ${errorText(payload.error)}`;
   return { ...state, lines: [...lines, { kind: "result", id, capabilityId, ok, text }] };
+}
+
+/**
+ * Why a session is over, in the words a person can act on. Each ends with what to
+ * do, because "the session failed" with nothing after it is where F-chat-5 left them.
+ */
+export const DEAD = {
+  notAuthorized:
+    "Your Runtime no longer recognises this conversation, usually because it was restarted or replaced. Start a new session to carry on.",
+  revoked: "That device was revoked, so this conversation has stopped. Pair a new device from the Agents page, then start a new session.",
+  none: "No device is paired any more, so this conversation has stopped. Pair one from the Agents page, then start a new session.",
+  replaced: "The Runtime that was running this conversation is not the device you have connected now. Start a new session to carry on.",
+  offline: "Your Runtime went offline during this turn, so the conversation has stopped. Start it again, then start a new session.",
+  expired:
+    "This session expired: the permission it holds to work in Forma lasts about five minutes and was not renewed. Start a new session to carry on; what you have said so far stays above it.",
+  stopWhileOffline: "Your Runtime is offline, so this conversation has stopped. Start it again, then start a new session.",
+} as const;
+
+/** How long a Runtime may stay offline in the middle of a turn before the turn is given up. */
+export const OFFLINE_GRACE_MS = 8_000;
+
+/** A write the agent completed on a design, as the chat's history reports it. */
+export interface AgentWrite {
+  readonly designId: string;
+  readonly projectId: string | null;
+  readonly version: number;
+}
+
+/**
+ * The completed `design.applyOperations` calls among these events.
+ *
+ * What lets the editor learn of the agent's writes from what it already reads
+ * (F-chat-2, F-30-3): the capability's own result names the design and the
+ * version it produced.
+ */
+export function agentWrites(events: readonly DurableEvent[]): readonly AgentWrite[] {
+  return events.flatMap((event): AgentWrite[] => {
+    if (event.type !== "capability.completed" || event.payload.capabilityId !== "design.applyOperations") return [];
+    const { result } = event.payload;
+    if (!isRecord(result) || typeof result.design_id !== "string" || typeof result.version !== "number") return [];
+    return [{ designId: result.design_id, projectId: typeof result.project_id === "string" ? result.project_id : null, version: result.version }];
+  });
+}
+
+/**
+ * The context line a message carries, read back from text that begins with it.
+ *
+ * The sidecar writes `[forma-view] design=… name="…" page=… layer=…` in front of
+ * what the person typed. Nothing durable carries a message back today, but one
+ * that does will carry the line, and a chat that showed it would show the person
+ * something they never wrote — so it is taken off and shown as the chip.
+ */
+export function splitViewLine(text: string): { readonly text: string; readonly chip?: ViewChip } {
+  if (!text.startsWith("[forma-view] ")) return { text };
+  const at = text.indexOf("\n");
+  const line = at === -1 ? text : text.slice(0, at);
+  const rest = at === -1 ? "" : text.slice(at + 1);
+  const name = /name="((?:[^"\\]|\\.)*)"/u.exec(line)?.[1]?.replaceAll(/\\(.)/gu, "$1");
+  const has = (key: string) => new RegExp(`(?:^| )${key}=`, "u").test(line);
+  const chip: ViewChip = {
+    ...(has("design") ? { design: name ?? "design" } : {}),
+    ...(has("page") ? { page: "page" } : {}),
+    ...(has("layer") ? { layer: "layer" } : {}),
+  };
+  return Object.keys(chip).length > 0 ? { text: rest, chip } : { text: rest };
 }
 
 /** Approvals still waiting on the person. */

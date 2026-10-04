@@ -29,10 +29,17 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+use async_trait::async_trait;
 use pontis_identity::key::DeviceKeyPair;
 use pontis_protocol::device::DeviceMetadataBody;
 use pontis_protocol::errors::TypedError;
-use pontis_protocol::provider::ProviderDriver;
+use pontis_protocol::guidance::LocalExecutionPolicy;
+use pontis_protocol::ids::SessionId;
+use pontis_protocol::posture::EffectiveSessionPosture;
+use pontis_protocol::provider::{
+    AgentEventStream, AgentInput, ProviderDiagnosis, ProviderDriver, ProviderId, ProviderSession,
+    ProviderStatus, SessionConfig,
+};
 use pontis_provider_codex::CodexProvider;
 use pontis_provider_fake::{ExpectedOutcome, FakeProvider, FakeScript};
 use pontis_runtime::{
@@ -56,6 +63,88 @@ const DENY: &str = "Remove the tagline. I will say no.";
 const APPROVE: &str = "Remove the headline.";
 const GUIDE: &str = "Read the manual first.";
 const BRAND: &str = "Read my brand, and ask me for a hero photo.";
+const LIST: &str = "List the designs of my project.";
+
+/// The first line the sidecar puts in front of every message, naming what the person has open
+/// (`[forma-view] design=… name="…"`, `src/intents.ts`).
+const VIEW_PREFIX: &str = "[forma-view] ";
+
+/// FakeProvider matches a message byte for byte, and the sidecar now prepends the view line to
+/// every one, so the scripts below would never match. This takes the line off before the provider
+/// sees it, and prints it as `VIEW <line>` so the test can read what the sidecar sent — the line is
+/// the sidecar's, and the thing under test is that it arrived.
+///
+/// Test-only and Forma's own: a real model is meant to read the line.
+struct StripsViewLine<P>(P);
+
+#[async_trait]
+impl<P: ProviderDriver> ProviderDriver for StripsViewLine<P> {
+    fn id(&self) -> ProviderId {
+        self.0.id()
+    }
+    fn local_execution_policy(&self) -> LocalExecutionPolicy {
+        self.0.local_execution_policy()
+    }
+    fn result_content_profiles(&self) -> &'static [&'static str] {
+        self.0.result_content_profiles()
+    }
+    async fn probe(&self) -> ProviderStatus {
+        self.0.probe().await
+    }
+    fn bind_neutral_workspace(
+        &self,
+        session_id: &SessionId,
+        launch_directory: &std::path::Path,
+        provider_visible_directory: &std::path::Path,
+    ) {
+        self.0
+            .bind_neutral_workspace(session_id, launch_directory, provider_visible_directory);
+    }
+    fn release_neutral_workspace(&self, session_id: &SessionId) {
+        self.0.release_neutral_workspace(session_id);
+    }
+    async fn start_session(&self, config: SessionConfig) -> Result<ProviderSession, TypedError> {
+        self.0.start_session(config).await
+    }
+    async fn send(
+        &self,
+        session: &ProviderSession,
+        mut input: AgentInput,
+    ) -> Result<AgentEventStream, TypedError> {
+        if input.text.starts_with(VIEW_PREFIX) {
+            if let Some((line, rest)) = input.text.split_once('\n') {
+                eprintln!("VIEW {line}");
+                input.text = rest.to_owned();
+            }
+        }
+        self.0.send(session, input).await
+    }
+    async fn cancel(&self, session: &ProviderSession) -> Result<(), TypedError> {
+        self.0.cancel(session).await
+    }
+    async fn stop(&self, session: ProviderSession) -> Result<(), TypedError> {
+        self.0.stop(session).await
+    }
+    async fn resume_session(
+        &self,
+        session_id: &SessionId,
+        provider_session_ref: &str,
+        config: SessionConfig,
+    ) -> Result<ProviderSession, TypedError> {
+        self.0
+            .resume_session(session_id, provider_session_ref, config)
+            .await
+    }
+    async fn wait_for_exit(&self, session: &ProviderSession) -> TypedError {
+        self.0.wait_for_exit(session).await
+    }
+    fn session_posture(&self, session: &ProviderSession) -> Option<EffectiveSessionPosture> {
+        self.0.session_posture(session)
+    }
+    async fn diagnose(&self) -> ProviderDiagnosis {
+        self.0.diagnose().await
+    }
+}
 
 /// Prints what the Runtime refused, one line each, so the test can read it.
 ///
@@ -105,6 +194,14 @@ fn provider(
                 .call("design.get", json!({ "design_id": design }))
                 .expect_tool_result_status(ExpectedOutcome::Completed)
                 .emit("You have one project, and the design has a headline.")
+                .complete(),
+        )
+        .script(
+            LIST,
+            FakeScript::new()
+                .call("design.list", json!({ "project_id": project }))
+                .expect_tool_result_status(ExpectedOutcome::Completed)
+                .emit("Your project has a cover and a long design.")
                 .complete(),
         )
         .script(
@@ -251,14 +348,14 @@ async fn main() {
     let provider: Arc<dyn ProviderDriver> = if codex {
         codex_provider(workspace_root.path())
     } else {
-        Arc::new(provider(
+        Arc::new(StripsViewLine(provider(
             &env("FORMA_DRIVER_PROJECT"),
             &env("FORMA_DRIVER_DESIGN"),
             &env("FORMA_DRIVER_LONG_DESIGN"),
             &env("FORMA_DRIVER_LAYER"),
             &env("FORMA_DRIVER_TAGLINE"),
             version,
-        ))
+        )))
     };
 
     let metadata = DeviceMetadataBody {

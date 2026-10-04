@@ -37,6 +37,8 @@ export interface DurableEvent {
   readonly sequence: number;
   readonly type: string;
   readonly sessionId?: string;
+  /** The Device whose Runtime wrote it: how the chat knows a session's Runtime is no longer the person's. */
+  readonly deviceId?: string;
   readonly payload: Readonly<Record<string, unknown>>;
 }
 
@@ -81,13 +83,14 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 
 function toEvent(value: unknown): DurableEvent | null {
   if (!isRecord(value)) return null;
-  const { sequence, type, sessionId, payload } = value;
+  const { sequence, type, sessionId, deviceId, payload } = value;
   if (typeof sequence !== "number" || !Number.isSafeInteger(sequence) || sequence < 1) return null;
   if (typeof type !== "string") return null;
   return {
     sequence,
     type,
     ...(typeof sessionId === "string" ? { sessionId } : {}),
+    ...(typeof deviceId === "string" ? { deviceId } : {}),
     payload: isRecord(payload) ? payload : {},
   };
 }
@@ -322,6 +325,7 @@ export function openEventStream(options: EventStreamOptions): EventStream {
 export interface LiveFrame {
   readonly type: string;
   readonly sessionId?: string;
+  readonly deviceId?: string;
   readonly sequence?: number;
   readonly scope?: { readonly kind: string; readonly applicationContextId?: string };
   readonly payload: Readonly<Record<string, unknown>>;
@@ -333,6 +337,7 @@ export function parseLiveFrame(raw: unknown): LiveFrame | null {
   return {
     type: raw.type,
     ...(typeof raw.sessionId === "string" ? { sessionId: raw.sessionId } : {}),
+    ...(typeof raw.deviceId === "string" ? { deviceId: raw.deviceId } : {}),
     ...(typeof raw.sequence === "number" && Number.isSafeInteger(raw.sequence) ? { sequence: raw.sequence } : {}),
     ...(isRecord(scope) && typeof scope.kind === "string"
       ? { scope: { kind: scope.kind, ...(typeof scope.applicationContextId === "string" ? { applicationContextId: scope.applicationContextId } : {}) } }
@@ -352,5 +357,11 @@ export function parseLiveFrame(raw: unknown): LiveFrame | null {
 export function asDurable(frame: LiveFrame, applicationContextId: string): DurableEvent | null {
   if (frame.sequence === undefined || frame.sequence < 1) return null;
   if (frame.scope?.kind !== "application_context" || frame.scope.applicationContextId !== applicationContextId) return null;
-  return { sequence: frame.sequence, type: frame.type, ...(frame.sessionId ? { sessionId: frame.sessionId } : {}), payload: frame.payload };
+  return {
+    sequence: frame.sequence,
+    type: frame.type,
+    ...(frame.sessionId ? { sessionId: frame.sessionId } : {}),
+    ...(frame.deviceId ? { deviceId: frame.deviceId } : {}),
+    payload: frame.payload,
+  };
 }

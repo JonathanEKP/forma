@@ -215,6 +215,16 @@ describe('the gateway in front of Boundary F', () => {
     });
   });
 
+  it('lists a project\'s designs so the agent can learn an id it was not handed', async () => {
+    await withGateway(async (invoke, requests) => {
+      const outcome = await invoke('design.list', { project_id: PROJECT }, 'inv_list');
+      assert.equal(outcome.status, 'completed');
+      // A list travels under a key: a provider result is an object.
+      assert.deepEqual(outcome.status === 'completed' ? outcome.result : undefined, { designs: [] });
+      assert.deepEqual(requests(), [`GET /api/v1/pontis/projects/${PROJECT}/designs `]);
+    });
+  });
+
   it('requests an asset as a write carrying its invocation id, with the project in the path', async () => {
     const forma = await fakeForma(() => ({ status: 200, body: REQUESTED }));
     const app = defineAgentApp({

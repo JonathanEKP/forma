@@ -9,7 +9,7 @@
  */
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
-import type { Line, ProviderView } from "./chat";
+import type { Line, ProviderView, ViewChip } from "./chat";
 import { ApprovalCard } from "./ChatApproval";
 import type { Chat as ChatController, Connection, Runtime } from "./useChat";
 
@@ -51,8 +51,9 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
 
   if (!chat.enabled) return null;
 
-  // A live session already has its device; the block only matters for starting one.
-  const cannot = chat.blocked !== null && state.session?.status !== "live";
+  // A live session already has its device; the block only matters for starting one. A dead one
+  // is not carried on at all: the person starts another, from the button, on purpose.
+  const cannot = chat.dead !== null || (chat.blocked !== null && state.session?.status !== "live");
 
   const submit = () => {
     const text = draft.trim();
@@ -108,6 +109,8 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
         )}
       </ol>
 
+      {chat.dead !== null && <Dead reason={chat.dead} blocked={chat.blocked} onNewSession={() => void chat.newSession()} />}
+
       <footer className="border-t border-edge p-3">
         <textarea
           value={draft}
@@ -115,7 +118,7 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
           onKeyDown={onKey}
           rows={2}
           aria-label="Message the agent"
-          placeholder={cannot ? (chat.blocked ?? "") : "Message the agent"}
+          placeholder={chat.dead !== null ? "Start a new session to carry on" : cannot ? (chat.blocked ?? "") : "Message the agent"}
           className="w-full resize-none rounded-lg border border-edge bg-surface-2 px-2.5 py-2 text-xs placeholder:text-faint focus:border-edge-strong focus:outline-none"
         />
         <div className="mt-2 flex items-center gap-2">
@@ -180,6 +183,12 @@ function Device({ runtime }: { runtime: Runtime }) {
       );
     case "offline":
       return <p>{runtime.name} is offline. Start the Runtime on it to chat.</p>;
+    case "revoked":
+      return (
+        <p>
+          {runtime.name} was revoked. Pair a new device from <a href="/agents" className="underline">the Agents page</a>.
+        </p>
+      );
     case "ambiguous":
       return <p>More than one of your devices is online, so Forma can&apos;t tell which one to use.</p>;
     case "online":
@@ -227,6 +236,15 @@ function Row({ line, answering, onDecide }: { line: Line; answering: boolean; on
         <div className="ml-8 rounded-lg bg-surface-2 px-2.5 py-2 text-xs leading-5">
           <Label>You</Label>
           <p className="whitespace-pre-wrap">{line.text}</p>
+          {line.chip && <Chip chip={line.chip} />}
+        </div>
+      );
+    case "divider":
+      return (
+        <div role="separator" className="flex items-center gap-2 py-1 text-[10px] uppercase tracking-[0.1em] text-faint">
+          <span className="h-px flex-1 bg-edge" />
+          {line.text}
+          <span className="h-px flex-1 bg-edge" />
         </div>
       );
     case "agent":
@@ -264,6 +282,43 @@ function Row({ line, answering, onDecide }: { line: Line; answering: boolean; on
     case "notice":
       return <p className={`text-center text-[11px] ${line.tone === "error" ? "text-paper" : "text-faint"}`}>{line.text}</p>;
   }
+}
+
+/** Where the person was when they said it: what the agent was told, in their own words. */
+function Chip({ chip }: { chip: ViewChip }) {
+  const parts = [chip.design, chip.page, chip.layer].filter((part): part is string => part !== undefined);
+  return (
+    <p
+      aria-label={`Sent with: ${parts.join(", ")}`}
+      className="mt-1.5 inline-block max-w-full truncate rounded border border-edge px-1.5 py-0.5 text-[10px] text-faint"
+    >
+      {parts.join(" · ")}
+    </p>
+  );
+}
+
+/**
+ * The end of a session nobody chose: why, in words, and the one way on. It sits
+ * above the box rather than in the transcript so a reload shows it as it shows
+ * the history, and nothing starts a new session behind the person's back.
+ */
+function Dead({ reason, blocked, onNewSession }: { reason: string; blocked: string | null; onNewSession: () => void }) {
+  return (
+    <section aria-label="Session ended" className="space-y-2 border-t border-edge bg-surface-2 px-4 py-3 text-xs">
+      <p className="leading-5 text-paper">{reason}</p>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onNewSession}
+          disabled={blocked !== null}
+          className="rounded-lg bg-signal px-2.5 py-1.5 text-xs font-semibold text-ink disabled:opacity-40"
+        >
+          New session
+        </button>
+        {blocked !== null && <span className="text-[11px] text-faint">{blocked}</span>}
+      </div>
+    </section>
+  );
 }
 
 const STATUS = { running: "· running", done: "· done", failed: "· failed" } as const;

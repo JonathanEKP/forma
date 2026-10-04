@@ -17,11 +17,13 @@ import { FormaBoundary } from './boundary.ts';
 import { formaCapabilities } from './capabilities.ts';
 import { GUIDANCE } from './guidance.ts';
 import { silentLog } from './log.ts';
+import { UI_ACTIONS } from './ui.ts';
 
-/** What a session can actually call. */
-const REGISTERED = new Set(
-  formaCapabilities(new FormaBoundary('http://127.0.0.1:1', 'unused', silentLog)).map(({ id }) => id),
-);
+/** What a session can actually call: Boundary F's operations and the editor's four actions. */
+const REGISTERED = new Set<string>([
+  ...formaCapabilities(new FormaBoundary('http://127.0.0.1:1', 'unused', silentLog)).map(({ id }) => id),
+  ...UI_ACTIONS,
+]);
 
 const bytes = (text: string): number => Buffer.byteLength(text, 'utf8');
 

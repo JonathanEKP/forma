@@ -215,6 +215,28 @@ describe('an editor action, end to end', () => {
   });
 });
 
+describe('a design id that is not an id', () => {
+  it('is a validation error, not a permission answer: a typo names no resource, so there is nothing to disclose (F-40-5)', async () => {
+    await sidecarWith([ORIGIN], async (sidecar) => {
+      const window = await connect(sidecar, 'session-user');
+      try {
+        for (const [id, input] of [
+          ['ui.openDesign', { design_id: 'ALPHA Square post' }],
+          ['ui.openDesign', { design_id: '' }],
+          ['ui.selectLayer', { design_id: 'not-a-uuid', layer_id: LAYER }],
+        ] as const) {
+          const outcome = await invoke(sidecar, id, input, `inv_${id}_${String(input.design_id).length}`);
+          assert.equal(outcome.status, 'failed');
+          assert.equal(outcome.status === 'failed' ? outcome.error.code : '', 'validation_error', JSON.stringify(input));
+        }
+        await assert.rejects(window.next(200), 'nothing reached the window');
+      } finally {
+        window.close();
+      }
+    });
+  });
+});
+
 describe('the UI routes themselves', () => {
   it('refuse every origin when none is declared, rather than accepting any', async () => {
     await sidecarWith(undefined, async (sidecar) => {
