@@ -110,6 +110,7 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
             <Row
               line={line}
               answering={line.kind === "approval" && chat.answering.has(line.approval.approvalId)}
+              unconfirmed={line.kind === "approval" && chat.unconfirmed.has(line.approval.approvalId)}
               onDecide={(decision) => line.kind === "approval" && void chat.decide(line.approval.approvalId, decision)}
             />
           </li>
@@ -117,7 +118,7 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
         {state.streaming && (
           // The reply as it arrives. Replaced, not extended, by the final text.
           <li data-kind="agent" data-streaming="true">
-            <Row line={{ kind: "agent", id: "streaming", text: state.streaming.text }} answering={false} onDecide={() => undefined} />
+            <Row line={{ kind: "agent", id: "streaming", text: state.streaming.text }} answering={false} unconfirmed={false} onDecide={() => undefined} />
           </li>
         )}
         {state.working && !state.streaming && (
@@ -254,7 +255,7 @@ function Provider({ provider }: { provider: ProviderView }) {
   );
 }
 
-function Row({ line, answering, onDecide }: { line: Line; answering: boolean; onDecide: (decision: "approveOnce" | "deny") => void }) {
+function Row({ line, answering, unconfirmed, onDecide }: { line: Line; answering: boolean; unconfirmed: boolean; onDecide: (decision: "approveOnce" | "deny") => void }) {
   switch (line.kind) {
     case "person":
       return (
@@ -295,7 +296,7 @@ function Row({ line, answering, onDecide }: { line: Line; answering: boolean; on
         </div>
       );
     case "approval":
-      return <ApprovalCard approval={line.approval} status={line.status} answering={answering} onDecide={onDecide} />;
+      return <ApprovalCard approval={line.approval} status={line.status} answering={answering} unconfirmed={unconfirmed} onDecide={onDecide} />;
     case "navigation":
       return (
         <div className="rounded border border-dashed border-edge-strong px-2.5 py-1.5 text-[11px] text-muted">

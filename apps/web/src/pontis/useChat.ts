@@ -41,6 +41,8 @@ import { windowId } from "./window";
 
 /** How often the device list is re-read: presence changes slowly, and a turn does not need it. */
 export const DEVICES_MS = 10_000;
+/** A delivered approval resolve is only a socket write; wait for the durable approval event. */
+export const APPROVAL_CONFIRMATION_MS = 20_000;
 
 /**
  * Where the chat stands with its backend, said once.
@@ -63,8 +65,10 @@ export interface Chat {
   readonly runtime: Runtime;
   /** Approvals waiting on the person, for the toggle's badge. */
   readonly pending: number;
-  /** Approval ids already sent and not yet confirmed by the Runtime's own event. */
+  /** Approval ids whose resolve is being sent or is still awaiting the Runtime's event. */
   readonly answering: ReadonlySet<string>;
+  /** Approval ids still pending after the confirmation window elapsed. */
+  readonly unconfirmed: ReadonlySet<string>;
   /** Why a message cannot be sent right now, or `null` when it can. */
   readonly blocked: string | null;
   /**
@@ -132,12 +136,22 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
   const [stream, setStream] = useState<Connection>("connecting");
   const [runtime, setRuntime] = useState<Runtime>({ at: "unknown" });
   const [answering, setAnswering] = useState<ReadonlySet<string>>(new Set());
+  const [unconfirmed, setUnconfirmed] = useState<ReadonlySet<string>>(new Set());
   const [live, setLive] = useState(() => liveFeed.state().at === "connected");
   const seq = useRef(0);
   // The reader and the context it reads, for the live path to hand frames to.
   const reader = useRef<{ stream: EventStream; context: string } | null>(null);
   const queued = useRef<{ sessionId: string; text: string; view: ViewIds; onAccepted?: () => void } | null>(null);
   const stopPending = useRef<string | null>(null);
+  const approvalTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+
+  useEffect(
+    () => () => {
+      for (const timer of approvalTimers.current.values()) clearTimeout(timer);
+      approvalTimers.current.clear();
+    },
+    [],
+  );
 
   const agent = useMemo(() => client ?? createAgentClient({ token: accessToken }), [client]);
   const localId = useCallback(() => {
@@ -178,6 +192,27 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
         token: accessToken,
         onEvents: (events) => {
           dispatch({ type: "events", events });
+          const confirmations = events.flatMap((event) => {
+            if (event.type !== "approval.resolved" && event.type !== "approval.cancelled") return [];
+            return typeof event.payload.approvalId === "string" ? [event.payload.approvalId] : [];
+          });
+          if (confirmations.length > 0) {
+            for (const approvalId of confirmations) {
+              const timer = approvalTimers.current.get(approvalId);
+              if (timer !== undefined) clearTimeout(timer);
+              approvalTimers.current.delete(approvalId);
+            }
+            setAnswering((current) => {
+              const next = new Set(current);
+              confirmations.forEach((approvalId) => next.delete(approvalId));
+              return next;
+            });
+            setUnconfirmed((current) => {
+              const next = new Set(current);
+              confirmations.forEach((approvalId) => next.delete(approvalId));
+              return next;
+            });
+          }
           for (const write of agentWrites(events)) writeRef.current?.(write);
         },
         onState: (next) => {
@@ -414,10 +449,34 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
 
   const decide = useCallback(
     async (approvalId: string, decision: Decision) => {
+      if (approvalTimers.current.has(approvalId)) return;
       setAnswering((current) => new Set(current).add(approvalId));
+      setUnconfirmed((current) => {
+        const next = new Set(current);
+        next.delete(approvalId);
+        return next;
+      });
+      const timer = setTimeout(() => {
+        approvalTimers.current.delete(approvalId);
+        setAnswering((current) => {
+          const next = new Set(current);
+          next.delete(approvalId);
+          return next;
+        });
+        setUnconfirmed((current) => new Set(current).add(approvalId));
+      }, APPROVAL_CONFIRMATION_MS);
+      approvalTimers.current.set(approvalId, timer);
       const answer = await agent.approval(approvalId, decision);
       if (answer.ok) return;
+      const pendingTimer = approvalTimers.current.get(approvalId);
+      if (pendingTimer !== undefined) clearTimeout(pendingTimer);
+      approvalTimers.current.delete(approvalId);
       setAnswering((current) => {
+        const next = new Set(current);
+        next.delete(approvalId);
+        return next;
+      });
+      setUnconfirmed((current) => {
         const next = new Set(current);
         next.delete(approvalId);
         return next;
@@ -435,6 +494,7 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
     runtime,
     pending: pendingApprovals(state).length,
     answering,
+    unconfirmed,
     blocked,
     sessionId,
     dead,
