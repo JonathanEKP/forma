@@ -146,6 +146,8 @@ transcript present after a reload). **The Runtime reconnects by itself** — tha
 saw hold no socket against an *empty* sidecar; against a sidecar that still knows it, only the
 test-driver was observed. `forma-server backup` does not include this directory yet (documented).
 
+re-tested 2026-10-04: fixed — instance 10: with 3 editor windows and 2 Runtimes attached `SIGTERM` stopped the sidecar in 0.05 s; restarted by hand on the same `FORMA_PONTIS_DATA_DIR` (files `0600`) all 4 devices (the revoked one included) were still listed and the live Runtime was `online` again within ~5 s with no re-pair ([evidence](evidence/retest/F-10-1-retest-after-sidecar-restart.png)). Only the test-driver was observed, not the real `pontis` daemon.
+
 ## F-10-2 — Revoking a device or killing its Runtime mid-turn leaves the chat stuck for good
 
 - **Severity:** high
@@ -190,6 +192,8 @@ ran and its result went nowhere — then `intent session.cancel delivered:false 
 `revoked`, not `none` or `offline`) ends the conversation with a notice that names it and a **New session**
 button once a device is paired; a Runtime killed mid-turn ends it after 8 s; Stop on an unreachable Runtime
 ends it. A reload shows the same, and with a new, online device the person can start a session.
+
+re-tested 2026-10-04: fixed — instance 10, person B (one device): revoking it mid-`Validate the long design.` ended the turn within 15 s with "That device was revoked, so this conversation has stopped…" and **New session**; after pairing a new Runtime **New session** worked ([evidence](evidence/retest/F-10-2-F-10-4-retest-revoked-single-device.png)). Caveat, new finding [F-10-14](#f-10-14--a-revoked-device-is-reported-as-offline-when-other-never-revoked-devices-sit-beside-it).
 
 ## F-10-3 — The Devices panel is a snapshot: new devices do not appear, a dead one stays "online"
 
@@ -246,6 +250,8 @@ status line and the Send answer side by side).
 **Fixed (fix batch 1, Task A).** `runtimeView` keeps revoked apart from offline and from none; the
 status line says "<name> was revoked. Pair a new device from the Agents page." and the box says the same,
 instead of three different answers.
+
+re-tested 2026-10-04: fixed — instance 10, person B (one device, revoked): status line and box both say "Forma local run was revoked. Pair a new device from the Agents page." ([evidence](evidence/retest/F-10-2-F-10-4-retest-revoked-single-device.png)); with other offline devices beside it the wording falls back to "offline" (F-10-14).
 
 ## F-10-5 — `ux` The pairing instructions stop one step early and use words a first-time person does not have
 
@@ -451,3 +457,27 @@ Revoking stopped both daemons cleanly.
 
 **Evidence** — the sampled table above (`logs` of this run are scratchpad files, not committed); both
 daemons' logs contain only `runtime.started` until the revoke.
+
+## F-10-14 — A revoked device is reported as offline when other, never-revoked devices sit beside it
+
+- **Severity:** low
+- **Status:** open
+- **Instance / provider:** instance 10, FakeProvider (found while re-testing F-10-2 and F-10-4)
+
+**Steps to reproduce**
+1. A signed in with one Runtime. `kill -9` it, pair a second, `kill -9` it, pair a third (the device list never
+   prunes, F-10-9, so A now has two offline devices that are not revoked).
+2. Chat open, send `Validate the long design.` and revoke the third device (`POST /pons/v1/devices/<id>/revoke`).
+
+**Expected** — as in F-10-4: "<name> was revoked. Pair a new device from the Agents page."
+
+**Actual** — the turn ends (no stuck "working…", which is the fix) but with "Your Runtime went offline during this
+turn, so the conversation has stopped. Start it again, then start a new session." and the status line "Forma local
+run is offline. Start the Runtime on it to chat." — the advice F-10-4 called exactly wrong for a revoked device. The
+same revoke on person B, whose only device it was, reads "was revoked. Pair a new device…" (F-10-4, fixed). So the
+revoked state is lost as soon as an older offline device exists. Not read from the code.
+
+**Evidence** — instance 10 transcript read from the DOM (A) against the single-device case
+([B](evidence/retest/F-10-2-F-10-4-retest-revoked-single-device.png)); device list afterwards:
+two `revokedAt: null, online: false` and one revoked.
+

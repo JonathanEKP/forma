@@ -83,6 +83,8 @@ a long-idle Codex approval, mixed destructive+benign card reading.
 **Fixed (fix batch 1, Task A)** with F-chat-2: the editor follows the agent's write (an approved
 removal included) and shows the new version without a conflict first.
 
+re-tested 2026-10-04: fixed — instance 10, FakeProvider and Codex: an approved removal left header `v3`, the layer gone, the selection cleared (the layer no longer existed), the notice "The agent updated the design (v3)" and no conflict ([card](evidence/retest/F-30-3-retest-approval-card-pending.png), [after approve](evidence/retest/F-30-3-retest-approved-removal-followed.png)).
+
 ## F-30-4 — With the Runtime dead, a pending card never expires and keeps live buttons
 
 - **Severity:** medium
@@ -97,6 +99,8 @@ removal included) and shows the new version without a conflict first.
 every pending card into "Expired before you answered" with no buttons — across reloads, because the tab
 remembers that the session is over. (The clock is still not compared with `expiresAt`: the card does
 not guess at the server's deadline; the end of the session is what settles it.)
+
+re-tested 2026-10-04: fixed — instance 10, FakeProvider: a pending removal card plus `kill -9` of the Runtime became "Expired before you answered" with no buttons and the **New session** notice, and stayed so after a reload ([evidence](evidence/retest/F-30-4-retest-card-expired-after-runtime-kill.png)).
 
 ## F-30-5 — A chat session dies about 5 minutes after it starts, and nothing lets the person start another
 
@@ -140,6 +144,8 @@ to the same tab's session with what the person had said, and the notice. **New s
 session with the old history above a divider. A session that lives past five minutes could not be shown, because
 the cause is upstream.
 
+re-tested 2026-10-04: still open — upstream (Pontis), unchanged: FakeProvider session whose first call was 07:49:45 failed "the remote application delegation has expired" at 07:55:03, and a real-Codex session failed the same way past five minutes; on FakeProvider the chat now shows "This session expired…" with **New session** (which works, [evidence](evidence/retest/F-30-5-retest-expired-notice-new-session.png)), but on Codex it shows nothing — new finding [F-30-10](#f-30-10--on-real-codex-an-expired-session-leaves-no-notice-and-no-new-session-button).
+
 ## F-30-6 — A resolve that the Runtime refuses is answered 200 `delivered:true`, with a misleading code
 
 - **Severity:** low
@@ -169,6 +175,39 @@ After denying a removal, "I still want the Footer gone from view" made Codex do 
 - **Status:** wontfix (trust is in the credential, not the evidence)
 
 With the sidecar's credential (read from its process environment on this test instance), evidence never issued by any Runtime (`once`, this invocation id, `destructive`, valid window) executed a removal. Every malformed variant was refused (see A21). Forma verifies shape, scope, class and window, not authenticity.
+
+## F-30-10 — On real Codex an expired session leaves no notice and no New session button
+
+- **Severity:** high
+- **Status:** open
+- **Instance / provider:** instance 10, real Codex gpt-6-luna (the FakeProvider path is fine: F-30-5)
+
+**Steps to reproduce**
+1. Instance 10 with `--provider-a codex`, A signed in, a design open, chat open. Send a message that calls Forma
+   (the session's first call starts the five-minute delegation, F-30-5).
+2. Keep working in the same session for more than five minutes, then send another message that needs a capability,
+   for example `Open my ALPHA Square post design in the editor, then set the zoom to 75%.`
+3. Read the transcript, the buttons and, with `curl`, the durable page
+   (`/pons/v1/events?scope=application_context&applicationContextId=…&after=0`).
+
+**Expected** — what F-30-5 now promises and FakeProvider shows: "This session expired: the permission it holds to
+work in Forma lasts about five minutes and was not renewed…" and **New session**.
+
+**Actual** — the agent answers "I couldn't open the design or change the zoom because Forma rejected the request:
+the application delegation has expired. Please reconnect Forma, then I can continue." Nothing else: no notice, no
+**New session**, **Send** enabled. A second message (`Set the zoom to 75%.`) gets the same answer, and a reload
+re-attaches to the same session and shows the same. The durable events of the first failed turn are only
+`turn.started`, `agent.output.completed`, `agent.output.completed`, `turn.completed` — **no
+`capability.requested` / `capability.failed`**: Codex was refused before any capability call reached the sidecar.
+The chat recognises `delegation_expired` on a failed capability (that is what FakeProvider writes, and what the
+original Codex run in F-30-5 produced), so on this path it has nothing to recognise. The only way out found was to
+clear the tab's `forma.chat` in `sessionStorage` and reload, which a person cannot do.
+
+**Evidence** — [the turn](evidence/retest/F-30-5-retest-codex-expiry-no-notice.png) and
+[the second message](evidence/retest/F-30-10-codex-expired-still-no-recovery.png); the durable page excerpt above, read
+with `curl`. Not established: whether the refusal came before `capability.requested` every time on Codex or only when
+the session's grant had gone stale between turns (one session, two turns observed).
+
 
 ## What held
 

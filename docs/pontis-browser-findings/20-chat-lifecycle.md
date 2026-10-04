@@ -131,6 +131,8 @@ and replayed once the sidecar answers (29ca7e8). The person's first line, and an
 are no longer wiped. The second form — a reload before the message is sent — still loses the message:
 the tab only remembers a session once the sidecar has answered with its id.
 
+re-tested 2026-10-04: fixed (first form) — instance 10: the first message of a window shows its "YOU" line on FakeProvider and on Codex, and an earlier transcript is not wiped; the second form (reload within ~1 s of Send) did not reproduce in two tries on B (reload scheduled 350 ms before the click, and 40 ms after it) — the message arrived and the turn ran — so it stays as recorded, not proven fixed.
+
 ## F-chat-2 — The agent's edit is real in Forma but the open editor never learns of it
 
 - **Severity:** high
@@ -168,6 +170,8 @@ design (vN)". A write whose version the cache already holds is ignored, so the r
 after a reload does not announce old writes. Browser proof on instance 7: "Raise the headline to
 96pt." → header `v2`, notice shown, no conflict banner
 ([evidence](evidence/chat/F-chat-2-fixed-agent-write-followed.png)). Tests: `App.chat.test.tsx`.
+
+re-tested 2026-10-04: fixed — instance 10: FakeProvider "Raise the headline to 96pt." and Codex "Change the tagline text to \"Edited by Codex\"" both gave header `v2`, the new picture, the notice "The agent updated the design (v2)", the selected Headline kept and no conflict banner ([fake](evidence/retest/F-chat-2-retest-agent-write-followed-chip.png), [Codex](evidence/retest/F-chat-2-retest-codex-edit-followed.png)).
 
 ## F-chat-3 — Stopping from one tab leaves another tab saying "The agent is working…"
 
@@ -207,6 +211,8 @@ claiming one chat session would make Pontis answer `ui_unavailable` rather than 
 validation in flight) no longer leaves tab 1 "working". A turn with no call in flight when Stop lands still
 writes no event Pontis-side, so a window that did not press Stop cannot know — that part is Pontis's.
 
+re-tested 2026-10-04: still open — upstream, as recorded; not re-run: since D-1 a second tab no longer mirrors the first's session (a tab given a copy of another's `sessionStorage` mints its own window id and starts with an empty chat, [evidence](evidence/retest/dup-tab-retest-starts-fresh.png)), so the two-tab setup of the steps cannot be built any more; the "Stop with a call in flight" half was not re-run.
+
 ## F-chat-4 — Killing the Runtime mid-turn leaves "working…" forever, even after a reload
 
 - **Severity:** high
@@ -240,6 +246,8 @@ running. Browser proof on instance 7 (`kill -9` of the driver mid-validate, then
 **New session**): [dead](evidence/chat/F-chat-4-fixed-runtime-killed.png) and
 [recovered](evidence/chat/F-chat-4-fixed-new-session.png). Tests: `Chat.test.tsx` "a session that
 cannot be carried on".
+
+re-tested 2026-10-04: fixed — instance 10, FakeProvider: `kill -9` of the Runtime mid-`Validate the long design.` gave, after ~8 s, "Your Runtime went offline during this turn, so the conversation has stopped…" with **New session**, the capability marked failed, and the same after a reload ([evidence](evidence/retest/F-chat-4-retest-runtime-killed.png)).
 
 ## F-chat-5 — After a Runtime restart the chat is wedged on the dead session, and cannot start another
 
@@ -275,6 +283,8 @@ the old history stays above a divider with pending approvals expired. A reload r
 tab's own session (and to its ended state) instead of replaying "the latest". Tests: `chat.test.ts`,
 `Chat.test.tsx`, `App.chat.test.tsx`.
 
+re-tested 2026-10-04: fixed — instance 10: after F-chat-4 a new Runtime was paired, **New session** started a working session ("Read the manual first." answered) with the old history above a "NEW SESSION" divider ([evidence](evidence/retest/F-chat-5-retest-new-session-recovered.png)).
+
 ## F-chat-6 — Restarting the sidecar forgets every paired device and the whole history
 
 - **Severity:** medium (high for a deployment: a sidecar restart = every person re-pairs)
@@ -307,6 +317,8 @@ two `curl` answers above (read in the terminal, not in the browser).
 After a restart on the same data directory the chat's transcript came back on reload (instance 9).
 What is still not recovered: the *person's own* typed message, which is not a durable event, and the
 open tab's dead session id (F-chat-5, Task A).
+
+re-tested 2026-10-04: fixed — instance 10: after a `SIGTERM` + restart on the same data directory, person B's reloaded chat showed the whole transcript including the person's own "Read the manual first." line ([evidence](evidence/retest/F-chat-6-retest-transcript-after-sidecar-restart.png)).
 
 ## F-chat-7 — Stop abandons the session instead of ending it: a Codex App Server per Stop stays alive
 
@@ -384,6 +396,8 @@ established: the original note says no other tab was open for A during the Node 
 registration of the same person is a hypothesis (any other stream of A with the same app session closes the
 older one, which is the shape seen), not something measured. Left open for Task E to re-run exactly as above.
 
+re-tested 2026-10-04: fixed — instance 10, Codex: 14 reads of the status line over 70 s all said "Connected · live" and the page's `ui/stream` list had no ended stream in 85 s; across a longer run the only end was one ~12 s after a session started (the stream is reopened on binding); consistent with F-40-1's eviction being the cause.
+
 ## F-chat-10 — A message over 64 KiB gets "The agent service answered something unexpected."
 
 - **Severity:** low
@@ -438,6 +452,8 @@ id — and answered with the four layers. "Open my ALPHA Square post design in t
 Then validate it." with `ALPHA Square post` open: `applyOperations` then `validate`, and the open editor went to
 `v2` with "The agent updated the design (v2)" and no conflict
 ([screenshot](evidence/chat/F-chat-11-fixed-codex-edit-followed.png)).
+
+re-tested 2026-10-04: fixed — instance 10, Codex: same evidence as F-00-4; each message carries the `[forma-view] project=… design=… name="…" page=… layer=…` line (read in the driver's log) and the chat shows a chip "ALPHA Launch cover · Cover · Headline" under the person's text ([evidence](evidence/retest/F-chat-2-retest-agent-write-followed-chip.png)).
 
 ## F-chat-12 — A right-to-left override in a message is kept and rendered as typed
 
@@ -503,6 +519,21 @@ lists with `-`) shows its markers. Safe and consistent, and the right side of th
 
 `POST /agent/intent` with no `Authorization` → `403 {"error":"not_authenticated"}`. Clients, the chat
 included, map the body, so nothing breaks; a generic HTTP client would expect `401`.
+
+## F-chat-17 — info: the project the person has selected is not part of the view while no design is open
+
+- **Severity:** info
+- **Status:** open (as specified: D-3 says no design open gives `[forma-view] none`)
+- **Instance / provider:** instance 10, FakeProvider (the driver logs the first line it receives)
+
+On the project page (the project selected, its designs listed) the first message arrived as
+`[forma-view] none` and the chat showed no chip, so an agent asked "what is in my project?" is not told which one the
+person is looking at; with a design open the line carries `project=… design=… name="…" page=… layer=…` as specified.
+Recorded as an observation about the spec, not a defect in the implementation.
+
+**Evidence** — `logs/driver-a.log` of the run (`VIEW [forma-view] none`, then the full line once a design was open);
+[the chip](evidence/retest/F-chat-2-retest-agent-write-followed-chip.png).
+
 
 ## Leave and come back — what is kept and what is lost, precisely
 

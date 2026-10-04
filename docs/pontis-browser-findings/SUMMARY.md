@@ -172,3 +172,54 @@ Production Caddy (F-40-4's behaviour there is unknown); a hidden background tab;
 mid-stream; approval after a driver restart and a long-idle Codex approval; delegation-token replay
 after revoke. The Orca tabs reloaded themselves about every 12 s while several testers ran
 ([F-50-8](50-security-proxy.md)), so multi-window cases were partly reproduced by script.
+
+## Re-test after fix batch 1 (2026-10-04, Task E)
+
+All four tasks (D, C, B, A) were merged, then every finding marked `fixed (…)` was re-run in a real browser on
+instance 10 (editor `127.0.0.1:4902`, a second tab at `localhost:4902` for person B), following its own steps, plus
+the open findings the batch touched and one normal-path pass per area. Each finding carries a
+`re-tested 2026-10-04:` line with its evidence; screenshots are in
+[evidence/retest/](pontis-browser-findings/evidence/retest/). 13 real Codex turns (`gpt-6-luna`, low), two of them
+refused by the expiry below; everything else FakeProvider, `curl` and process kills. No product code was changed.
+
+| | count | findings |
+|---|---|---|
+| Re-tested | 26 | 23 marked `fixed`, plus F-chat-3, F-chat-9, F-30-5 |
+| **fixed** (confirmed) | 24 | F-00-1, F-00-2, F-00-4, F-10-1, F-10-2, F-10-4, F-chat-1 (first form only), F-chat-2, F-chat-4, F-chat-5, F-chat-6, F-chat-9, F-chat-11, F-30-3, F-30-4, F-40-1, F-40-2, F-40-4, F-40-5, F-40-6, F-40-10, F-40-15, F-50-1, F-50-3 |
+| **still open** | 2 | F-30-5 (upstream: the session still dies about five minutes after its first call, on FakeProvider and on Codex), F-chat-3 (upstream; its two-tab setup can no longer be built, so not re-run) |
+| **regressed** | 0 | |
+| New findings | 3 | **F-30-10** (high), F-10-14 (low), F-chat-17 (info) |
+
+**The worst new one: F-30-10.** On real Codex an expired session leaves *no* notice and no **New session** button.
+F-30-5's recovery keys on a failed capability event, which FakeProvider writes; Codex is refused before any
+capability call, so the durable page holds only `turn.started … turn.completed`, the agent says "Please reconnect
+Forma" and the chat stays on a session that fails every message, across reloads. The expiry that Task A made legible
+is legible only on the harness's own provider, which is the one the five-minute defect hits in production. F-10-14:
+a revoked device reads "offline" as soon as an older never-revoked device sits beside it (the fix of F-10-4 holds only
+for a person's sole device).
+
+What the re-test showed working, beyond the findings:
+
+- **The view line.** Every message from a design carries `[forma-view] project=… design=… name="…" page=… layer=…`
+  (read in the driver's log) and the chat shows the chip under the person's text. Switching designs mid-conversation
+  (chat kept, panel open) made Codex read the new one. "Open my ALPHA Launch cover design" ran `design.list` then
+  `ui.openDesign`; a malformed id is a `validation_error`. With no design open the line is `none`, as specified
+  (F-chat-17 records that this also hides the selected project).
+- **One window, one registration.** Chat in tab 1 and an idle tab 2 of the same person: the agent's open-design and
+  zoom moved only tab 1. A tab given a copy of another's `sessionStorage` (what Duplicate Tab does) mints its own window
+  id and starts with an empty chat. No stream flapped in either tab across more than five minutes. A second tab
+  signing in as someone else ended the first tab's stream as the old person within seconds.
+- **Durable sidecar state and a clean stop.** `SIGTERM` with three windows and two Runtimes attached: exit in 0.05 s.
+  Restart on the same data directory: every device (the revoked one too) is still listed, the Runtime is `online`
+  again within ~5 s with no re-pair, the transcript is back after a reload. After `SIGKILL` + restart behind Vite the
+  open tab re-registered by itself ~32 s later (the watchdog) and a Codex "Set the zoom to 200%" in the same session
+  reached it. Not run: the real `pontis` daemon, Caddy.
+- **Normal paths.** Pairing (code → claim → listed → revoke), a chat turn, an edit followed by the editor without a
+  conflict (fake and Codex), approve and deny on Codex, a stop followed by another message, all four `ui.*` actions
+  (`openDesign`, `selectLayer`, `setZoom`, `setPanel`), and the proxy surface (the Runtime routes are not reachable
+  through the editor origin; B reads nothing of A's; Codex asked for B's design id gets "does not exist"). The sidecar's
+  service credential is refused `403 SERVICE_CREDENTIAL_OUT_OF_SCOPE` on projects, API keys (the PAT mint) and every
+  spelling of the path, and accepted on `/api/v1/pontis/*` ([evidence](pontis-browser-findings/evidence/retest/F-50-1-retest-curl.txt)).
+
+Not re-run: F-chat-1's second form (two tries did not lose the message), the `design.validate` Stop-in-flight half of
+F-chat-3, "close the bound tab and the agent reports no window" (covered by `ui.test.ts`), Caddy, the real daemon.

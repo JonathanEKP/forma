@@ -156,6 +156,8 @@ Pontis routes to it (rule 2: the only client), and a session cannot be driven on
 refusal is proved in `ui.test.ts` instead (after the bound window closes, two others give `ui_unavailable`
 and one other is the only target).
 
+re-tested 2026-10-04: fixed — instance 10, Codex: with tab 1's chat bound and tab 2 (same person) open on the project list, "Open my ALPHA Square post design in the editor, then set the zoom to 75%." moved only tab 1 (design opened, 75 %); tab 2 did not move ([tab 1](evidence/retest/F-40-1-retest-two-tabs-P-moved.png), [tab 2](evidence/retest/F-40-1-retest-two-tabs-R-unmoved.png)); no stream flap in either tab (F-chat-9).
+
 ## F-40-2 — The sidecar cannot be stopped gracefully while any editor window is open
 
 - **Severity:** high (deployment: every restart waits for the supervisor's kill timeout)
@@ -183,6 +185,8 @@ open, so the line that would end it is never reached.
 starts, instead of after it returns. `src/durable.test.ts` stops a sidecar with a window attached
 within 3 s (it hung before). Instance 9, stock process: `SIGTERM` with the editor tab and the Runtime
 attached exited in **0.10 s**; the finding measured 35 s+.
+
+re-tested 2026-10-04: fixed — instance 10: `SIGTERM` with three editor windows and two Runtime sockets open exited in 0.053 s with `sidecar_stopping` logged.
 
 ## F-40-3 — `ui_action_timeout` does not mean the action did not happen
 
@@ -258,6 +262,8 @@ http-proxy does not, which is why this reproduced there. I expect Caddy not to s
 answer no longer matters: the watchdog covers any proxy that keeps the response open, and a
 sidecar that is hung rather than dead.
 
+re-tested 2026-10-04: fixed — instance 10, Codex: `kill -KILL` of the sidecar and a hand restart within 2 s behind Vite; the open tab's stream ended ~32 s later (the watchdog), reopened by itself, and "Set the zoom to 200%." in the same session reached it (`ui.setZoom` handled, editor 200 %), no reload ([evidence](evidence/retest/F-40-4-retest-action-after-kill-restart.png)).
+
 ## F-40-5 — `ui.openDesign` answers a permission error for ids that are merely malformed
 
 - **Severity:** low (ux, agent-facing wording)
@@ -277,6 +283,8 @@ with the message, as `design.get` does. (A well-formed id that does not exist or
 **Fixed (fix batch 1, Task A).** `ui.openDesign` and `ui.selectLayer` answer `validation_error` ("design id
 \"…\" is not a UUID", as `design.get` does) for a string that is not an id; a well-formed id that does not
 exist or belongs to another account still collapses to `authorization_denied`. Test: `ui.test.ts`.
+
+re-tested 2026-10-04: fixed — instance 10, Codex: `ui.openDesign` with `design_id` = "ALPHA Square post" came back as a `validation_error` card and the agent quoted `design id "ALPHA Square post" is not a UUID` (it was `authorization_denied`).
 
 ## F-40-6 — The agent has no way to learn a design id, so `ui.openDesign` can only be used with ids the person pastes
 
@@ -306,6 +314,8 @@ by name with it and show it with `ui.openDesign`. MCP's `tools/list` is unchange
 **Checked with real Codex (instance 7).** "Open my ALPHA Square post design in the editor." → `design.list`,
 then `ui.openDesign` with the id it found; the editor opened the design and the agent said so. The session's
 `design.list` call is the only way it learned the id.
+
+re-tested 2026-10-04: fixed — instance 10, Codex: from `ALPHA Square post`, "Open my ALPHA Launch cover design in the editor." ran `design.list` then `ui.openDesign` with the id it found and the editor opened that design ([evidence](evidence/retest/F-40-6-retest-open-my-name.png)).
 
 ## F-40-7 — An action that lands mid-drag changes the drag's arithmetic, or drops it without a word
 
@@ -376,6 +386,8 @@ again. Not run: a second pairing to confirm re-pair works (that is the pairing t
 **Fixed** with [F-10-1](10-pairing-devices.md). The control plane keeping pairings only in memory *was*
 the fact. With a data directory the pairing survives, and the test-driver, still running, was `online`
 again 1.2 s after the restarted sidecar began answering (and the driver needed no new pairing).
+
+re-tested 2026-10-04: fixed — instance 10: the same restarts as F-10-1 and F-40-4: the Runtimes (test-driver, and the Codex one mid-session) were `online` again without a new pairing, and the Codex session carried on.
 
 ## F-40-12 — `setZoom` and `setPanel` are `handled` while nothing is showing them, and the change waits for the next design
 
@@ -471,6 +483,8 @@ refreshed token for the same person does nothing). Browser, instance 8: tab 1 as
 ran B's sign-in snippet; within 6 s tab 1's A stream had ended and it had registered again. Not checked: what
 tab 1 *shows* after the switch (the old design id against B's account), which is the
 page's own business and is not part of this finding.
+
+re-tested 2026-10-04: fixed (browser evidence is client-side only) — instance 10: tab 1 (A, stream open 87 s) and tab 2 ran B's sign-in snippet; tab 1's A stream ended at that moment and a new one opened as B. There is no view of the sidecar's registry without the testers' door, so "A's agent no longer times out" rests on `ui.test.ts`.
 
 ## F-40-16 — The window's `detail` text goes to the agent unfiltered, and an oversized one is dropped as a reset connection
 

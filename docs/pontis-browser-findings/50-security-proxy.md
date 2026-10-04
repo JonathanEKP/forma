@@ -212,6 +212,8 @@ the 403 cannot be used to learn that a guessed credential is real (an unknown on
 write and PAT mint, with nothing created behind the 403; `no_spelling_of_the_path_routes_around_the_scope`;
 `an_unknown_credential_learns_nothing_from_the_scope`; `boundary_f_is_still_open_to_the_credential`).
 
+re-tested 2026-10-04: fixed — instance 10, `curl` with the sidecar's own credential and person A's headers: `GET`/`POST /api/v1/projects`, `GET`/`POST /api/v1/api-keys`, `..`, `%2e%2e`, `%2f` and upper-case spellings all `403 SERVICE_CREDENTIAL_OUT_OF_SCOPE`; `/api/v1/pontis/projects` `200`; an unknown credential `401` ([evidence](evidence/retest/F-50-1-retest-curl.txt)).
+
 ## F-50-2 — An open UI stream is never re-authenticated: it keeps delivering after its token has expired
 
 - **Severity:** medium
@@ -292,6 +294,8 @@ in `sessionStorage`, sent with the stream and used in the app session). The "rec
 backoff" half is gone because nothing is evicted any more; a refresh opens the new stream before releasing the
 old one and the channel does not reconnect a stream the server replaced (`channel.ts`, tested in
 `channel.test.ts`). Measured again on instance 8 with two tabs: no stream ended in 2½ minutes.
+
+re-tested 2026-10-04: fixed — instance 10: see F-40-1; two tabs of one person stayed connected (no stream ended in 5 minutes apart from the deliberate reopen when a session starts) and `ui.*` actions went to the bound tab only.
 
 ## F-50-4 — The proxy forwards paths with `..` and `%2e%2e` to the sidecar unnormalised
 

@@ -39,6 +39,8 @@ event URL with a query matches, and that a query cannot smuggle a Runtime route 
 instead of `{"protocol":"pons/1.0",…}`; after it the status line read "Connected · live"
 ([screenshot](evidence/00-harness-codex-chat.png)).
 
+re-tested 2026-10-04: fixed — instance 10 (Vite proxy): the chat read the polled event page through the editor origin in every session ("Connected · live", transcripts replayed after reloads); evidence in every chat screenshot below.
+
 ## F-00-2 — The chat could never send to the real Codex: "not signed in on this device"
 
 - **Severity:** blocker
@@ -72,6 +74,8 @@ present) or the contract could say that `unknown` is a usable state; today a hos
 
 **Evidence** — `/pons/v1/devices` excerpt above; after the fix the screenshot shows the panel with
 the unverified note and a Codex answer.
+
+re-tested 2026-10-04: fixed — instance 10, real Codex gpt-6-luna: the chat sent 13 turns to Codex with "Sign-in not verified" shown and none refused for sign-in ([evidence](evidence/retest/F-00-4-retest-codex-reads-open-design.png)).
 
 ## F-00-3 — The first session on a brand-new `CODEX_HOME` fails: "timed out waiting for thread/start"
 
@@ -123,6 +127,8 @@ person has to paste an id, or the application context has to carry the open desi
 
 **Fixed (fix batch 1, Task A)** — see F-chat-11: the editor reports the view with each message and the
 sidecar writes the `[forma-view]` line; `design.list` (4793180) answers "what designs are there".
+
+re-tested 2026-10-04: fixed — instance 10, Codex: with `ALPHA Launch cover` open, "what is the headline text" went straight to `design.get` and answered "ALPHA LAUNCH"; after navigating to `ALPHA Square post` the same kind of question read that design ([evidence](evidence/retest/F-00-4-retest-codex-reads-open-design.png), [switched](evidence/retest/F-chat-11-retest-codex-switched-design.png)).
 
 ## F-00-5 — Orca's `click` is unreliable on the editor's first interaction after a navigation
 
