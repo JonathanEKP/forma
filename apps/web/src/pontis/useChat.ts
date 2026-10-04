@@ -75,7 +75,7 @@ export interface Chat {
   readonly sessionId: string | null;
   /** Why the session cannot be carried on, or `null`. Sending waits for `newSession` while it is set. */
   readonly dead: string | null;
-  readonly send: (text: string) => Promise<void>;
+  readonly send: (text: string, onAccepted?: () => void) => Promise<void>;
   readonly newSession: () => Promise<void>;
   readonly stop: () => Promise<void>;
   readonly decide: (approvalId: string, decision: Decision) => Promise<void>;
@@ -136,7 +136,7 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
   const seq = useRef(0);
   // The reader and the context it reads, for the live path to hand frames to.
   const reader = useRef<{ stream: EventStream; context: string } | null>(null);
-  const queued = useRef<{ sessionId: string; text: string; view: ViewIds } | null>(null);
+  const queued = useRef<{ sessionId: string; text: string; view: ViewIds; onAccepted?: () => void } | null>(null);
   const stopPending = useRef<string | null>(null);
 
   const agent = useMemo(() => client ?? createAgentClient({ token: accessToken }), [client]);
@@ -314,6 +314,7 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
     queued.current = null;
     void agent.input(waiting.sessionId, waiting.text, waiting.view).then((answer) => {
       if (!answer.ok) refused(answer.failure);
+      else waiting.onAccepted?.();
     });
   }, [agent, session, refused]);
 
@@ -361,7 +362,7 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
   }, [agent, runtime, blocked, notice, refreshRuntime]);
 
   const send = useCallback(
-    async (raw: string) => {
+    async (raw: string, onAccepted?: () => void) => {
       const text = raw.trim();
       if (text.length === 0 || dead !== null || state.working) return;
       const seen = viewRef.current?.();
@@ -370,17 +371,18 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
 
       if (session && session.status !== "ended") {
         if (session.status === "starting") {
-          queued.current = { sessionId: session.id, text, view: ids };
+          queued.current = { sessionId: session.id, text, view: ids, ...(onAccepted ? { onAccepted } : {}) };
           return;
         }
         const answer = await agent.input(session.id, text, ids);
         if (!answer.ok) refused(answer.failure);
+        else onAccepted?.();
         return;
       }
 
       const sessionId = await start();
       if (sessionId === null) return;
-      queued.current = { sessionId, text, view: ids };
+      queued.current = { sessionId, text, view: ids, ...(onAccepted ? { onAccepted } : {}) };
       dispatch({ type: "started", sessionId, id: localId() });
     },
     [agent, session, dead, state.working, start, refused, localId],

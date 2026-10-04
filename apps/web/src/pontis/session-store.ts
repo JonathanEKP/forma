@@ -92,7 +92,7 @@ export function recallDraft(store: Store | null = browserStore()): string {
   }
 }
 
-/** Keep an unsent message across a reload, or remove it once it is sent. */
+/** Keep an unsent message across a reload, or remove it once the Runtime accepts it. */
 export function rememberDraft(text: string, store: Store | null = browserStore()): void {
   try {
     if (text.length === 0) store?.removeItem(DRAFT_KEY);

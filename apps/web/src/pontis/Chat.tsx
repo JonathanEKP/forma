@@ -73,8 +73,7 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
     const text = draft.trim();
     if (text.length === 0 || cannot || state.working || overLimit) return;
     setDraft("");
-    rememberDraft("");
-    void chat.send(text);
+    void chat.send(text, () => rememberDraft(""));
   };
   const changeDraft = (text: string) => {
     setDraft(text);
