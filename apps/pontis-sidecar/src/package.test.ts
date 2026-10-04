@@ -35,8 +35,16 @@ describe('the package boundary', () => {
   });
 
   it('keeps the FakeProvider driver out of everything but the tests', () => {
-    for (const { name, text } of SOURCES.filter(({ name }) => !name.endsWith('.test.ts'))) {
+    // `stack.ts` is the tests' shared harness: it starts the driver, so it names it. What keeps that
+    // from being a leak is the second half — nothing that is not a test, or the harness itself,
+    // may import it.
+    const support = ['stack.ts', 'ui-window.ts'];
+    const isTest = ({ name }: { name: string }) => name.endsWith('.test.ts') || support.includes(name);
+    for (const { name, text } of SOURCES.filter((source) => !isTest(source))) {
       assert.ok(!text.includes('test-driver'), `${name} names the test driver`);
+      for (const specifier of specifiers(text)) {
+        assert.ok(!/\/(stack|ui-window)\.ts$/u.test(specifier), `${name} imports test support: ${specifier}`);
+      }
     }
   });
 

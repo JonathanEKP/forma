@@ -32,6 +32,8 @@ import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
 import { approvalId, documentOf, json, REPO, Stack, type Design, type DurableEvent } from './stack.ts';
+import { connect } from './ui-window.ts';
+import { UI_ACTIONS } from './ui.ts';
 
 const ENABLED = process.env.FORMA_REAL_CODEX === '1';
 const PINNED = join(REPO, '.codex-pinned');
@@ -39,6 +41,8 @@ const CODEX_BIN = process.env.FORMA_REAL_CODEX_BIN ?? join(PINNED, 'node_modules
 const CODEX_HOME = process.env.FORMA_REAL_CODEX_HOME ?? join(PINNED, 'home');
 const BRIDGE = process.env.FORMA_REAL_CODEX_BRIDGE ?? join(REPO, 'apps/pontis-sidecar/test-driver/target/debug/pontis-mcp-bridge');
 const OUT = process.env.FORMA_REAL_CODEX_OUT;
+/** Where the editor would be served from; the UI channel's whole allowlist. */
+const EDITOR_ORIGIN = 'http://editor.test';
 
 /** A real model is slow: this is a hang detector, never a pacing device. */
 const DEADLINE_MS = 240_000;
@@ -74,7 +78,7 @@ describe('the sidecar, run against the real Codex in capability_only', { skip: E
     // record never reads.
     toolchain.codexHomeConfig = readFileSync(join(CODEX_HOME, 'config.toml'), 'utf8').trim().split('\n');
     toolchain.reasoningEffortPassedByDriver = 'low';
-    await stack.boot('Real run');
+    await stack.boot('Real run', { editorOrigin: EDITOR_ORIGIN });
     // The session of S1 is also the readiness check: opening it spawns the real App Server and
     // verifies ADR-027's posture, before any model turn costs anything.
     await stack.attachDriver({
@@ -160,13 +164,16 @@ describe('the sidecar, run against the real Codex in capability_only', { skip: E
     keep('S6', prompt, events, { approvalCard: card, version: now.version });
   });
 
-  it('S8 cancels mid-turn: nothing is written, and the Runtime accepts a new turn after', async (t) => {
+  it('S8 cancels mid-turn: the turn ends cancelled, and nothing is written', async (t) => {
     const design = await seed('S8 cover');
     await stack.startSession('codex');
     const prompt = `In design ${design.id}, change the headline text to "Cancelled" and then validate it.`;
     const sent = stack.cursor;
     await stack.say(prompt);
-    await stack.nextEvent('turn.started');
+    // In flight: the model has asked for its first capability and the turn is not over. (The first
+    // run cancelled at `turn.started`, 0.9s in, before the model had said anything — a cancel, but
+    // not one that interrupts any work. docs/pontis-step11-real-codex.md records both.)
+    await stack.nextEvent('capability.requested');
     await stack.intent('session.cancel', { sessionId: stack.sessionId });
     await stack.until('the turn to end', async () => {
       const page = await stack.refresh();
@@ -175,14 +182,38 @@ describe('the sidecar, run against the real Codex in capability_only', { skip: E
     const events = stack.seen.filter((event) => event.sequence > sent && event.sessionId === stack.sessionId);
     const ended = events.find((event) => event.type.startsWith('turn.') && event.type !== 'turn.started')?.type;
     t.diagnostic(`the turn ended with ${ended}`);
-    // The cancel raced the model: a write that the model had already committed before the cancel
-    // arrived is not a defect of cancellation, so the assertion is that the design is whole —
-    // either untouched, or exactly one version past what it was — and that the turn did not
-    // outlive the cancel.
+    // The cancel raced the model: a write it had already committed before the cancel arrived is
+    // not a defect of cancellation, so the assertion is that the design is whole — untouched, or
+    // exactly one version past what it was.
     const now = await stack.read(design.id);
     assert.ok(now.version === design.version || now.version === design.version + 1, `version ${now.version} from ${design.version}`);
     keep('S8', prompt, events, { endedWith: ended, versionBefore: design.version, versionAfter: now.version });
     assert.equal(ended, 'turn.cancelled', 'the cancel ended the turn');
+  });
+
+  it('S7 moves the person\'s view: ui.openDesign reaches a connected window, and its acknowledgement makes it succeed', async () => {
+    const design = await seed('S7 cover');
+    // The window the editor would be, connected before the turn, answering as the editor does.
+    const window = await connect(stack.sidecar, stack.sessionToken, EDITOR_ORIGIN, UI_ACTIONS);
+    try {
+      await stack.startSession('codex');
+      const prompt = `Open design ${design.id} in the editor.`;
+      const sent = stack.cursor;
+      await stack.say(prompt);
+      const action = await window.next(DEADLINE_MS);
+      assert.equal(action.capabilityId, 'ui.openDesign');
+      assert.deepEqual(action.input, { design_id: design.id });
+      assert.equal(await window.ack(action.invocationId, 'handled', 'S7 cover'), 200);
+      await stack.nextEvent('turn.completed');
+      const events = stack.seen.filter((event) => event.sequence > sent && event.sessionId === stack.sessionId);
+      const opened = events.find((event) => event.type === 'capability.completed' && event.payload.capabilityId === 'ui.openDesign');
+      assert.ok(opened, 'ui.openDesign completed');
+      assert.equal((opened.payload.result as { outcome?: unknown } | undefined)?.outcome, 'handled');
+      assert.equal((await stack.read(design.id)).version, design.version, 'moving the view wrote nothing');
+      keep('S7', prompt, events, { action: { capabilityId: action.capabilityId, input: action.input }, acknowledged: 'handled' });
+    } finally {
+      window.close();
+    }
   });
 
   it('S13 declines what Forma is not: no repository read, no shell, no image model', async () => {
@@ -273,6 +304,8 @@ function sanitize(value: unknown): unknown {
   if (typeof value === 'string') {
     return value
       .replaceAll(stack.account, '<account>')
+      .replaceAll(stack.subject, '<person>')
+      .replace(/service:[0-9a-f-]{36}:<person>/gu, 'service:<redacted>:<person>')
       .replace(/Bearer\s+[\w.~+/=-]+/giu, 'Bearer <redacted>')
       .replace(/eyJ[\w-]+\.[\w-]+\.[\w-]+/gu, '<redacted-jwt>')
       .replace(/forma_(?:svc|pat)_[\w-]+/gu, '<redacted-credential>')

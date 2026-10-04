@@ -76,8 +76,9 @@ export class Stack {
   deadlineMs: number;
 
   private readonly servers: Server[] = [];
-  private readonly subject = randomUUID();
-  private readonly sessionToken = mintSession(this.subject);
+  readonly subject = randomUUID();
+  /** The person's session, for a test that has to speak as their browser does. */
+  readonly sessionToken = mintSession(this.subject);
   private credential = '';
 
   constructor(deadlineMs = 60_000) {
@@ -85,7 +86,7 @@ export class Stack {
   }
 
   /** forma-server, an account and a project for the person, and the sidecar — no Runtime yet. */
-  async boot(projectName: string): Promise<void> {
+  async boot(projectName: string, options: { editorOrigin?: string } = {}): Promise<void> {
     for (const [binary, how] of [
       [FORMA_SERVER, 'cargo build -p forma-server'],
       [DRIVER, 'cargo build --manifest-path apps/pontis-sidecar/test-driver/Cargo.toml'],
@@ -112,6 +113,8 @@ export class Stack {
       FORMA_SERVER_URL: this.forma,
       FORMA_SERVICE_CREDENTIAL: this.credential,
       FORMA_PONTIS_BIND: '127.0.0.1:0',
+      // Without it no window can connect and every ui.* capability answers ui_unavailable.
+      ...(options.editorOrigin === undefined ? {} : { FORMA_PONTIS_EDITOR_ORIGIN: options.editorOrigin }),
     });
     this.sidecar = await ready(sidecarProcess);
   }
