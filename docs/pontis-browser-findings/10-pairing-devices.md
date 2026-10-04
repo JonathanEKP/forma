@@ -22,7 +22,7 @@ other sections of the page through the DOM and screenshotting at scroll 0 gave c
 
 ## Summary
 
-31 cases, 12 findings. By severity: **0 blocker, 2 high, 4 medium, 4 low, 2 info** (the info items are
+34 cases, 13 findings. By severity: **0 blocker, 2 high, 4 medium, 5 low, 2 info** (the info items are
 limitations or observations, not defects). The two highs are the same hole seen from two sides: the
 sidecar keeps no state across a restart, and the chat has no way out of a turn whose Runtime disappeared.
 
@@ -40,6 +40,7 @@ sidecar keeps no state across a restart, and the chat has no way out of a turn w
 | F-10-10 | low | Missing/forged token answers 403 `origin_not_allowed`; a foreign device is 403, not 404 (Pontis) |
 | F-10-11 | info | Facts about revoke: idempotent but the second click writes a second durable event; a revoked key can pair again; the real `pontis` says nothing helpful about it |
 | F-10-12 | info | Presence of a frozen Runtime takes 32–48 s to read offline; a killed one is instant |
+| F-10-13 | low | Two Runtimes holding one device identity displace each other every ~5 s, silently, and the device reads "online" throughout |
 
 ## Cases run
 
@@ -78,6 +79,9 @@ sidecar keeps no state across a restart, and the chat has no way out of a turn w
 | P29 | Cross-origin `Origin` and spoofed `Host` with a valid bearer | accepted (200) — info: these routes are bearer-only, no cookie, so there is nothing to forge from a page that lacks the token; the UI channel is the one that checks Origin/Host |
 | P30 | Real daemon after revoke; re-pair on the same machine | daemon prints `the paired Device has been revoked` and exits 1; `pontis pair` again: `configuration error: a Device is already paired; refusing to replace its identity` → F-10-11 |
 | P31 | First-time person walkthrough of the page | `ux` → F-10-5, F-10-6, F-10-9 |
+| P32 | Eight Runtimes claim one code at the same instant | pass — exactly one `200`, seven `401 pairing_code_consumed`, one device |
+| P33 | A person types the code: lowercase, without dashes, with spaces and padding | pass — all accepted (normalised); a wrong character is `pairing_code_invalid` |
+| P34 | Clone a paired Runtime's data dir to a second dir and run both real `pontis` daemons; then revoke | **FAIL (low)** → F-10-13; revoke stopped both (`the paired Device has been revoked`) |
 
 ### P13 result
 
@@ -312,6 +316,8 @@ credential refresh; not exercised).
 **Expected** — A distinguishable "too many attempts, try again in N s" (the code `bad_request` is also what
 a malformed body gets), and the person minting a code is not locked out by someone else's guesses.
 
+A 429 does **not** consume the code: the same code claimed after the window gave `200`.
+
 **Evidence** — status lines above; no screenshot (a CLI-level behaviour).
 
 ## F-10-9 — `ux` The device list never prunes and cannot tell two machines apart
@@ -382,3 +388,30 @@ closing the connection (laptop lid, dropped Wi-Fi, `SIGSTOP`) read `online: true
 **48.0 s** in two runs, then flipped, and recovered 0.55 s after `SIGCONT`. During that window the sidecar
 routes a chat message to it and the turn never completes (F-10-2). Combined with F-10-3 the *page* can show
 "online" for a laptop that went to sleep minutes ago.
+
+## F-10-13 — Two Runtimes holding one device identity displace each other every ~5 s, silently
+
+- **Severity:** low
+- **Status:** open (Pontis realtime gateway / runtime; Forma shows what it is told)
+- **Instance / provider:** instance 2, real `pontis run --foreground` (two copies)
+
+**Steps to reproduce**
+1. `pontis pair` (UI code) with a scratch `--data-dir`; copy that directory to a second one
+   (a restored backup, a cloned VM, or a person following the page's command on two accounts of one machine).
+2. Start `pontis run --foreground` against each copy, with different `--runtime-dir`s (the same
+   runtime dir is refused: `another Runtime process already holds the provider-workspaces lock`).
+3. Watch `GET /pons/v1/devices` and each process's sockets for a minute; then revoke the device.
+
+**Expected** — One connection wins and the other is told why (and says so to its operator), or the second is
+refused; at the least the Agents page does not report a steady "online".
+
+**Actual** — Both start (`runtime.started`) and neither prints anything more. The device record's
+`lastSeenAt` advanced every ~5 s for the whole minute (03:06:53, :58, 03:07:03, :08, :14, :19, :24, …) and
+`online` stayed `true`, while the two processes alternated between holding a socket and holding none
+(`ss -tnp`, sampled every 5 s: 0/0, 0/1, 1/1, 0/1, 1/1, 0/1, 0/0, 1/0, …): each connect displaces the other
+and each then reconnects. A chat message sent into that state goes to whichever holds the socket at that
+instant and a turn is dropped when the other takes over — which is F-10-2's stuck turn without a revoke.
+Revoking stopped both daemons cleanly.
+
+**Evidence** — the sampled table above (`logs` of this run are scratchpad files, not committed); both
+daemons' logs contain only `runtime.started` until the revoke.
