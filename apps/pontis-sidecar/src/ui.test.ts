@@ -257,6 +257,15 @@ describe('the UI routes themselves', () => {
   });
 });
 
+/** Waits for the server to have noticed windows going: a closed client is dropped asynchronously. */
+async function registered(sidecar: Sidecar, count: number): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (sidecar.agentApp.uiClients.all().length === count) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.equal(sidecar.agentApp.uiClients.all().length, count);
+}
+
 /** A paired Device record, with no socket: enough to hold a session's binding. */
 async function pair(sidecar: Sidecar, userId: string): Promise<string> {
   const jwk = generateKeyPairSync('ed25519').publicKey.export({ format: 'jwk' });
@@ -395,6 +404,37 @@ describe('an action goes to the window whose chat started the session (D-2)', ()
       } finally {
         one.close();
         two.close();
+      }
+    });
+  });
+
+  it('does not hand the session to a stranger when its window closes: one other window is the only target, two are ambiguous', async () => {
+    await sidecarWith([ORIGIN], async (sidecar) => {
+      const device = await pair(sidecar, USER);
+      const bound = session();
+      sidecar.controlPlane.bindSessionContext({ sessionId: bound, userId: USER, deviceId: device, applicationContextId: CONTEXT });
+      const chat = await connect(sidecar, 'session-user', { agentSession: bound });
+      const second = await connect(sidecar, 'session-user');
+      const third = await connect(sidecar, 'session-user');
+      try {
+        chat.close();
+        await registered(sidecar, 2);
+        // Two windows left and none bound to the session: Pontis does not choose.
+        const ambiguous = await invoke(sidecar, 'ui.setZoom', { zoom: 2 }, 'inv_gone_two', USER, CONTEXT);
+        assert.equal(ambiguous.status === 'failed' ? ambiguous.error.code : '', 'ui_unavailable');
+        await assert.rejects(second.next(200));
+        await assert.rejects(third.next(200));
+
+        // One left: with a single candidate there is nothing to guess between.
+        third.close();
+        await registered(sidecar, 1);
+        const only = invoke(sidecar, 'ui.setZoom', { zoom: 3 }, 'inv_gone_one', USER, CONTEXT);
+        const action = await second.next();
+        await second.ack(action.invocationId, 'handled');
+        assert.equal((await only).status, 'completed');
+      } finally {
+        second.close();
+        third.close();
       }
     });
   });

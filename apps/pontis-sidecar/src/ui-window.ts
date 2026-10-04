@@ -103,11 +103,16 @@ export async function connect(
       new Promise((resolve, reject) => {
         const ready = delivered.shift();
         if (ready) return resolve(ready);
-        const timer = setTimeout(() => reject(new Error('no action arrived')), ms);
-        waiting.push((action) => {
+        const wake = (action: { invocationId: string; capabilityId: string; input: unknown }) => {
           clearTimeout(timer);
           resolve(action);
-        });
+        };
+        const timer = setTimeout(() => {
+          // A waiter that gave up must leave the queue, or it swallows the next action.
+          waiting.splice(waiting.indexOf(wake), 1);
+          reject(new Error('no action arrived'));
+        }, ms);
+        waiting.push(wake);
       }),
     ack: (invocationId, outcome, detail) =>
       post('/pons/v1/ui/ack', { clientId, invocationId, outcome, ...(detail ? { detail } : {}) }),
