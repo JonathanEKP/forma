@@ -163,7 +163,7 @@ A's chat, through the same `/agent/intent` and event routes the editor uses (`ch
 ## F-50-1 — The sidecar's service credential is accepted on the whole REST API, and can mint a PAT
 
 - **Severity:** high
-- **Status:** open
+- **Status:** fixed (9c822fe)
 - **Instance / provider:** instance 6; no model involved (forma-server alone)
 
 **Steps to reproduce**
@@ -201,6 +201,16 @@ non-Boundary-F route refuses a service credential.
 **Evidence** — probe output (credential redacted): `svc POST /api/v1/projects → 201`, `svc DELETE project → 204`,
 `svc POST /api/v1/api-keys → 201`, `minted PAT, no service credential, GET /projects → 200`. Not a browser case: the
 credential never reaches a browser, so this was seen with `curl`-level requests against forma-server.
+
+**Fix (batch 1, task D, D-9)** — `require_bearer`'s service arm now classifies the request path before anything else
+and accepts the credential only under `/api/v1/pontis/` and on `RESOLVE_PATH`; every other route answers
+`403 SERVICE_CREDENTIAL_OUT_OF_SCOPE`. The check is on the percent-decoded, segment-checked path (`..`, `%2e%2e`,
+`%2F`, `\`, empty segments, invalid escapes all fall outside; the router is case-sensitive, so `PONTIS` is simply a
+different path), and the resolve exception stays an exact raw-path match. The credential itself is verified first, so
+the 403 cannot be used to learn that a guessed credential is real (an unknown one is 401 on every path). Tests:
+`apps/server/tests/service_credential.rs` (`the_credential_is_refused_outside_boundary_f` is the F-50-1 repro: read,
+write and PAT mint, with nothing created behind the 403; `no_spelling_of_the_path_routes_around_the_scope`;
+`an_unknown_credential_learns_nothing_from_the_scope`; `boundary_f_is_still_open_to_the_credential`).
 
 ## F-50-2 — An open UI stream is never re-authenticated: it keeps delivering after its token has expired
 
