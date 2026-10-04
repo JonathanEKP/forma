@@ -40,7 +40,7 @@ Once per worktree:
 
 ```bash
 pnpm install
-ln -s /path/to/pontis apps/pontis-sidecar/.pontis      # the Pontis seam; see the sidecar README
+# the Pontis seam: link the checkout as the sidecar README says
 cargo build -p forma-server
 cargo build --manifest-path apps/pontis-sidecar/test-driver/Cargo.toml
 ```
