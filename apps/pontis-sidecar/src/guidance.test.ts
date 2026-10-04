@@ -80,6 +80,12 @@ describe('the guidance', () => {
     assert.deepEqual(unreachable, [], 'the guidance names capabilities the sidecar does not register');
   });
 
+  it('explains that a timed-out UI action may already have happened', () => {
+    const timeout = GUIDANCE.instructions.filter((text) => text.includes('ui_action_timeout'));
+    assert.equal(timeout.length, 1);
+    assert.match(timeout[0] ?? '', /outcome is unknown; check the editor before repeating it/u);
+  });
+
   it('carries no manual revision and no MCP tool name', () => {
     // A revision here would change the guidance digest whenever the manual
     // changed; an MCP name would send a Pontis agent to a tool it does not have.

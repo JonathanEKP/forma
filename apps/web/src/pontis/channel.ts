@@ -97,6 +97,7 @@ export type ChannelState =
 const STREAM_PATH = "/pons/v1/ui/stream";
 const ACTIONS_PATH = "/pons/v1/ui/actions";
 const ACK_PATH = "/pons/v1/ui/ack";
+const ACK_DETAIL_LIMIT = 256;
 
 /**
  * How long to wait before reconnecting a stream that ended.
@@ -190,6 +191,12 @@ export function openChannel(options: ChannelOptions): Channel {
       } catch (cause) {
         ack = { outcome: "failed", detail: cause instanceof Error ? cause.message : "the handler threw" };
       }
+    }
+    if (ack.detail !== undefined && ack.detail.length > ACK_DETAIL_LIMIT) {
+      let prefix = ack.detail.slice(0, ACK_DETAIL_LIMIT - 1);
+      const last = prefix.charCodeAt(prefix.length - 1);
+      if (last >= 0xd800 && last <= 0xdbff) prefix = prefix.slice(0, -1);
+      ack = { ...ack, detail: `${prefix}…` };
     }
     await fetchImpl(`${base}${ACK_PATH}`, {
       method: "POST",

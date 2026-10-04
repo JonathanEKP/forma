@@ -228,6 +228,31 @@ describe("the channel", () => {
     }
   });
 
+  it("caps handler details before acknowledging the action", async () => {
+    const detail = "x".repeat(1_024);
+    const sidecar = fakeSidecar({
+      actions: [{ invocationId: "inv_detail", capabilityId: "ui.setZoom", input: { zoom: 2 } }],
+    });
+    const channel = openChannel({
+      handlers: { "ui.setZoom": () => ({ outcome: "rejected", detail }) },
+      token: () => Promise.resolve(null),
+      baseUrl: "http://sidecar.test",
+      fetchImpl: sidecar.fetchImpl,
+    });
+    try {
+      await until(() => sidecar.posts.some(({ path }) => path.endsWith("/ack")));
+      const ack = sidecar.posts.find(({ path }) => path.endsWith("/ack"))?.body;
+      expect(ack).toEqual({
+        clientId: CLIENT,
+        invocationId: "inv_detail",
+        outcome: "rejected",
+        detail: `${"x".repeat(255)}…`,
+      });
+    } finally {
+      channel.close();
+    }
+  });
+
   it("answers not_registered for an id it has no handler for, rather than letting it time out", async () => {
     const sidecar = fakeSidecar({
       actions: [{ invocationId: "inv_2", capabilityId: "ui.openDesign", input: {} }],

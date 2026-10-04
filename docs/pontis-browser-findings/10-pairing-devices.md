@@ -198,7 +198,7 @@ re-tested 2026-10-04: fixed — instance 10, person B (one device): revoking it 
 ## F-10-3 — The Devices panel is a snapshot: new devices do not appear, a dead one stays "online"
 
 - **Severity:** medium
-- **Status:** open
+- **Status:** fixed (96abd35)
 - **Instance / provider:** instance 2, test-driver and real `pontis`
 
 **Steps to reproduce**
@@ -222,6 +222,8 @@ The pairing-code card has the same problem: after the code is claimed it still s
 
 **Evidence** — DOM text read from the page (`article` count, `online · last seen …`) against
 `GET /pons/v1/devices` in the same minute. No screenshot (the "wrong" state is two lines of text).
+
+**Fix** — the panel refreshes on `device.*` live frames and stream reconnection, with a 30-second fallback poll and out-of-order response protection (`devices-panel.test.tsx`). On browser instance 13, pairing while `/agents` stayed open increased the device cards without a reload.
 
 ## F-10-4 — After a revoke the chat gives three different, unhelpful answers
 

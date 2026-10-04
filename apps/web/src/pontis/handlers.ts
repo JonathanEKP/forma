@@ -63,28 +63,37 @@ async function record(reach: EditorReach, designId: string): Promise<DesignRecor
 }
 
 export function uiHandlers(reach: EditorReach): Record<string, ActionHandler> {
-  return {
-    "ui.openDesign": async (input) => {
+  const pendingOpen = new Map<string, Promise<HandlerOutcome>>();
+  const handlers: Record<string, ActionHandler> = {
+    "ui.openDesign": (input) => {
       if (!isRecord(input) || typeof input.design_id !== "string") return rejected("design_id is required");
       const designId = input.design_id;
       const pageId = typeof input.page_id === "string" ? input.page_id : null;
 
-      const design = await record(reach, designId);
-      // The sidecar authorized the read, so a failure here is the design having
-      // gone or the server being unreachable — not a permission answer to
-      // repeat, and not something to open a blank editor for.
-      if (!design) return rejected(`design ${designId} could not be read`);
-      if (pageId !== null && !design.document.pages.some((page) => page.id === pageId)) {
-        return rejected(`design ${designId} has no page ${pageId}`);
-      }
+      const opening = (async (): Promise<HandlerOutcome> => {
+        const design = await record(reach, designId);
+        // The sidecar authorized the read, so a failure here is the design having
+        // gone or the server being unreachable — not a permission answer to
+        // repeat, and not something to open a blank editor for.
+        if (!design) return rejected(`design ${designId} could not be read`);
+        if (pageId !== null && !design.document.pages.some((page) => page.id === pageId)) {
+          return rejected(`design ${designId} has no page ${pageId}`);
+        }
 
-      reach.openDesign(designId);
-      // Named page or first: either way the selection is set here rather than
-      // left to the editor's own default, so the acknowledgement can say which
-      // page the person is now looking at.
-      const page = pageId ?? design.document.pages[0]?.id ?? null;
-      useEditor.getState().selectPage(page);
-      return handled(page === null ? design.name : `${design.name}, page ${page}`);
+        reach.openDesign(designId);
+        // Named page or first: either way the selection is set here rather than
+        // left to the editor's own default, so the acknowledgement can say which
+        // page the person is now looking at.
+        const page = pageId ?? design.document.pages[0]?.id ?? null;
+        useEditor.getState().selectPage(page);
+        return handled(page === null ? design.name : `${design.name}, page ${page}`);
+      })();
+      pendingOpen.set(designId, opening);
+      const clear = () => {
+        if (pendingOpen.get(designId) === opening) pendingOpen.delete(designId);
+      };
+      void opening.then(clear, clear);
+      return opening;
     },
 
     "ui.selectLayer": async (input) => {
@@ -92,6 +101,7 @@ export function uiHandlers(reach: EditorReach): Record<string, ActionHandler> {
         return rejected("design_id and layer_id are required");
       }
       const { design_id: designId, layer_id: wanted } = input;
+      await pendingOpen.get(designId);
       // Deliberately not an implicit navigation. The capability says "the
       // design the person has open", and quietly switching designs to satisfy a
       // selection would move them somewhere they did not ask to be; the agent
@@ -121,6 +131,7 @@ export function uiHandlers(reach: EditorReach): Record<string, ActionHandler> {
       // rather than the first; it exists because the editor is the thing that
       // would otherwise render an unknown panel as a blank column.
       if (!panel) return rejected(`${input.panel} is not one of ${PANELS.join(", ")}`);
+      if (reach.openDesignId() === null) return rejected("open a design first");
       useEditor.getState().setPanel(panel);
       return handled(panel);
     },
@@ -136,8 +147,20 @@ export function uiHandlers(reach: EditorReach): Record<string, ActionHandler> {
       if (input.zoom < MIN_ZOOM || input.zoom > MAX_ZOOM) {
         return rejected(`zoom ${input.zoom} is outside ${MIN_ZOOM} to ${MAX_ZOOM}`);
       }
+      if (reach.openDesignId() === null) return rejected("open a design first");
       useEditor.getState().setZoom(input.zoom);
       return handled(`zoom ${input.zoom}`);
     },
   };
+
+  for (const id of Object.keys(handlers)) {
+    const handler = handlers[id];
+    if (!handler) continue;
+    handlers[id] = (input) =>
+      useEditor.getState().draft !== null
+        ? rejected("the person is dragging")
+        : handler(input);
+  }
+
+  return handlers;
 }

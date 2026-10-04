@@ -371,7 +371,7 @@ no such route.
 ## F-50-7 — Console error while using the editor: duplicate React key `#171717`
 
 - **Severity:** low
-- **Status:** open
+- **Status:** fixed (3889c84)
 - **Instance / provider:** instance 6, FakeProvider (not Pontis-specific; seen while opening a design and the Agent panel)
 
 **Steps to reproduce** — signed in as A, open `ALPHA project` → `ALPHA Launch cover` → Agent, send a message.
@@ -382,6 +382,8 @@ swatches or a colour picker, `#171717` appears twice in the palette). No other c
 after the probes in this file; the network panel showed only `127.0.0.1:4862` and no request ≥ 400.
 
 **Evidence** — `orca console` output (message text above).
+
+**Fix** — project Brand Kit swatches use their palette slot in the React key, so repeated color values remain unique (`App.test.tsx` covers duplicate `#171717` colors).
 
 ## F-50-8 — Harness: every Orca browser tab reloaded itself about every 12 s while other testers were running
 

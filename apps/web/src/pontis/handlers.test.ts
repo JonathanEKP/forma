@@ -99,6 +99,30 @@ describe("ui.openDesign", () => {
 });
 
 describe("ui.selectLayer", () => {
+  it("waits for an openDesign that is still loading", async () => {
+    const { handlers } = harness(null);
+    type Design = Awaited<ReturnType<typeof api.getDesign>>;
+    let finishRead: ((value: Design) => void) | undefined;
+    vi.mocked(api.getDesign).mockReturnValue(
+      new Promise<Design>((resolve) => {
+        finishRead = resolve;
+      }),
+    );
+
+    const opening = handlers["ui.openDesign"]?.({ design_id: DESIGN });
+    const selecting = handlers["ui.selectLayer"]?.({ design_id: DESIGN, layer_id: "layer-2" });
+    expect(finishRead).toBeDefined();
+    finishRead?.(record as unknown as Design);
+
+    const outcomes = await Promise.all([opening, selecting]);
+    expect(outcomes).toEqual([
+      { outcome: "handled", detail: "Cover, page page-1" },
+      { outcome: "handled", detail: "layer layer-2 on page page-2" },
+    ]);
+    expect(useEditor.getState().selectedPageId).toBe("page-2");
+    expect(useEditor.getState().selectedLayerId).toBe("layer-2");
+  });
+
   it("selects the layer, moving to its page first", async () => {
     const { handlers } = harness();
     useEditor.getState().selectPage("page-1");
@@ -130,7 +154,45 @@ describe("ui.selectLayer", () => {
   });
 });
 
+describe("actions during a drag", () => {
+  it("rejects every UI action and leaves the person's draft untouched", async () => {
+    const { handlers, opened } = harness();
+    const draft = { layerId: "layer-1", x: 10, y: 20, width: 30, height: 40 };
+    useEditor.setState({ draft });
+
+    for (const [id, input] of [
+      ["ui.openDesign", { design_id: OTHER }],
+      ["ui.selectLayer", { design_id: DESIGN, layer_id: "layer-1" }],
+      ["ui.setPanel", { panel: "validation" }],
+      ["ui.setZoom", { zoom: 2 }],
+    ] as const) {
+      expect(await handlers[id]?.(input)).toEqual({ outcome: "rejected", detail: "the person is dragging" });
+    }
+
+    expect(useEditor.getState().draft).toBe(draft);
+    expect(useEditor.getState().selectedLayerId).toBe(null);
+    expect(useEditor.getState().panel).toBe("properties");
+    expect(useEditor.getState().zoom).toBe(1);
+    expect(opened).toEqual([]);
+  });
+});
+
 describe("ui.setPanel and ui.setZoom", () => {
+  it("refuses view changes when no design is open", async () => {
+    const { handlers } = harness(null);
+
+    expect(await handlers["ui.setPanel"]?.({ panel: "validation" })).toEqual({
+      outcome: "rejected",
+      detail: "open a design first",
+    });
+    expect(await handlers["ui.setZoom"]?.({ zoom: 2 })).toEqual({
+      outcome: "rejected",
+      detail: "open a design first",
+    });
+    expect(useEditor.getState().panel).toBe("properties");
+    expect(useEditor.getState().zoom).toBe(1);
+  });
+
   it("switches the panel", async () => {
     const { handlers } = harness();
     expect(await handlers["ui.setPanel"]?.({ panel: "validation" })).toEqual({

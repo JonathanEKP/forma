@@ -74,6 +74,8 @@ function useAccess(): [Access, () => void] {
 
 export function App() {
   const [designId, setDesignId] = useState<string | null>(null);
+  const openDesignId = useRef(designId);
+  openDesignId.current = designId;
   const [access, recheck] = useAccess();
   const queries = useQueryClient();
 
@@ -82,6 +84,7 @@ export function App() {
   // switch. The channel calls this, and so could anything else; it is not an
   // agent-only path.
   const openDesign = useCallback((next: string) => {
+    openDesignId.current = next;
     setDesignId((current) => {
       if (current !== next) useEditor.getState().selectPage(null);
       return next;
@@ -94,8 +97,8 @@ export function App() {
   // subject and an account, so a local Forma has neither one nor a session to
   // present, and `access.at === "ready"` is exactly the state that has both.
   const handlers = useMemo(
-    () => uiHandlers({ openDesignId: () => designId, openDesign, queries }),
-    [designId, openDesign, queries],
+    () => uiHandlers({ openDesignId: () => openDesignId.current, openDesign, queries }),
+    [openDesign, queries],
   );
   useUiChannel({ enabled: access.at === "ready", handlers });
 
@@ -103,8 +106,6 @@ export function App() {
   // is showing, so a conversation survives opening another design or going back to the
   // projects (D-1). It reads what the person has open when a message is sent, and tells the
   // editor when the agent has written to a design so the screen follows (D-7).
-  const openDesignId = useRef(designId);
-  openDesignId.current = designId;
   const chat = useChat({
     enabled: access.at === "ready" && window.location.pathname === "/",
     view: () => currentView(queries, openDesignId.current),
