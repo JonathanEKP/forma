@@ -234,3 +234,105 @@ have the sidecar refuse the second stream (`409`) so the client can stop retryin
 
 **Evidence** — script output: `windows=1 … opens:1 … resolve calls: 2`; `windows=2 … opens:6 / 5 … resolve calls: 22`.
 (`MAX_CLIENTS_PER_USER = 8` in Pontis is therefore unreachable: 12 streams from one person left one registered.)
+
+## F-50-4 — The proxy forwards paths with `..` and `%2e%2e` to the sidecar unnormalised
+
+- **Severity:** low
+- **Status:** open (nothing exploitable found; a latent assumption)
+- **Instance / provider:** instance 6
+
+**Steps to reproduce** — via the editor origin, `POST /pons/v1/devices/../device/challenge` (and `/%2e%2e/`, `..%2f`,
+`/pons/v1/ui/../device/…`, `/pons/v1/jobs/../pairing/claim`) with a valid `{"protocol":"pons/1.0"}` body (cases P-07).
+
+**Expected** — the proxy allow-list is a list of paths; a request that *resolves* to a Runtime route is not on it.
+
+**Actual** — the patterns `devices(/.*)?`, `jobs(/.*)?`, `ui/.*` match the raw string, so Vite proxies the request with
+the `..` still in it. The sidecar compares paths literally (`path === …`, `startsWith('/pons/v1/')` then exact lookup), so
+each of them is a JSON `404 not_found` and no Runtime handler runs. Safe today **only** because nothing downstream
+normalises. Anything that did (a future router, a different front proxy, Caddy's own path cleaning in production —
+not tested, production is out of scope) would turn the `devices/*`, `jobs/*` and `ui/*` wildcards into a way to the
+unauthenticated Runtime routes (`/pons/v1/pairing/claim`, `/pons/v1/device/*`). `proxy.test.ts` covers query smuggling but
+not dot segments.
+
+**Suggested direction** — tighten the wildcards to what exists (`devices/[^/]+/revoke`, `jobs/[^/]+/cancel`,
+`ui/(stream|ack|actions)`), or refuse any path containing `..`, `%2e` or a double slash at the edge; add the dot-segment
+cases to `proxy.test.ts` and the Caddyfile test.
+
+**Evidence** — probe output `ED POST /pons/v1/devices/../device/challenge → 404 {"error":"not_found"}` (the sidecar's own
+JSON, so it was forwarded), against `ED POST /pons/v1/device/challenge → 404` (Vite's bare 404, not forwarded).
+
+## F-50-5 — Vite's dev server grants CORS to every `localhost`/`127.0.0.1` origin, on the Pontis routes too
+
+- **Severity:** low
+- **Status:** open (dev server only; Caddy sets no CORS headers)
+- **Instance / provider:** instance 6
+
+**Steps to reproduce** — `GET /pons/v1/devices` (or `OPTIONS` with `Access-Control-Request-Headers: authorization`) via
+the editor origin with `Origin: http://localhost:9999`.
+
+**Expected** — the Pontis routes are same-origin by design (D9: "the sidecar refuses a cross-origin Origin"); no
+`Access-Control-Allow-Origin` for anything else.
+
+**Actual** — `Access-Control-Allow-Origin: http://localhost:9999` (and `http://127.0.0.1:9999`) on both, and on `/src/*`.
+Foreign (`http://evil.example`), `null` and `http://localhost.evil.example` origins get none. This is Vite 6.4.3's default
+`server.cors`. The UI routes themselves still refuse such an `Origin` (the sidecar checks it exactly), but `/pons/v1/devices`,
+`/pons/v1/events`, `/agent/context` and `/agent/intent` have no `Origin` check of their own, only the bearer. A page on any
+other local port that obtained a person's bearer (it cannot read the editor's `localStorage`) could therefore call them
+cross-origin from a browser. Worth knowing because the proxy is documented as *the* thing that keeps the sidecar
+same-origin.
+
+**Suggested direction** — `server: { cors: false }` in `apps/web/vite.config.ts` (the app never needs CORS: everything is
+same-origin through the proxy).
+
+**Evidence** — `OPTIONS /pons/v1/devices … 204 Access-Control-Allow-Origin: http://localhost:9999`; same for `evil.example`:
+no header.
+
+## F-50-6 — Vite's `/__open-in-editor` runs on the owner's machine for any web page
+
+- **Severity:** low (info for a dev-only surface)
+- **Status:** open — wontfix candidate; recorded because it is reachable through the editor origin
+- **Instance / provider:** instance 6
+
+**Steps to reproduce** — `GET http://127.0.0.1:4862/__open-in-editor?file=/etc/passwd` (one request, run once).
+
+**Actual** — `200` with an empty body, and `logs/vite.log` shows a shell error from the launcher: `mkdir: cannot create
+directory '': No such file or directory`, i.e. Vite's launch-editor middleware executed the owner's editor command with an
+attacker-chosen file. It needs no credential, and a plain `<img src="http://127.0.0.1:<port>/__open-in-editor?file=…">` on any
+web page would send it (the `Host` is the allowed one). Dev-server only: the built app served by forma-server and Caddy has
+no such route.
+
+**Suggested direction** — nothing for a product release; the dev instructions could say not to browse untrusted pages while
+`pnpm dev` runs, or `server.middlewareMode`/a proxy rule could drop `/__open-in-editor`.
+
+**Evidence** — `vite.log` excerpt above.
+
+## F-50-7 — Console error while using the editor: duplicate React key `#171717`
+
+- **Severity:** low
+- **Status:** open
+- **Instance / provider:** instance 6, FakeProvider (not Pontis-specific; seen while opening a design and the Agent panel)
+
+**Steps to reproduce** — signed in as A, open `ALPHA project` → `ALPHA Launch cover` → Agent, send a message.
+
+**Actual** — the console reports twice: "Encountered two children with the same key, `#171717`. Keys should be unique so that
+components maintain their identity across updates." Something renders a list keyed by a colour (the seeded brand/colour
+swatches or a colour picker, `#171717` appears twice in the palette). No other console message appeared during normal use or
+after the probes in this file; the network panel showed only `127.0.0.1:4862` and no request ≥ 400.
+
+**Evidence** — `orca console` output (message text above).
+
+## F-50-8 — Harness: every Orca browser tab reloaded itself about every 12 s while other testers were running
+
+- **Severity:** info (harness / environment, not product)
+- **Status:** open
+- **Instance / provider:** instance 6; any page
+
+**Actual** — from roughly 20:50 local time, a page in my tab (the editor, and also the fake identity provider's JWKS JSON)
+lost its `window` state and DOM marker about every 12.4 s (`performance.now()` restarted; a `data-` attribute set on
+`<html>` vanished; the same on a brand-new tab). Nothing in the app calls `location.reload`, Vite logged no HMR reload and
+the Navigation API hook recorded nothing, so the reload came from outside the page (another tester's `orca reload` without
+`--page` is my guess; I did not find the loop). Consequence for testing: stateful browser flows (two tabs held side by side,
+a chat session across several turns) cannot be observed in the browser, so the multi-window case (F-50-3) was reproduced with
+a script that runs the editor's own channel logic instead, and each browser flow here was written as one in-page script that
+finishes inside one page lifetime (`clickthrough → Agent → Send → read transcript`). `orca snapshot` also sometimes showed a
+different page state than `orca screenshot` for the same tab, so DOM reads through `orca eval` were used.
