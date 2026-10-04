@@ -395,6 +395,14 @@ export interface ChatState {
   readonly deviceId: string | null;
   /** The highest durable sequence applied, of any session in the context. */
   readonly seq: number;
+  /**
+   * A session is being started and its id is not known yet. The Runtime's `session.created`
+   * reaches the window before the sidecar's answer does, so what a session of unknown id says
+   * in this gap is held rather than taken for someone else's conversation and adopted, which
+   * wiped the person's first line (F-chat-1).
+   */
+  readonly starting: boolean;
+  readonly held: readonly DurableEvent[];
   /** What the person said in this window, for the transcript to be rebuilt after a reload. */
   readonly said: readonly Said[];
   /** Said lines the replay has not yet reached the place of. */
@@ -426,6 +434,8 @@ export const emptyChat: ChatState = {
   dead: null,
   deviceId: null,
   seq: 0,
+  starting: false,
+  held: [],
   said: [],
   unplaced: [],
   working: false,
@@ -447,6 +457,10 @@ export type ChatAction =
   /** An `agent.output.delta` from the live stream: unsequenced, never stored. */
   | { readonly type: "delta"; readonly sessionId: string; readonly turnId: string; readonly text: string }
   | { readonly type: "person"; readonly id: string; readonly text: string; readonly chip?: ViewChip }
+  /** A session is about to be asked for. */
+  | { readonly type: "starting" }
+  /** The sidecar refused, or could not be reached: nothing was started. */
+  | { readonly type: "startFailed" }
   /** This window started a session, and the sidecar has answered with its id. */
   | { readonly type: "started"; readonly sessionId: string; readonly id: string }
   /** This tab had a session before the page was reloaded. */
@@ -490,6 +504,9 @@ function place(state: ChatState, sequence: number): ChatState {
 }
 
 function step(state: ChatState, event: DurableEvent): ChatState {
+  if (state.starting && event.sessionId !== undefined && event.sessionId !== state.session?.id) {
+    return { ...state, seq: Math.max(state.seq, event.sequence), held: [...state.held, event] };
+  }
   let next = applyEvent(state, event);
   // Nothing a dead session says afterwards can be answered or is still happening.
   if (next.dead && next !== state) next = { ...next, working: false, streaming: null, lines: expirePending(next.lines) };
@@ -514,6 +531,11 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         lines: [...state.lines, { kind: "person", id: action.id, text: action.text, ...(action.chip ? { chip: action.chip } : {}) }],
       };
     }
+    case "starting":
+      return { ...state, starting: true };
+    case "startFailed":
+      // What was heard in the meantime is read as it would have been: nothing here started it.
+      return state.held.reduce(step, { ...state, starting: false, held: [] });
     case "started": {
       // What was said while the session was still being started belongs to it; the history of
       // every earlier one stays where it was, above a divider, so a new session reads as one.
@@ -521,7 +543,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       const freshIds = new Set(fresh.map((said) => said.id));
       const earlier = state.lines.filter((line) => !freshIds.has(line.id));
       const current = state.lines.filter((line) => freshIds.has(line.id));
-      return {
+      const begun: ChatState = {
         ...emptyChat,
         seq: state.seq,
         lines: [
@@ -533,6 +555,8 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         session: { id: action.sessionId, status: "starting" },
         owned: action.sessionId,
       };
+      // What the new session said before its id was known, in the order it said it.
+      return state.held.filter((event) => event.sessionId === action.sessionId).reduce(step, begun);
     }
     case "restore": {
       const { remembered } = action;

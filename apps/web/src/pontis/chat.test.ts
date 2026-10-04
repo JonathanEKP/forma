@@ -436,6 +436,37 @@ describe("what the person said", () => {
   });
 });
 
+describe("starting a session", () => {
+  it("keeps the person's first line when the Runtime's events arrive before the sidecar's answer (F-chat-1)", () => {
+    let state = chatReducer(emptyChat, { type: "person", id: "l1", text: "hello" });
+    state = chatReducer(state, { type: "starting" });
+    // The live stream is quicker than the HTTP answer: `session.created` and `started` come first.
+    state = fold(state, ev(1, "session.created", {}, "mine"), ev(2, "session.started", {}, "mine"));
+    expect(state.lines).toEqual([{ kind: "person", id: "l1", text: "hello" }]);
+    expect(state.session).toBeNull();
+    state = chatReducer(state, { type: "started", sessionId: "mine", id: "l2" });
+    expect(state.lines).toEqual([{ kind: "person", id: "l1", text: "hello" }]);
+    expect(state.session).toEqual({ id: "mine", status: "live" });
+    expect(state.owned).toBe("mine");
+  });
+
+  it("drops what another session said in the meantime, rather than showing it as this one's", () => {
+    let state = chatReducer(emptyChat, { type: "starting" });
+    state = fold(state, ev(1, "session.created", {}, "elsewhere"), ev(2, "agent.output.completed", { text: "not mine" }, "elsewhere"), ev(3, "session.created", {}, "mine"));
+    state = chatReducer(state, { type: "started", sessionId: "mine", id: "l1" });
+    expect(state.lines).toEqual([]);
+    expect(state.session?.id).toBe("mine");
+  });
+
+  it("reads what it heard as usual when nothing was started after all", () => {
+    let state = chatReducer(emptyChat, { type: "starting" });
+    state = fold(state, ev(1, "session.created", {}, "latest"), ev(2, "agent.output.completed", { text: "hi" }, "latest"));
+    state = chatReducer(state, { type: "startFailed" });
+    expect(state.session?.id).toBe("latest");
+    expect(state.lines).toEqual([{ kind: "agent", id: "e2", text: "hi" }]);
+  });
+});
+
 describe("a session that cannot be carried on", () => {
   const waiting = () =>
     fold(

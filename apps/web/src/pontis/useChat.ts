@@ -333,8 +333,10 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
       notice("error", blocked ?? "There is no device to send that to.");
       return null;
     }
+    dispatch({ type: "starting" });
     const started = await agent.start(runtime.provider.id);
     if (!started.ok) {
+      dispatch({ type: "startFailed" });
       notice("error", started.failure.message);
       // The likeliest reason is that presence changed since the last read.
       if (started.failure.reason === "runtime_offline" || started.failure.reason === "ambiguous_device") void refreshRuntime();
