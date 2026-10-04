@@ -190,8 +190,20 @@ export class Stack {
     assert.equal(answer.delivered, true, `${type} reached the Runtime`);
   }
 
-  async say(text: string): Promise<void> {
-    await this.intent('session.input', { sessionId: this.sessionId, text });
+  async say(text: string, view?: Record<string, unknown>): Promise<void> {
+    await this.intent('session.input', { sessionId: this.sessionId, text, ...(view === undefined ? {} : { view }) });
+  }
+
+  /**
+   * The view lines the driver took off the messages it was given, in order (`VIEW <line>` on its
+   * stderr): what the sidecar put in front of the person's text, as the Runtime received it.
+   */
+  viewLines(): string[] {
+    const driver = this.children.find(({ name }) => name === 'test-driver');
+    return (driver?.stderr ?? '')
+      .split('\n')
+      .filter((line) => line.startsWith('VIEW '))
+      .map((line) => line.slice('VIEW '.length));
   }
 
   /** Sends `text` and returns every event of the turn, up to `terminal`. */

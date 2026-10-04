@@ -27,6 +27,7 @@ name = "forma-pontis-test-driver"
 path = "src/main.rs"
 
 [dependencies]
+async-trait = "0.1"
 pontis-identity = { path = "../.pontis/crates/identity" }
 pontis-protocol = { path = "../.pontis/crates/protocol" }
 pontis-provider-codex = { path = "../.pontis/crates/providers/codex" }

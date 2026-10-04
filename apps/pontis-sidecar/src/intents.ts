@@ -16,6 +16,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { DeviceGateway, ControlPlane, IntentType } from '@pontis/control-plane';
 import { PONS_PROTOCOL_VERSION } from '@pontis/core';
 
+import type { FormaBoundary } from './boundary.ts';
+import { isUuid, specOf } from './capabilities.ts';
 import type { Log } from './log.ts';
 import type { Person, ResolvePerson } from './person.ts';
 
@@ -27,9 +29,103 @@ const MAX_BODY_BYTES = 64 * 1024;
 /** PV-1 needs `once` only (plan §3.1); a session grant is not offered. */
 const DECISIONS = ['approveOnce', 'deny'] as const;
 
+/** How long the person's message waits for the name of the design they have open. */
+const NAME_READ_MS = 3_000;
+
+/** The longest design name the view line carries. */
+const MAX_NAME_CHARS = 80;
+
+export const VIEW_PREFIX = '[forma-view]';
+
+/**
+ * What the person is looking at, as the editor reports it. Every field is an id
+ * the editor read off its own state, and none is trusted: `parseView` keeps a
+ * field only if it is a UUID.
+ */
+export interface View {
+  readonly projectId?: string;
+  readonly designId?: string;
+  readonly pageId?: string;
+  readonly layerId?: string;
+}
+
+/**
+ * The view as far as it is well formed. A field that is not a UUID is dropped,
+ * never the message: a bad id costs the agent a hint, not the person a sentence.
+ */
+export function parseView(raw: unknown): View {
+  if (!isRecord(raw)) return {};
+  const field = (value: unknown): string | undefined => (typeof value === 'string' && isUuid(value) ? value.toLowerCase() : undefined);
+  const projectId = field(raw.projectId);
+  const designId = field(raw.designId);
+  const pageId = field(raw.pageId);
+  const layerId = field(raw.layerId);
+  return {
+    ...(projectId ? { projectId } : {}),
+    ...(designId ? { designId } : {}),
+    ...(pageId ? { pageId } : {}),
+    ...(layerId ? { layerId } : {}),
+  };
+}
+
+/**
+ * A design name as one quoted token: control characters and line breaks gone,
+ * at most 80 characters, and `\` and `"` escaped so the name cannot end its own
+ * quotes. A name is the one free-text field of the line, and a person (or a
+ * teammate) chose it.
+ */
+export function quotedName(name: string): string {
+  const flat = [...name]
+    .map((char) => (/[\p{Cc}\p{Cf}\u2028\u2029]/u.test(char) ? ' ' : char))
+    .join('')
+    .replace(/\s+/gu, ' ')
+    .trim();
+  const clipped = [...flat].slice(0, MAX_NAME_CHARS).join('');
+  return `"${clipped.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
+}
+
+/**
+ * The one line the sidecar puts in front of every message: where the person is.
+ *
+ * It is always the first line and always the sidecar's own — a message the
+ * person types is the text after it, so a person who starts theirs with
+ * `[forma-view]` has not written the line. `name` is left out when it could not
+ * be read.
+ */
+export function viewLine(view: View, name?: string): string {
+  const parts = [
+    view.projectId ? `project=${view.projectId}` : undefined,
+    view.designId ? `design=${view.designId}` : undefined,
+    view.designId && name !== undefined ? `name=${quotedName(name)}` : undefined,
+    view.pageId ? `page=${view.pageId}` : undefined,
+    view.layerId ? `layer=${view.layerId}` : undefined,
+  ].filter((part): part is string => part !== undefined);
+  return `${VIEW_PREFIX} ${parts.length > 0 ? parts.join(' ') : 'none'}`;
+}
+
+/**
+ * The open design's name, read through Boundary F as the person — so a design
+ * they cannot read has no name here, and neither does one that is slow or gone.
+ * Never throws: the message goes either way.
+ */
+async function designName(boundary: FormaBoundary, person: Person, designId: string): Promise<string | undefined> {
+  try {
+    const record = await boundary.getDesign(
+      { userId: person.userId, applicationContextId: person.applicationContextId },
+      designId,
+      specOf('design.get').bounds.maxResultBytes,
+      AbortSignal.timeout(NAME_READ_MS),
+    );
+    return typeof record.name === 'string' ? record.name : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export type IntentHandler = (request: IncomingMessage, response: ServerResponse) => Promise<boolean>;
 
 export function createIntentRoute(options: {
+  readonly boundary: FormaBoundary;
   readonly controlPlane: ControlPlane;
   readonly devices: DeviceGateway;
   readonly resolvePerson: ResolvePerson;
@@ -50,6 +146,13 @@ export function createIntentRoute(options: {
     }
     const intent = rebuild(body, person);
     if (!intent) return reply(response, 400, { error: 'envelope_malformed' });
+    if (intent.type === 'session.input') {
+      // Before the Runtime is asked for anything, so a name read that is slow
+      // costs the message its three seconds and nothing else.
+      const view = parseView(isRecord(body) && isRecord(body.payload) ? body.payload.view : undefined);
+      const name = view.designId ? await designName(options.boundary, person, view.designId) : undefined;
+      intent.payload.text = `${viewLine(view, name)}\n${intent.payload.text}`;
+    }
 
     const online = (await options.controlPlane.listDevices(person.userId)).filter(
       (device) => !device.revokedAt && options.devices.isOnline(device.id),
@@ -99,7 +202,8 @@ export function createContextRoute(options: { readonly resolvePerson: ResolvePer
 
 type Rebuilt =
   | { readonly type: 'session.start'; readonly sessionId: string; readonly payload: unknown }
-  | { readonly type: Exclude<IntentType, 'session.start'>; readonly payload: unknown };
+  | { readonly type: 'session.input'; readonly payload: { sessionId: string; text: string } }
+  | { readonly type: Exclude<IntentType, 'session.start' | 'session.input'>; readonly payload: unknown };
 
 function rebuild(body: unknown, person: Person): Rebuilt | undefined {
   if (!isRecord(body) || !isRecord(body.payload)) return undefined;
