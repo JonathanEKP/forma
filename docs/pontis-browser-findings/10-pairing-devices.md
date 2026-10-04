@@ -378,7 +378,7 @@ clean baseline; the list of 13 same-named cards was read from the DOM.
 ## F-10-10 — Absent or forged token answers 403 `origin_not_allowed`; a foreign device is 403, not 404
 
 - **Severity:** low
-- **Status:** upstream (Pontis control plane's vocabulary; Forma's own `GET /pons/v1/devices` copies it on purpose: "Same refusal the Control Plane's own route gives")
+- **Status:** fixed (a4a99cb, 3305985) — Forma-owned route and editor mapping; the Control Plane's direct refusal remains upstream
 - **Instance / provider:** instance 2
 
 **Actual** — No bearer, a garbage bearer, a payload swapped onto another account's signature, `alg: none`
@@ -391,6 +391,8 @@ about an *origin*, and the editor's panel shows it as a generic failure rather t
 editor can say so (the chat already has `not_authenticated`: "Your sign-in has expired. Sign in again.").
 
 **Evidence** — the curl responses quoted in P17 and P16.
+
+Fix batch 2, Task F1: Forma's `/pons/v1/devices` route now returns typed 401 `unauthenticated`, and the Devices panel says "Your sign-in has expired. Sign in again." The Control Plane itself still answers its direct route with `403 origin_not_allowed`; that upstream behavior was not changed.
 
 ## F-10-11 — Facts about revoke worth knowing
 
@@ -481,4 +483,3 @@ revoked state is lost as soon as an older offline device exists. Not read from t
 **Evidence** — instance 10 transcript read from the DOM (A) against the single-device case
 ([B](evidence/retest/F-10-2-F-10-4-retest-revoked-single-device.png)); device list afterwards:
 two `revokedAt: null, online: false` and one revoked.
-

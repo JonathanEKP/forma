@@ -92,7 +92,7 @@ filed). "Both" = Fake and Codex.
 ## F-chat-1 — The first message of a window, and the whole transcript, vanish when the window starts its first session
 
 - **Severity:** medium
-- **Status:** partly fixed (29ca7e8): the first form is fixed, the second form (reload within about a second of Send) is open
+- **Status:** fixed (29ca7e8, 3305985, 7354fbf)
 - **Instance / provider:** instance 3, FakeProvider and real Codex (both reproduce)
 
 **Steps to reproduce**
@@ -132,6 +132,8 @@ are no longer wiped. The second form — a reload before the message is sent —
 the tab only remembers a session once the sidecar has answered with its id.
 
 re-tested 2026-10-04: fixed (first form) — instance 10: the first message of a window shows its "YOU" line on FakeProvider and on Codex, and an earlier transcript is not wiped; the second form (reload within ~1 s of Send) did not reproduce in two tries on B (reload scheduled 350 ms before the click, and 40 ms after it) — the message arrived and the turn ran — so it stays as recorded, not proven fixed.
+
+Fix batch 2, Task F1: drafts stay in per-tab `sessionStorage` until the `session.input` intent is accepted. If a reload happens while `session.start` or `session.input` is pending, the text returns as an unsent draft and is never auto-sent; a test covers this and verifies storage is cleared only after a later explicit send is accepted.
 
 ## F-chat-2 — The agent's edit is real in Forma but the open editor never learns of it
 
@@ -323,7 +325,7 @@ re-tested 2026-10-04: fixed — instance 10: after a `SIGTERM` + restart on the 
 ## F-chat-7 — Stop abandons the session instead of ending it: a Codex App Server per Stop stays alive
 
 - **Severity:** medium
-- **Status:** open
+- **Status:** fixed (3305985)
 - **Instance / provider:** instance 3, real Codex
 
 **Steps to reproduce**
@@ -342,10 +344,12 @@ sessions left open in the durable page. They die only with the Runtime.
 **Evidence** — process listing in the terminal (pids of `…/codex-linux-x64/…/bin/codex app-server` with
 the instance's bridge in their `--config`); durable page read with `curl`.
 
+re-tested 2026-10-04: fixed — browser instance 12, FakeProvider: Stop cancelled a long validation, the chat showed its notice, and "Read the manual first." completed in the same stored session with no new-session divider ([browser proof](evidence/retest/F1-instance-12-browser-proof.txt)). The reducer and hook tests also prove the next input reuses the session id.
+
 ## F-chat-8 — Sending while a Codex turn runs breaks that turn's tool call
 
 - **Severity:** medium
-- **Status:** open
+- **Status:** fixed (3305985)
 - **Instance / provider:** instance 3, real Codex
 
 **Steps to reproduce**
@@ -366,6 +370,8 @@ transcript.
 **Evidence** — chat transcript of the Codex run; durable page for the session:
 `turn.started agent.output.completed turn.completed turn.started agent.output.completed
 agent.output.completed turn.completed`.
+
+re-tested 2026-10-04: fixed — browser instance 12 showed Send disabled while Stop was visible during a running turn ([browser proof](evidence/retest/F1-instance-12-browser-proof.txt)); the UI and controller tests also verify sends are ignored while working.
 
 ## F-chat-9 — The UI stream ends about two seconds after it opens, so "live" flaps constantly (Codex instance)
 
@@ -401,7 +407,7 @@ re-tested 2026-10-04: fixed — instance 10, Codex: 14 reads of the status line 
 ## F-chat-10 — A message over 64 KiB gets "The agent service answered something unexpected."
 
 - **Severity:** low
-- **Status:** open
+- **Status:** fixed (a4a99cb, 3305985)
 - **Instance / provider:** instance 3, FakeProvider
 
 **Steps to reproduce** — send 70,000 characters (the box has no limit and accepts the paste).
@@ -414,6 +420,8 @@ answered something unexpected." The draft is cleared on Send and the 70k line st
 (50,000 characters is fine. Multibyte text hits the limit sooner than the box would suggest.)
 
 **Evidence** — chat tail read from the DOM; the `curl` series in C21.
+
+re-tested 2026-10-04: fixed — browser instance 12 retained a 66,000-character draft, showed "That message is too long (max 64 KB).", and disabled Send ([browser proof](evidence/retest/F1-instance-12-browser-proof.txt)). The sidecar returns typed `413 message_too_large`; editor tests cover multibyte text and refusal.
 
 ## F-chat-11 — The agent is not told which design is open (confirms F-00-4); naming it is the recovery
 
@@ -458,7 +466,7 @@ re-tested 2026-10-04: fixed — instance 10, Codex: same evidence as F-00-4; eac
 ## F-chat-12 — A right-to-left override in a message is kept and rendered as typed
 
 - **Severity:** low
-- **Status:** open
+- **Status:** fixed (3305985)
 - **Instance / provider:** instance 3, FakeProvider
 
 **Steps to reproduce** — send `…‮rtl-override‬…`.
@@ -473,10 +481,12 @@ agent text.
 
 **Evidence** — chat text read from the DOM.
 
+Fixed in fix batch 2, Task F1: person and agent paragraphs use `dir="auto"` with `unicode-bidi: plaintext`, isolating message direction. `Chat.test.tsx` verifies both bubbles carry the direction attributes.
+
 ## F-chat-13 — After a reload mid-turn the reply starts in the middle of a word
 
 - **Severity:** low
-- **Status:** open
+- **Status:** fixed (3305985)
 - **Instance / provider:** instance 3, real Codex
 
 **Steps to reproduce** — send a turn that streams (`List 15 distinct color names…`), reload right
@@ -491,10 +501,12 @@ F-chat-9.
 
 **Evidence** — sampled from the DOM in the terminal.
 
+Fixed in fix batch 2, Task F1: replayed active turns suppress transient deltas until a terminal or completed event. `chat.test.ts` verifies a reload does not show a partial delta and that a later turn after an idle replay streams normally.
+
 ## F-chat-14 — Double Stop sends two cancels and writes two notices
 
 - **Severity:** low
-- **Status:** open
+- **Status:** fixed (3305985)
 - **Instance / provider:** instance 3, Fake and Codex
 
 **Steps to reproduce** — press **Stop** twice quickly (the button stays until the first answer returns).
@@ -503,6 +515,8 @@ F-chat-9.
 agent." lines.
 
 **Evidence** — `logs/sidecar.log` (two `intent session.cancel` lines at the same millisecond).
+
+Fixed in fix batch 2, Task F1: one cancel can be pending per session; repeated Stop is ignored. `Chat.test.tsx` holds the first cancel response and verifies only one cancel and one notice.
 
 ## F-chat-15 — Agent text is never formatted
 
@@ -515,10 +529,12 @@ lists with `-`) shows its markers. Safe and consistent, and the right side of th
 ## F-chat-16 — A missing token on `/agent/intent` answers 403, not 401
 
 - **Severity:** info
-- **Status:** open (wording of the contract, not behaviour)
+- **Status:** fixed (a4a99cb)
 
 `POST /agent/intent` with no `Authorization` → `403 {"error":"not_authenticated"}`. Clients, the chat
 included, map the body, so nothing breaks; a generic HTTP client would expect `401`.
+
+Fixed in fix batch 2, Task F1: the Forma route now returns `401 {"error":{"code":"unauthenticated"}}` for missing or invalid sessions; context and intent tests verify the status and code.
 
 ## F-chat-17 — info: the project the person has selected is not part of the view while no design is open
 

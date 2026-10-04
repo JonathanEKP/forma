@@ -1,0 +1,14 @@
+Instance 12, FakeProvider, 2026-10-04; editor driven in the Orca tab.
+
+Stop and continue:
+  Stop was visible while Send was disabled.
+  The transcript showed "You stopped the agent.".
+  "Read the manual first." completed after Stop.
+  The stored session id before Stop matched the id afterwards; no new-session divider appeared.
+
+Message limit:
+  A 66,000-character draft stayed in the textarea.
+  Alert: "That message is too long (max 64 KB)."
+  Send disabled: true.
+
+The draft was cleared after the check, then browser-stack instance 12 was stopped.

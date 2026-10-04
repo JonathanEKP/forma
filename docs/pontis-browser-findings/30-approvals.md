@@ -154,6 +154,8 @@ re-tested 2026-10-04: still open — upstream (Pontis), unchanged: FakeProvider 
 
 Replaying an approve/deny for a used, cancelled or expired approval returns `{"delivered":true}` (HTTP 200) from `/agent/intent`; the only trace is `driver-a.log`: `REFUSED approval_expired no approval apr_… is awaiting a decision on this Device` — "expired" for an approval that was already answered. State never changes (exactly-once holds), but a caller cannot tell it was ignored. A same-tick double click in the UI sends two resolves for the same reason (a real double click is probably guarded by the `answering` state; not tested with real clicks).
 
+Fix batch 2, Task F1 rechecked C-9 and could not close this finding within Forma's scope: Pontis `DeviceGateway.sendIntentForContext` returns only `authorized` and `delivered`; the Runtime refusal code reaches its observer/log and is not sent as a protocol notification. Returning the actual refusal code requires a Pontis change, which this task forbids. The coordinator was asked how to classify this upstream seam; no reply had arrived at this update.
+
 ## F-30-7 — A pending approval is easy to miss; the card hides its deadline
 
 - **Severity:** low (`ux`)
