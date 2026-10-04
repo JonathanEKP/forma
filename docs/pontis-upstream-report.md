@@ -22,6 +22,7 @@ reproduction steps) is in Forma's findings files: `forma:docs/pontis-browser-fin
 | 8 | A frozen Runtime reads `online` for 32–48 s | info | F-10-12 |
 | 9 | An oversize `/ui/actions` body resets the connection instead of answering `413` | low | F-50-9 |
 | 10 | A polyglot host has to write Rust to use FakeProvider | info | sidecar README |
+| 11 | A Runtime-refused approval resolve still returns `delivered: true` to the host | **low** | F-30-6 |
 
 ---
 
@@ -187,6 +188,23 @@ provider is the Rust crate `pontis-provider-fake`, which `pontisd` does not regi
 sidecar against it means linking five runtime crates in a host-written Rust driver, as Forma's
 `apps/pontis-sidecar/test-driver` does. Pontis's own `polyglot-host-fixture` is the precedent,
 which suggests a reusable driver belongs on Pontis's side for every polyglot host.
+
+## 11. A Runtime-refused approval resolve still returns `delivered: true` to the host
+
+**Severity: low.** Replaying an approve or deny for a used, cancelled or expired approval receives
+HTTP 200 `{"delivered":true}` from `/agent/intent`, even when the Runtime refuses it as
+`approval_expired` and leaves the approval state unchanged. The only refusal trace is the test
+Runtime's observer/log; the response gives the host no resolve outcome.
+
+**Cause, as we read it.** `DeviceGateway.sendIntentForContext` reports only `{authorized, delivered}`
+to its caller. The Runtime refusal is reported to `IntentObserver`/logs, but no outcome is written
+back through the protocol or durable event stream for the host to observe.
+
+**Suggested fix:** report the Runtime's resolve outcome back to the host, including the approval id
+and refusal code, so a caller can distinguish a resolve accepted by the Runtime from one that was
+merely written to the Device socket.
+
+**Evidence:** `forma:docs/pontis-browser-findings/30-approvals.md` (F-30-6), cases A06, A11 and A17.
 
 ---
 
