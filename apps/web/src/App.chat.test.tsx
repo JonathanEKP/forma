@@ -19,6 +19,7 @@ vi.mock("./identity", () => ({
 }));
 
 import { App } from "./App";
+import { windowId } from "./pontis/window";
 import { useEditor } from "./store";
 
 const CONTEXT = "22222222-2222-4222-8222-222222222222";
@@ -188,12 +189,16 @@ describe("the chat of a window", () => {
   });
 
   it("badges the toggle with an approval that arrives while the panel is shut", async () => {
+    // A window whose chat has a session — it was reattached to it after a reload.
+    sessionStorage.setItem(
+      "forma.chat",
+      JSON.stringify({ context: CONTEXT, window: await windowId(), remembered: { sessionId: SESSION, deviceId: null, dead: null, said: [] } }),
+    );
     renderApp();
     await openDesign("Cover");
     await screen.findByRole("button", { name: /Agent/ });
     backend.push(1, "session.created");
     backend.push(2, "approval.requested", { approvalId: "apr_1", invocationId: "i", capabilityId: "design.applyOperations", risk: "write", humanSummary: "Edit", importantArguments: [], affectedResourceCount: 1 });
-    // Not this window's session, so it is adopted from the history as before.
     expect(await screen.findByLabelText("1 waiting for your approval", {}, { timeout: 4_000 })).toBeTruthy();
   });
 

@@ -202,6 +202,11 @@ original tab makes the copy mint its own, `window.ts`, tested), so the two are s
 claiming one chat session would make Pontis answer `ui_unavailable` rather than guess, which fails closed.
 (c) A stale "working" is cleared by Task A's recovery (D-6).
 
+**Partly mitigated (fix batch 1, Task A); stays open upstream.** The call that Stop cancelled fails with
+`approval_cancelled`, and a window that did not press Stop now ends the turn on it, so the case above (a
+validation in flight) no longer leaves tab 1 "working". A turn with no call in flight when Stop lands still
+writes no event Pontis-side, so a window that did not press Stop cannot know — that part is Pontis's.
+
 ## F-chat-4 — Killing the Runtime mid-turn leaves "working…" forever, even after a reload
 
 - **Severity:** high

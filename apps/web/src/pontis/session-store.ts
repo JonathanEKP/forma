@@ -49,13 +49,16 @@ function said(raw: unknown): Said | null {
   return { id: raw.id, text: raw.text, afterSeq: raw.afterSeq, sessionId: typeof raw.sessionId === "string" ? raw.sessionId : null, ...(view ? { chip: view } : {}) };
 }
 
-/** What this tab remembered for `context`, or `null` when it has nothing, or nothing of this person's. */
-export function recall(context: string, store: Store | null = browserStore()): Remembered | null {
+/**
+ * What this window remembered for `context`, or `null` when it has nothing, or
+ * nothing of this person's, or only what a tab it was copied from left behind.
+ */
+export function recall(context: string, window: string, store: Store | null = browserStore()): Remembered | null {
   try {
     const raw = store?.getItem(KEY);
     if (!raw) return null;
     const parsed: unknown = JSON.parse(raw);
-    if (!isRecord(parsed) || parsed.context !== context || !isRecord(parsed.remembered)) return null;
+    if (!isRecord(parsed) || parsed.context !== context || parsed.window !== window || !isRecord(parsed.remembered)) return null;
     const { sessionId, deviceId, dead, said: lines } = parsed.remembered;
     if (typeof sessionId !== "string" || sessionId.length === 0) return null;
     return {
@@ -70,10 +73,10 @@ export function recall(context: string, store: Store | null = browserStore()): R
 }
 
 /** Keeps `remembered` for `context`, or forgets everything when there is nothing to keep. */
-export function remembering(context: string, remembered: Remembered | null, store: Store | null = browserStore()): void {
+export function remembering(context: string, window: string, remembered: Remembered | null, store: Store | null = browserStore()): void {
   try {
     if (remembered === null) store?.removeItem(KEY);
-    else store?.setItem(KEY, JSON.stringify({ context, remembered }));
+    else store?.setItem(KEY, JSON.stringify({ context, window, remembered }));
   } catch {
     // A tab that cannot remember is a tab whose reload starts clean: no worse than before.
   }

@@ -18,7 +18,7 @@ import { liveFeed } from "./channel";
 import { DEAD } from "./chat";
 import { ChatPanel, ChatToggle } from "./Chat";
 import { forgetChat } from "./session-store";
-import { agentBinding } from "./window";
+import { agentBinding, windowId } from "./window";
 import { useChat } from "./useChat";
 
 const CONTEXT = "22222222-2222-4222-8222-222222222222";
@@ -123,6 +123,14 @@ function Harness({ enabled, offlineGraceMs }: { enabled: boolean; offlineGraceMs
 }
 
 let backend: Backend;
+
+/** This tab's chat already belongs to `SESSION`, as it does after a reload: what the history says of it is shown. */
+async function attach(sessionId = SESSION) {
+  sessionStorage.setItem(
+    "forma.chat",
+    JSON.stringify({ context: CONTEXT, window: await windowId(), remembered: { sessionId, deviceId: null, dead: null, said: [] } }),
+  );
+}
 
 beforeEach(() => {
   // A tab remembers its chat across a reload; a test is not a reload of the one before it.
@@ -247,6 +255,7 @@ describe("a conversation", () => {
   });
 
   it("shows an approval with capability, action, parameters, risk and count, and sends the decision", async () => {
+    await attach();
     await ready();
     backend.push(1, "session.created");
     backend.push(2, "session.started");
@@ -284,6 +293,7 @@ describe("a conversation", () => {
   });
 
   it("stop sends session.cancel for the live session", async () => {
+    await attach();
     await ready();
     backend.push(1, "session.created");
     backend.push(2, "session.started");
@@ -294,6 +304,7 @@ describe("a conversation", () => {
   });
 
   it("deny sends deny", async () => {
+    await attach();
     await ready();
     backend.push(1, "session.created");
     backend.push(2, "approval.requested", { approvalId: "apr_2", invocationId: "i", capabilityId: "design.applyOperations", risk: "write", humanSummary: "Edit", importantArguments: [], affectedResourceCount: 1 });
@@ -313,6 +324,7 @@ describe("the live path", () => {
   });
 
   async function connected() {
+    await attach();
     render(<Harness enabled />);
     await screen.findByText(/Studio laptop/);
     await waitFor(() => expect(pageReads().length).toBeGreaterThan(0));
@@ -548,13 +560,14 @@ describe("a window's session", () => {
 
   it("binds the window only to a session this window started, and lets go once it is over (D-2)", async () => {
     agentBinding.set(null);
-    // A session in the history that this window did not start is shown, and not spoken for.
+    // A session in the history that this window did not start is neither shown nor spoken for.
     render(<Harness enabled offlineGraceMs={150} />);
     await screen.findByText(/Studio laptop/);
     backend.push(1, "session.created");
     backend.push(2, "session.started");
     backend.push(3, "agent.output.completed", { turnId: "t", text: "From before." });
-    await screen.findByText("From before.");
+    await act(() => new Promise((resolve) => setTimeout(resolve, 150)));
+    expect(screen.queryByText("From before.")).toBeNull();
     expect(agentBinding.get()).toBeNull();
     cleanup();
 
@@ -573,6 +586,30 @@ describe("a window's session", () => {
     expect(sessionStorage.getItem("forma.chat")).toContain(SESSION);
     forgetChat();
     expect(sessionStorage.getItem("forma.chat")).toBeNull();
+  });
+
+  it("is not taken over by a tab that was copied from this one: it starts with no session of its own to speak into", async () => {
+    await inSession();
+    backend.push(3, "agent.output.completed", { turnId: "t", text: "Said to the original." });
+    await screen.findByText("Said to the original.");
+    // Duplicating a tab copies its storage, record and all; the duplicate is handed a window of its own.
+    const copied: unknown = JSON.parse(sessionStorage.getItem("forma.chat") ?? "null");
+    expect(copied).not.toBeNull();
+    cleanup();
+    sessionStorage.setItem("forma.chat", JSON.stringify({ ...(copied as Record<string, unknown>), window: "another-window" }));
+    agentBinding.set(null);
+
+    render(<Harness enabled />);
+    await screen.findByText(/Studio laptop/);
+    await act(() => new Promise((resolve) => setTimeout(resolve, 150)));
+    expect(screen.queryByText("Said to the original.")).toBeNull();
+    expect(screen.queryByText("work on it")).toBeNull();
+    expect(screen.queryByRole("region", { name: "Session ended" })).toBeNull();
+    expect(agentBinding.get()).toBeNull();
+    // Its first message starts a conversation of its own, not a line into the original's.
+    fireEvent.change(screen.getByLabelText("Message the agent"), { target: { value: "mine" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(backend.intents().filter((intent) => (intent as { type: string }).type === "session.start")).toHaveLength(2));
   });
 
   it("is not given to a different person who signs in to the same tab", async () => {

@@ -379,9 +379,9 @@ export interface ChatState {
   readonly lines: readonly Line[];
   readonly session: { readonly id: string; readonly status: SessionStatus } | null;
   /**
-   * The session this window started, if it has. Events of any other session are
-   * ignored: a replay of an earlier conversation must not replace the one the
-   * person just opened.
+   * The session this window started or was reattached to, if it has one. Events of
+   * any other session are ignored: a replay of an earlier conversation, or of
+   * another window's, must not replace the one the person has open.
    */
   readonly owned: string | null;
   /**
@@ -632,11 +632,9 @@ function applyEvent(state: ChatState, event: DurableEvent): ChatState {
   const { sessionId, payload } = event;
   const id = `e${event.sequence}`;
 
-  if (event.type === "session.created" && sessionId !== undefined && sessionId !== state.session?.id && state.owned === null) {
-    // The latest session's transcript replaces an earlier one, so a reload lands
-    // on the conversation that was open rather than the first one ever had.
-    state = { ...emptyChat, seq: state.seq, session: { id: sessionId, status: "starting" } };
-  }
+  // A session is this window's only if this window started it or was reattached to it (`restore`): a
+  // reload finds its own conversation, and another window's — or the tab this one was copied from —
+  // is not shown here, let alone spoken into. One chat per window (D-1).
   if (sessionId === undefined || sessionId !== state.session?.id) return state;
 
   const status = (next: SessionStatus): ChatState => ({ ...state, session: { id: sessionId, status: next } });
@@ -682,7 +680,11 @@ function applyEvent(state: ChatState, event: DurableEvent): ChatState {
       // the same way, so the conversation is over and the person is told so, not left to read the
       // same failure under each message.
       const code = isRecord(payload.error) ? payload.error.code : undefined;
-      return code === "delegation_expired" ? die(failed, DEAD.expired) : failed;
+      if (code === "delegation_expired") return die(failed, DEAD.expired);
+      // A call the person's Stop cancelled. Pontis writes no terminal event for the turn when a cancel
+      // lands (F-chat-3), so a window that did not press Stop — another tab — would stay "working"
+      // for ever; the cancelled call is the one sign it was given, and it ends the turn.
+      return code === "approval_cancelled" ? { ...failed, working: false, streaming: null } : failed;
     }
     case "approval.requested": {
       const approval = approvalView(payload, typeof payload.invocationId === "string" ? state.inputs[payload.invocationId] : undefined);

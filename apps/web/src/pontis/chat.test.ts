@@ -23,6 +23,9 @@ import type { DurableEvent } from "./events";
 
 const SESSION = "ses_1";
 
+/** A chat attached to `SESSION`, as a window is once it has started one or been reattached to it. */
+const mine = (): ChatState => chatReducer(emptyChat, { type: "restore", remembered: { sessionId: SESSION, deviceId: null, dead: null, said: [] } });
+
 function client(answer: (path: string, init: RequestInit) => Response | Promise<Response>) {
   const calls: { path: string; method: string; body: unknown; authorization: string | null }[] = [];
   const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -255,7 +258,7 @@ const fold = (state: ChatState, ...events: DurableEvent[]) => chatReducer(state,
 describe("the transcript keeps the five kinds of line apart", () => {
   it("agent output, capability execution, its result, an approval request and a navigation", () => {
     const state = fold(
-      emptyChat,
+      mine(),
       ev(1, "session.created"),
       ev(2, "session.started"),
       ev(3, "turn.started"),
@@ -275,7 +278,7 @@ describe("the transcript keeps the five kinds of line apart", () => {
 
   it("a failed capability is a failed result carrying the reason", () => {
     const state = fold(
-      emptyChat,
+      mine(),
       ev(1, "session.created"),
       ev(2, "capability.requested", { invocationId: "i1", capabilityId: "design.validate", input: {} }),
       ev(3, "capability.failed", { invocationId: "i1", capabilityId: "design.validate", error: { code: "x", message: "timed out" } }),
@@ -286,7 +289,7 @@ describe("the transcript keeps the five kinds of line apart", () => {
 
   it("a navigation that no window handled says so on its own line", () => {
     const state = fold(
-      emptyChat,
+      mine(),
       ev(1, "session.created"),
       ev(2, "capability.requested", { invocationId: "i1", capabilityId: "ui.setZoom", input: { zoom: 2 } }),
       ev(3, "capability.failed", { invocationId: "i1", capabilityId: "ui.setZoom", error: { code: "ui_unavailable", message: "no window" } }),
@@ -297,7 +300,7 @@ describe("the transcript keeps the five kinds of line apart", () => {
 
   it("an approval is resolved by its event, and a cancelled one is no longer pending", () => {
     const base = fold(
-      emptyChat,
+      mine(),
       ev(1, "session.created"),
       ev(2, "approval.requested", { approvalId: "a1", invocationId: "i", capabilityId: "design.applyOperations", risk: "write", humanSummary: "Edit" }),
       ev(3, "approval.requested", { approvalId: "a2", invocationId: "j", capabilityId: "design.applyOperations", risk: "write", humanSummary: "Edit" }),
@@ -308,26 +311,26 @@ describe("the transcript keeps the five kinds of line apart", () => {
   });
 
   it("failures end the turn and say why", () => {
-    const state = fold(emptyChat, ev(1, "session.created"), ev(2, "turn.started"), ev(3, "turn.failed", { error: { code: "provider_exited", message: "the provider exited" } }));
+    const state = fold(mine(), ev(1, "session.created"), ev(2, "turn.started"), ev(3, "turn.failed", { error: { code: "provider_exited", message: "the provider exited" } }));
     expect(state.working).toBe(false);
     expect(state.lines.at(-1)).toMatchObject({ kind: "notice", tone: "error", text: expect.stringContaining("the provider exited") as string });
   });
 
   it("ignores a type it does not know", () => {
-    const state = fold(emptyChat, ev(1, "session.created"), ev(2, "something.new", { text: "x" }));
+    const state = fold(mine(), ev(1, "session.created"), ev(2, "something.new", { text: "x" }));
     expect(state.lines).toEqual([]);
   });
 
-  it("a reload replays to the latest session, not the first", () => {
+  it("shows nothing of a session this window did not start, and is not displaced by one", () => {
     const state = fold(
       emptyChat,
-      ev(1, "session.created", {}, "old"),
-      ev(2, "agent.output.completed", { text: "from before" }, "old"),
-      ev(3, "session.created", {}, "new"),
-      ev(4, "agent.output.completed", { text: "the open one" }, "new"),
+      ev(1, "session.created", {}, "someone-elses"),
+      ev(2, "agent.output.completed", { text: "not here" }, "someone-elses"),
+      ev(3, "approval.requested", { approvalId: "a", invocationId: "i", capabilityId: "design.applyOperations", risk: "write", humanSummary: "Edit" }, "someone-elses"),
     );
-    expect(state.session?.id).toBe("new");
-    expect(state.lines).toEqual([{ kind: "agent", id: "e4", text: "the open one" }]);
+    expect(state.session).toBeNull();
+    expect(state.lines).toEqual([]);
+    expect(pendingApprovals(state)).toHaveLength(0);
   });
 
   it("does not let a replay of earlier sessions displace the one this window started", () => {
@@ -339,7 +342,7 @@ describe("the transcript keeps the five kinds of line apart", () => {
   });
 
   it("stopping ends the session on the person's word without waiting for a terminal event", () => {
-    let state = fold(emptyChat, ev(1, "session.created"), ev(2, "session.started"), ev(3, "turn.started"));
+    let state = fold(mine(), ev(1, "session.created"), ev(2, "session.started"), ev(3, "turn.started"));
     state = chatReducer(state, { type: "stopped", id: "l2" });
     expect(state.working).toBe(false);
     expect(state.session?.status).toBe("ended");
@@ -348,7 +351,7 @@ describe("the transcript keeps the five kinds of line apart", () => {
 
 describe("the reply as it streams", () => {
   const live = (state: ChatState, text: string, turnId = "t1", sessionId = SESSION) => chatReducer(state, { type: "delta", sessionId, turnId, text });
-  const open = () => fold(emptyChat, ev(1, "session.created"), ev(2, "session.started"), ev(3, "turn.started", { turnId: "t1" }));
+  const open = () => fold(mine(), ev(1, "session.created"), ev(2, "session.started"), ev(3, "turn.started", { turnId: "t1" }));
 
   it("accumulates deltas for the turn, transiently, and is working while it does", () => {
     const state = live(live(open(), "Raising "), "the headline");
@@ -458,12 +461,13 @@ describe("starting a session", () => {
     expect(state.session?.id).toBe("mine");
   });
 
-  it("reads what it heard as usual when nothing was started after all", () => {
+  it("forgets what it heard when nothing was started after all: that session was never this window's", () => {
     let state = chatReducer(emptyChat, { type: "starting" });
     state = fold(state, ev(1, "session.created", {}, "latest"), ev(2, "agent.output.completed", { text: "hi" }, "latest"));
     state = chatReducer(state, { type: "startFailed" });
-    expect(state.session?.id).toBe("latest");
-    expect(state.lines).toEqual([{ kind: "agent", id: "e2", text: "hi" }]);
+    expect(state.session).toBeNull();
+    expect(state.lines).toEqual([]);
+    expect(state.held).toEqual([]);
   });
 });
 
@@ -497,7 +501,7 @@ describe("a session that cannot be carried on", () => {
   });
 
   it("is what a failed, completed or remotely stopped session becomes, each with what to do next", () => {
-    const base = fold(emptyChat, ev(1, "session.created"), ev(2, "session.started"));
+    const base = fold(mine(), ev(1, "session.created"), ev(2, "session.started"));
     expect(fold(base, ev(3, "session.failed", { error: { message: "the provider exited" } })).dead?.reason).toMatch(/failed: the provider exited.*new one/);
     expect(fold(base, ev(3, "session.completed")).dead?.reason).toMatch(/ended.*new one/);
     expect(fold(base, ev(3, "session.cancelled")).dead?.reason).toMatch(/another window/);
@@ -527,7 +531,7 @@ describe("a session that cannot be carried on", () => {
   });
 
   it("is what an expired delegation becomes: said as an expiry, with the way on (F-30-5)", () => {
-    const base = fold(emptyChat, ev(1, "session.created"), ev(2, "session.started"), ev(3, "turn.started"), ev(4, "capability.requested", { invocationId: "i", capabilityId: "project.list", input: {} }));
+    const base = fold(mine(), ev(1, "session.created"), ev(2, "session.started"), ev(3, "turn.started"), ev(4, "capability.requested", { invocationId: "i", capabilityId: "project.list", input: {} }));
     const state = fold(base, ev(5, "capability.failed", { invocationId: "i", capabilityId: "project.list", error: { category: "auth", code: "delegation_expired", message: "the remote application delegation has expired" } }));
     expect(state.dead).toEqual({ reason: DEAD.expired });
     expect(state.working).toBe(false);
@@ -537,9 +541,19 @@ describe("a session that cannot be carried on", () => {
     expect(other.dead).toBeNull();
   });
 
+  it("is what a window that did not press Stop learns from the call that Stop cancelled, since no terminal event follows (F-chat-3)", () => {
+    const base = fold(mine(), ev(1, "session.created"), ev(2, "session.started"), ev(3, "turn.started"), ev(4, "capability.requested", { invocationId: "i", capabilityId: "design.validate", input: {} }));
+    expect(base.working).toBe(true);
+    const state = fold(base, ev(5, "capability.failed", { invocationId: "i", capabilityId: "design.validate", error: { code: "approval_cancelled", message: "cancelled" } }));
+    expect(state.working).toBe(false);
+    // Not a dead session: the Runtime is fine, the turn was just stopped.
+    expect(state.dead).toBeNull();
+    expect(state.session?.status).toBe("live");
+  });
+
   it("learns which Device runs the session from the session's own events", () => {
-    const mine = chatReducer(emptyChat, { type: "started", sessionId: SESSION, id: "l0" });
-    const state = fold(mine, { ...ev(1, "session.created"), deviceId: "dev_1" }, { ...ev(2, "session.started"), deviceId: "dev_1" });
+    const attached = chatReducer(emptyChat, { type: "started", sessionId: SESSION, id: "l0" });
+    const state = fold(attached, { ...ev(1, "session.created"), deviceId: "dev_1" }, { ...ev(2, "session.started"), deviceId: "dev_1" });
     expect(state.deviceId).toBe("dev_1");
     // Another session's events name another Device and say nothing about this one.
     expect(fold(state, { ...ev(3, "session.created", {}, "other"), deviceId: "dev_9" }).deviceId).toBe("dev_1");

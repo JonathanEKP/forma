@@ -37,6 +37,7 @@ import { liveFeed } from "./channel";
 import { useWindowBinding } from "./useWindowBinding";
 import { asDurable, openEventStream, parseLiveFrame, RETRY_MS, type EventStream, type StreamState } from "./events";
 import { recall, remembering, type Store } from "./session-store";
+import { windowId } from "./window";
 
 /** How often the device list is re-read: presence changes slowly, and a turn does not need it. */
 export const DEVICES_MS = 10_000;
@@ -121,8 +122,8 @@ export function whyBlocked(connection: Connection, runtime: Runtime): string | n
 
 export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRACE_MS, view, onWrite, storage }: ChatOptions): Chat {
   const [state, dispatch] = useReducer(chatReducer, emptyChat);
-  // The application context the tab's memory is keyed by, known once the sidecar has said.
-  const [context, setContext] = useState<string | null>(null);
+  // The application context and the window the tab's memory is keyed by, known once the sidecar has said.
+  const [context, setContext] = useState<{ readonly context: string; readonly window: string } | null>(null);
   const viewRef = useRef(view);
   viewRef.current = view;
   const writeRef = useRef(onWrite);
@@ -164,9 +165,11 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
       }
       // What this tab was saying before it was reloaded, before the history is read: the
       // window re-attaches to its own session rather than to whichever is latest (D-1).
-      const remembered = recall(context.value, storage);
+      const ownWindow = await windowId();
+      if (closed) return;
+      const remembered = recall(context.value, ownWindow, storage);
       if (remembered) dispatch({ type: "restore", remembered });
-      setContext(context.value);
+      setContext({ context: context.value, window: ownWindow });
       const opened = openEventStream({
         applicationContextId: context.value,
         token: accessToken,
@@ -205,7 +208,7 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
   const remembered = useMemo(() => remember(state), [state]);
   useEffect(() => {
     if (!enabled || context === null) return;
-    remembering(context, remembered, storage);
+    remembering(context.context, context.window, remembered, storage);
   }, [enabled, context, remembered, storage]);
 
   // Reads can overlap — a presence frame lands while the ten-second read is out — and the answer that
