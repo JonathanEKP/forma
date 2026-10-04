@@ -1,0 +1,15 @@
+Instance 10, forma-server http://127.0.0.1:4900, sidecar's own service credential (redacted),
+represented user = person A, application context = A's account. 2026-10-04.
+
+GET  /api/v1/projects                  -> 403 SERVICE_CREDENTIAL_OUT_OF_SCOPE
+POST /api/v1/projects                  -> 403 SERVICE_CREDENTIAL_OUT_OF_SCOPE
+POST /api/v1/api-keys                  -> 403 SERVICE_CREDENTIAL_OUT_OF_SCOPE   (the PAT-minting route)
+GET  /api/v1/api-keys                  -> 403 SERVICE_CREDENTIAL_OUT_OF_SCOPE
+GET  /api/v1/pontis/projects           -> 200 (Boundary F, A's project list)
+GET  /api/v1/PONTIS/projects           -> 403 SERVICE_CREDENTIAL_OUT_OF_SCOPE
+GET  /api/v1/pontis/../projects        -> 403 SERVICE_CREDENTIAL_OUT_OF_SCOPE   (--path-as-is)
+GET  /api/v1/pontis/%2e%2e/projects    -> 403 SERVICE_CREDENTIAL_OUT_OF_SCOPE
+GET  /api/v1/pontis%2fprojects         -> 403 SERVICE_CREDENTIAL_OUT_OF_SCOPE
+GET  /api/v1/projects, unknown credential -> 401 (the 403 is no oracle for a guessed credential)
+POST /api/v1/service/resolve, empty body  -> 401 (past the scope check; the route's own refusal)
+Body of the 403: {"error":{"code":"SERVICE_CREDENTIAL_OUT_OF_SCOPE","message":"a service credential is accepted only on Boundary F and the resolve route",...}}
