@@ -263,17 +263,31 @@ function endUiStreamAtExpiration(request: IncomingMessage, response: ServerRespo
 
   let timer: ReturnType<typeof setTimeout>;
   const check = () => {
+    if (response.writableEnded || response.destroyed) return;
+
     const remaining = expiresAt - Date.now();
-    if (remaining <= 0) {
-      if (!response.writableEnded && !response.destroyed) response.end();
+    if (response.headersSent) {
+      // This request path only sends 200 after accepting an SSE stream. Headers
+      // written directly with writeHead() are not available through getHeader().
+      if (remaining <= 0 && response.statusCode === 200) {
+        response.end();
+      }
       return;
     }
-    timer = setTimeout(check, Math.min(remaining, 60_000));
+
+    const unansweredFor = Date.now() - expiresAt;
+    if (unansweredFor >= 60_000) {
+      response.end();
+      return;
+    }
+    const delay = remaining > 0 ? Math.min(remaining, 60_000) : Math.min(1_000, 60_000 - unansweredFor);
+    timer = setTimeout(check, Math.max(1, delay));
     timer.unref();
   };
-  timer = setTimeout(check, Math.min(Math.max(0, expiresAt - Date.now()), 60_000));
+  timer = setTimeout(check, Math.min(Math.max(1, expiresAt - Date.now()), 60_000));
   timer.unref();
   response.once('close', () => clearTimeout(timer));
+  response.once('finish', () => clearTimeout(timer));
 }
 
 interface DurableState {
