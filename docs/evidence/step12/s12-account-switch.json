@@ -1,0 +1,36 @@
+{
+  "scenario": "S12",
+  "status": "passed (isolation)",
+  "provider": "Codex 0.158.0",
+  "model": "gpt-6-luna",
+  "reasoningEffort": "low",
+  "browserInstance": 15,
+  "checks": {
+    "sameTabSwitchAtoB": {
+      "result": "B-owned project displayed after switch",
+      "AChatRestored": false,
+      "AChatMemoryPresent": false
+    },
+    "BInputForASession": {
+      "httpStatus": 403,
+      "errorCode": "not_authorized",
+      "delivery": "refused before delivery"
+    },
+    "AOldSessionDrivenAsA": {
+      "httpStatus": 200,
+      "delivered": true,
+      "replyContainsAOwnedProject": true,
+      "replyContainsBOwnedProject": false
+    },
+    "BFreshSession": {
+      "distinctFromASession": true,
+      "historyRestored": false
+    },
+    "BUIClientReregistration": {
+      "operation": "ui.openDesign",
+      "outcome": "handled",
+      "openedBOwnedDesign": true
+    }
+  },
+  "lifecycleLimit": "Pontis exposes no per-session stop intent; the old Runtime session ends when its Device shuts down."
+}

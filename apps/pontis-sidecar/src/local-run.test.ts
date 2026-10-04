@@ -68,6 +68,8 @@ describe('the sidecar, run locally against FakeProvider', () => {
 
   after(async () => {
     await stack.close();
+    const driver = stack.children.find(({ name }) => name === 'test-driver');
+    assert.match(driver?.stderr ?? '', /SHUTDOWN_CLEANUP .*workspace_removed=true/u);
   });
 
   it('reads: the project list and a design, through Boundary F', async () => {
@@ -195,6 +197,12 @@ describe('the sidecar, run locally against FakeProvider', () => {
         ? 'the turn ended with turn.cancelled'
         : 'the turn ended with no terminal event; the Runtime refused: provider_exited (the Pontis finding above)',
     );
+
+    // E-2 keeps the session alive after cancellation, so a later message continues on the same
+    // provider session instead of requiring a new Runtime session.
+    await stack.say(GUIDE);
+    const resumed = await stack.nextEvent('turn.completed');
+    assert.ok(resumed.some((event) => event.type === 'capability.completed' && event.payload.capabilityId === 'forma.guide'));
   });
 
   it('asks before removing anything, and a refusal writes nothing', async () => {

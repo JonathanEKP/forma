@@ -127,10 +127,14 @@ run of S13.
 
 ### S8 — Cancellation · full stack
 
-Cancel mid-turn, both ways: MCP request cancellation and a Pontis `session.cancel`.
+Cancel mid-turn while a real MCP `tools/call` is in flight by issuing Pontis `session.cancel`. The
+Runtime documents this as cancelling the same invocation as inbound `notifications/cancelled`;
+the sidecar does not expose a separate request-level cancel control.
 
-Asserts: the invocation settles cancelled; no domain write happened; the neutral workspace is
-removed; no orphaned render or export is left behind.
+Asserts: the invocation settles cancelled; no domain write happened; the session remains usable and
+its neutral workspace stays with it after `session.cancel`; no orphaned render or export is left
+behind. The neutral workspace is removed when the session is later stopped. The sidecar exposes no
+session-stop intent, so the full-stack check uses Runtime shutdown for that final assertion.
 
 ### S9 — Idempotency and replay · sidecar contract
 
@@ -161,9 +165,14 @@ the one scenario whose failure means we made the product worse.
 
 Switch account in the editor while a session is live.
 
-Asserts: the session terminates rather than following the user; a new session is required; the old
-session's id cannot be reused; the `UIClient` re-registers for the new context. ADR-024 makes the
-context immutable, and this is where that becomes visible to a person.
+Asserts: the old session ends for this window and account; the new account cannot restore or drive
+its id; the old session, if driven as its original person, remains bound to that person's context;
+the new account gets a fresh session; and the `UIClient` re-registers for the new context. ADR-024
+makes the context immutable, and this is where that becomes visible to a person.
+
+**Runtime lifecycle limit:** Pontis's Device intent protocol has no per-session stop intent. The
+old Runtime session therefore remains until its Device shuts down; S12's “ends” means it ends for
+the switched window/account. Record that distinction in the matrix and platform outcomes.
 
 ### S13 — Role adherence · real Codex only
 

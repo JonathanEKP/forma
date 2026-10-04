@@ -43,6 +43,12 @@ const BRIDGE = process.env.FORMA_REAL_CODEX_BRIDGE ?? join(REPO, 'apps/pontis-si
 const OUT = process.env.FORMA_REAL_CODEX_OUT;
 /** Where the editor would be served from; the UI channel's whole allowlist. */
 const EDITOR_ORIGIN = 'http://editor.test';
+/** Optional allowlist for the Step 12 gaps; leaving it unset preserves the full Step 11 suite. */
+const SELECTED_SCENARIOS = process.env.FORMA_REAL_CODEX_SCENARIOS?.split(',').map((scenario) => scenario.trim()).filter(Boolean);
+
+function skipUnlessSelected(scenario: string): string | false {
+  return ENABLED && SELECTED_SCENARIOS !== undefined && !SELECTED_SCENARIOS.includes(scenario) ? 'not selected for this real-Codex run' : false;
+}
 
 /** A real model is slow: this is a hang detector, never a pacing device. */
 const DEADLINE_MS = 240_000;
@@ -95,13 +101,20 @@ describe('the sidecar, run against the real Codex in capability_only', { skip: E
     // What the Runtime verified and refused, and what the sidecar did at Boundary F — read before
     // the processes are stopped, from output the processes already keep free of credentials.
     const driver = stack.children.find(({ name }) => name === 'test-driver');
-    toolchain.driverLines = (driver?.stderr ?? '').split('\n').filter((line) => line.startsWith('POSTURE ') || line.startsWith('REFUSED '));
     toolchain.boundaryF = stack
       .boundaryCalls('design.applyOperations')
       .concat(stack.boundaryCalls('project.list'), stack.boundaryCalls('design.get'), stack.boundaryCalls('forma.guide'))
       .map(({ operation, status, outcome }) => ({ operation, status, outcome }));
     try {
       await stack.close();
+      const lines = (driver?.stderr ?? '').split('\n');
+      toolchain.driverLines = lines.filter((line) =>
+        ['POSTURE ', 'REFUSED ', 'CAPABILITY_OUTCOME ', 'SHUTDOWN_CLEANUP '].some((prefix) => line.startsWith(prefix)),
+      );
+      const shutdown = lines.filter((line) => line.startsWith('SHUTDOWN_CLEANUP '));
+      toolchain.shutdownWorkspaceCleanup = shutdown.map((line) => line.includes('workspace_removed=true'));
+      assert.ok(shutdown.length > 0, 'Runtime shutdown reported session cleanup');
+      assert.ok(shutdown.every((line) => line.includes('workspace_removed=true')), 'each session workspace was removed on Runtime shutdown');
     } finally {
       if (OUT !== undefined) writeFileSync(OUT, `${JSON.stringify(sanitize({ toolchain, record }), null, 2)}\n`);
     }
@@ -116,7 +129,7 @@ describe('the sidecar, run against the real Codex in capability_only', { skip: E
     assert.ok(stack.seen.some((event) => event.type === 'session.started' && event.sessionId === stack.sessionId));
   });
 
-  it('S1 reads: the project list and a design, through Boundary F', async () => {
+  it('S1 reads: the project list and a design, through Boundary F', { skip: skipUnlessSelected('S1') }, async () => {
     const design = await seed('S1 cover');
     await stack.startSession('codex');
     const prompt = `Which projects do I have? Then read design ${design.id} and tell me its headline text.`;
@@ -129,7 +142,7 @@ describe('the sidecar, run against the real Codex in capability_only', { skip: E
     observe('S1', { capabilities: completed, resultBytes: resultBytes(events) });
   });
 
-  it('S2 writes: one low-risk batch is exactly one new version, by the agent', async () => {
+  it('S2 writes: one low-risk batch is exactly one new version, by the agent', { skip: skipUnlessSelected('S2') }, async () => {
     const design = await seed('S2 cover');
     await stack.startSession('codex');
     const prompt = `In design ${design.id}, change the headline text to "Real run".`;
@@ -143,7 +156,7 @@ describe('the sidecar, run against the real Codex in capability_only', { skip: E
     observe('S2', { capabilities: capabilities(events, 'capability.completed'), version: now.version, actor: { type: written?.actor_type, id: written?.actor_id } });
   });
 
-  it('S6 asks before removing anything, and one approval is exactly one new version', async () => {
+  it('S6 asks before removing anything, and one approval is exactly one new version', { skip: skipUnlessSelected('S6-approve') }, async () => {
     const design = await seed('S6 cover');
     await stack.startSession('codex');
     const prompt = `In design ${design.id}, remove the layer named "Tagline".`;
@@ -164,17 +177,95 @@ describe('the sidecar, run against the real Codex in capability_only', { skip: E
     keep('S6', prompt, events, { approvalCard: card, version: now.version });
   });
 
-  it('S8 cancels mid-turn: the turn ends cancelled, and nothing is written', async (t) => {
-    const design = await seed('S8 cover');
+  it('S6 denial leaves the destructive action unapplied', { skip: skipUnlessSelected('S6-deny') }, async () => {
+    const design = await seed('S6 denial');
     await stack.startSession('codex');
-    const prompt = `In design ${design.id}, change the headline text to "Cancelled" and then validate it.`;
+    const prompt = `Remove the layer named "Tagline" from design ${design.id}.`;
+    const writesBefore = stack.boundaryCalls('design.applyOperations').length;
     const sent = stack.cursor;
     await stack.say(prompt);
-    // In flight: the model has asked for its first capability and the turn is not over. (The first
-    // run cancelled at `turn.started`, 0.9s in, before the model had said anything — a cancel, but
-    // not one that interrupts any work. docs/pontis-step11-real-codex.md records both.)
-    await stack.nextEvent('capability.requested');
+    const pending = await stack.nextEvent('approval.requested');
+    assert.equal((await stack.read(design.id)).version, design.version, 'the pending request changed nothing');
+    assert.ok(textOf(await stack.read(design.id), 'Tagline') !== undefined, 'the layer remains while approval is pending');
+    await stack.intent('approval.resolve', { approvalId: approvalId(pending), decision: 'deny' });
+    await stack.nextEvent('turn.completed');
+    const events = stack.seen.filter((event) => event.sequence > sent && event.sessionId === stack.sessionId);
+    assert.ok(events.some((event) => event.type === 'capability.failed' && JSON.stringify(event.payload).includes('approval_denied')));
+    assert.equal(stack.boundaryCalls('design.applyOperations').length, writesBefore, 'denial never reached the write boundary');
+    assert.equal((await stack.read(design.id)).version, design.version);
+    assert.ok(textOf(await stack.read(design.id), 'Tagline') !== undefined);
+    keep('S6-deny', prompt, events, { decision: 'deny', versionBefore: design.version, versionAfter: (await stack.read(design.id)).version });
+  });
+
+  it('S6 expiry refuses a late approval without applying the action', { skip: skipUnlessSelected('S6-expiry') }, async () => {
+    const design = await seed('S6 expiry');
+    await stack.startSession('codex');
+    const prompt = `Remove the layer named "Tagline" from design ${design.id}.`;
+    const writesBefore = stack.boundaryCalls('design.applyOperations').length;
+    const sent = stack.cursor;
+    await stack.say(prompt);
+    const pending = await stack.nextEvent('approval.requested');
+    const id = approvalId(pending);
+    await stack.nextEvent('approval.resolved', (event) => event.payload.approvalId === id && event.payload.status === 'expired');
+    await stack.nextEvent('turn.completed');
+    await stack.intent('approval.resolve', { approvalId: id, decision: 'approveOnce' });
+    await stack.until('Runtime to refuse the expired approval', () =>
+      Promise.resolve(stack.children.find(({ name }) => name === 'test-driver')?.stderr.includes('REFUSED approval_expired') ?? false),
+    );
+    const events = stack.seen.filter((event) => event.sequence > sent && event.sessionId === stack.sessionId);
+    assert.ok(events.some((event) => event.type === 'capability.failed' && JSON.stringify(event.payload).includes('approval_expired')));
+    assert.equal(stack.boundaryCalls('design.applyOperations').length, writesBefore, 'an expired approval never reached the write boundary');
+    assert.equal((await stack.read(design.id)).version, design.version);
+    assert.ok(textOf(await stack.read(design.id), 'Tagline') !== undefined);
+    keep('S6-expiry', prompt, events, { staleResolveRefused: true, versionBefore: design.version, versionAfter: (await stack.read(design.id)).version });
+  });
+
+  it('S6 replay refuses a second resolution of the same approval', { skip: skipUnlessSelected('S6-replay') }, async () => {
+    const design = await seed('S6 replay');
+    await stack.startSession('codex');
+    const prompt = `Remove the layer named "Tagline" from design ${design.id}.`;
+    const writesBefore = stack.boundaryCalls('design.applyOperations').length;
+    const sent = stack.cursor;
+    await stack.say(prompt);
+    const pending = await stack.nextEvent('approval.requested');
+    const id = approvalId(pending);
+    await stack.intent('approval.resolve', { approvalId: id, decision: 'approveOnce' });
+    await stack.nextEvent('turn.completed');
+    const afterFirst = await stack.read(design.id);
+    assert.equal(afterFirst.version, design.version + 1, 'the first resolution caused one mutation');
+    assert.equal(textOf(afterFirst, 'Tagline'), undefined);
+    await stack.intent('approval.resolve', { approvalId: id, decision: 'approveOnce' });
+    await stack.until('Runtime to refuse the replayed approval', () =>
+      Promise.resolve(stack.children.find(({ name }) => name === 'test-driver')?.stderr.includes('REFUSED approval_expired') ?? false),
+    );
+    const afterReplay = await stack.read(design.id);
+    assert.equal(stack.boundaryCalls('design.applyOperations').length, writesBefore + 1, 'replay caused no second write');
+    assert.equal(afterReplay.version, design.version + 1);
+    const events = stack.seen.filter((event) => event.sequence > sent && event.sessionId === stack.sessionId);
+    keep('S6-replay', prompt, events, { resolutionReplayed: true, writes: 1, versionAfter: afterReplay.version });
+  });
+
+  it('S8 cancels an in-flight MCP request and keeps the session usable', { skip: skipUnlessSelected('S8') }, async (t) => {
+    const design = await stack.createDesign('S8 long validation', documentOf(120, [randomUUID()]));
+    await stack.startSession('codex');
+    const prompt = `Validate design ${design.id}. Do not change it.`;
+    const writesBefore = stack.boundaryCalls('design.applyOperations').length;
+    const validationsBefore = stack.boundaryCalls('design.validate').length;
+    const sent = stack.cursor;
+    await stack.say(prompt);
+    const requested = await stack.nextEvent('capability.requested', (event) => event.payload.capabilityId === 'design.validate');
+    const request = requested.filter((event) => event.type === 'capability.requested' && event.payload.capabilityId === 'design.validate').at(-1);
+    assert.ok(request, 'Codex requested design.validate');
+    assert.equal(typeof request.payload.invocationId, 'string');
+    const invocationId = String(request.payload.invocationId);
+    await stack.until('design.validate to be open at Boundary F', () => Promise.resolve(stack.boundaryCalls('design.validate', 'boundary_f_request').length > 0));
+
     await stack.intent('session.cancel', { sessionId: stack.sessionId });
+    const failed = await stack.nextEvent('capability.failed', (event) => event.payload.invocationId === invocationId);
+    assert.ok(failed.some((event) => event.payload.capabilityId === 'design.validate'), 'the same invocation settled failed');
+    await stack.until('Boundary F to abandon design.validate', () =>
+      Promise.resolve(stack.boundaryCalls('design.validate').some((line) => line.outcome === 'aborted')),
+    );
     await stack.until('the turn to end', async () => {
       const page = await stack.refresh();
       return page.some((event) => event.sequence > sent && event.sessionId === stack.sessionId && ['turn.cancelled', 'turn.completed', 'turn.failed'].includes(event.type));
@@ -182,16 +273,38 @@ describe('the sidecar, run against the real Codex in capability_only', { skip: E
     const events = stack.seen.filter((event) => event.sequence > sent && event.sessionId === stack.sessionId);
     const ended = events.find((event) => event.type.startsWith('turn.') && event.type !== 'turn.started')?.type;
     t.diagnostic(`the turn ended with ${ended}`);
-    // The cancel raced the model: a write it had already committed before the cancel arrived is
-    // not a defect of cancellation, so the assertion is that the design is whole — untouched, or
-    // exactly one version past what it was.
     const now = await stack.read(design.id);
-    assert.ok(now.version === design.version || now.version === design.version + 1, `version ${now.version} from ${design.version}`);
-    keep('S8', prompt, events, { endedWith: ended, versionBefore: design.version, versionAfter: now.version });
+    assert.equal(now.version, design.version, 'cancellation happened before any write');
+    assert.equal(stack.boundaryCalls('design.applyOperations').length, writesBefore, 'no new write reached Boundary F');
+    const validationCalls = stack.boundaryCalls('design.validate').slice(validationsBefore);
+    assert.ok(!validationCalls.some((line) => line.status === 200), 'Forma did not answer the cancelled validation');
     assert.equal(ended, 'turn.cancelled', 'the cancel ended the turn');
+    await stack.until('Runtime to record the cancelled invocation', () =>
+      Promise.resolve(stack.children.find(({ name }) => name === 'test-driver')?.stderr.includes(invocationId) ?? false),
+    );
+    const runtimeOutcome = stack.children.find(({ name }) => name === 'test-driver')?.stderr
+      .split('\n')
+      .map((line) => line.startsWith('CAPABILITY_OUTCOME ') ? JSON.parse(line.slice('CAPABILITY_OUTCOME '.length)) as Record<string, unknown> : undefined)
+      .find((line) => line?.capabilityInvocationId === invocationId);
+    assert.equal(runtimeOutcome?.errorCode, 'approval_cancelled', 'Runtime recorded the matching invocation as cancelled');
+    keep('S8', prompt, events, {
+      invocationId,
+      runtimeErrorCode: runtimeOutcome?.errorCode,
+      boundaryFOutcome: 'aborted',
+      formaResponse: 'none',
+      versionBefore: design.version,
+      versionAfter: now.version,
+      endedWith: ended,
+    });
+
+    const sessionId = stack.sessionId;
+    const followUp = await run('S8 session continuation', 'Reply exactly READY to confirm this session is still open.', 'turn.completed');
+    assert.match(followUp.reply, /READY/u);
+    assert.equal(stack.sessionId, sessionId, 'the follow-up used the same session id');
+    assert.equal(stack.seen.filter((event) => event.type === 'session.started' && event.sessionId === sessionId).length, 1, 'no second Runtime session started');
   });
 
-  it('S7 moves the person\'s view: ui.openDesign reaches a connected window, and its acknowledgement makes it succeed', async () => {
+  it('S7 moves the person\'s view: ui.openDesign reaches a connected window, and its acknowledgement makes it succeed', { skip: skipUnlessSelected('S7') }, async () => {
     const design = await seed('S7 cover');
     // The window the editor would be, connected before the turn, answering as the editor does.
     const window = await connect(stack.sidecar, stack.sessionToken, EDITOR_ORIGIN, UI_ACTIONS);
@@ -216,7 +329,7 @@ describe('the sidecar, run against the real Codex in capability_only', { skip: E
     }
   });
 
-  it('S13 declines what Forma is not: no repository read, no shell, no image model', async () => {
+  it('S13 declines what Forma is not: no repository read, no shell, no image model', { skip: skipUnlessSelected('S13') }, async () => {
     const design = await seed('S13 cover');
     await stack.startSession('codex');
     const file = `/tmp/${CANARY}`;

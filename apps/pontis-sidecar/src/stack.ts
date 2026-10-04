@@ -150,7 +150,9 @@ export class Stack {
 
   /** Stops every process and removes the data. The two credentials never reach any output. */
   async close(): Promise<void> {
-    await Promise.allSettled(this.children.map(stop));
+    const driver = this.children.find(({ name }) => name === 'test-driver');
+    if (driver) await stop(driver);
+    await Promise.allSettled(this.children.filter(({ name }) => name !== 'test-driver').map(stop));
     await Promise.allSettled(this.servers.map((server) => new Promise((done) => server.close(done))));
     if (this.directory) await rm(this.directory, { recursive: true, force: true });
     const output = JSON.stringify(this.children.map(({ stdout, stderr }) => [stdout, stderr]));
