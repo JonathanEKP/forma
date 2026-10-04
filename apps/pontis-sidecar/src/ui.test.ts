@@ -128,6 +128,25 @@ describe('an editor action, end to end', () => {
     });
   });
 
+  it('returns a rejected view action to the agent as rejected, not handled', async () => {
+    await sidecarWith([ORIGIN], async (sidecar) => {
+      const window = await connect(sidecar, 'session-user');
+      try {
+        const invocation = invoke(sidecar, 'ui.setZoom', { zoom: 2 }, 'inv_no_design');
+        const action = await window.next();
+        assert.equal(action.capabilityId, 'ui.setZoom');
+
+        assert.equal(await window.ack(action.invocationId, 'rejected', 'open a design first'), 200);
+        const outcome = await invocation;
+        assert.equal(outcome.status, 'failed');
+        assert.equal(outcome.status === 'failed' ? outcome.error.code : '', 'ui_action_rejected');
+        assert.equal(outcome.status === 'failed' ? outcome.error.message : '', 'open a design first');
+      } finally {
+        window.close();
+      }
+    });
+  });
+
   it('answers ui_unavailable with no window open, rather than a success nobody saw', async () => {
     await sidecarWith([ORIGIN], async (sidecar) => {
       const outcome = await invoke(sidecar, 'ui.setZoom', { zoom: 2 }, 'inv_nowindow');
