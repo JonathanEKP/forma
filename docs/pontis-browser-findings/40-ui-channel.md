@@ -52,9 +52,9 @@ Orca browser tab per page, 2026-10-04.
 | E5 | selectLayer when a different design (or none) is open | pass — `ui_action_rejected`, "the person does not have design … open; call ui.openDesign first" |
 | E6 | selectLayer: nonexistent layer / layer of another design / non-UUID layer | pass — `ui_action_rejected`, "design … has no layer …" |
 | E6d | selectLayer in B's design as A | pass — `authorization_denied` |
-| E7 | selectLayer re-selecting the already selected layer / openDesign on the open design | pass — `handled` (openDesign clears the layer selection) |
+| E7 | selectLayer re-selecting the already selected layer / openDesign on the already open design | pass — `handled`; verified in the DOM that `openDesign` on the open design **clears the layer selection** (an agent that selects first and opens second loses the selection) |
 | E8 | zoom: 0, −1, 1000, 0.04, 4.01, `"2"`, `"NaN"`, `"Infinity"`, `null`, `[2]`, missing | pass — 11× `validation_error` with the schema's own message; the bounds 0.05 and 4 are the schema's |
-| E8z | zoom exactly 0.05 / 4 / 0.5…2.4 | pass — `handled`, readout matches |
+| E8z | zoom exactly 0.05 / 4 and 0.5…2.4 | pass — `handled`; the readout shows 5 % and 400 % (the schema's bounds, no silent clamp) |
 | E9 | panel: `settings`, `Brand`, `""`, `null`, `"brand "`, `__proto__`, missing | pass — 7× `validation_error` |
 | E10 | selectLayer / openDesign / setZoom / setPanel with the project list showing (no design open) | selectLayer pass (`rejected`); setZoom, setPanel **`handled` with nothing visible** — F-40-12 |
 | R1 | 20 sequential actions (zoom/panel mix) | pass — 20 `handled` in 0.4 s, final state is the last call's |
