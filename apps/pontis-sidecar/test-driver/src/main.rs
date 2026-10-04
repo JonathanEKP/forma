@@ -45,7 +45,7 @@ use pontis_provider_fake::{ExpectedOutcome, FakeProvider, FakeScript};
 use pontis_runtime::{
     ApprovalManager, ChannelEventSink, DelegationSource, HttpsGatewayClient, IntentObserver,
     ProviderRouter, ProviderWorkspaces, RemoteAgent, RemoteApprovals, RemoteDelegationIssuer,
-    RiskPolicy, SessionDelegations, SessionManager, SessionPostureReport,
+    RiskPolicy, RuntimeLogContext, SessionDelegations, SessionManager, SessionPostureReport,
 };
 use pontis_transport::channel::DeviceChannel;
 use pontis_transport::credentials::CredentialHolder;
@@ -157,6 +157,21 @@ struct Refusals;
 impl IntentObserver for Refusals {
     fn refused(&self, error: TypedError) {
         eprintln!("REFUSED {} {}", error.code, error.message);
+    }
+
+    fn capability_finished(
+        &self,
+        context: RuntimeLogContext,
+        _duration_ms: u64,
+        error_code: Option<String>,
+    ) {
+        if error_code.as_deref() == Some("approval_cancelled") {
+            let outcome = json!({
+                "capabilityInvocationId": context.capability_invocation_id,
+                "errorCode": error_code,
+            });
+            eprintln!("CAPABILITY_OUTCOME {outcome}");
+        }
     }
 }
 
@@ -418,12 +433,10 @@ async fn main() {
     let sessions = Arc::new(
         manager.with_delegation_issuer(Arc::new(RemoteDelegationIssuer::new(delegations))),
     );
-    if codex {
-        tokio::spawn(report_postures(Arc::clone(&sessions)));
-    }
+    let posture_reporter = codex.then(|| tokio::spawn(report_postures(Arc::clone(&sessions))));
     let agent = Arc::new(
         RemoteAgent::new(
-            sessions,
+            Arc::clone(&sessions),
             Arc::clone(&channel) as Arc<dyn DeviceChannel>,
             approvals,
             paired.user_id.clone(),
@@ -431,7 +444,7 @@ async fn main() {
         )
         .with_observer(Arc::new(Refusals)),
     );
-    tokio::spawn(Arc::clone(&agent).run(intents));
+    let agent_task = tokio::spawn(Arc::clone(&agent).run(intents));
 
     while !channel.is_connected() {
         tokio::time::sleep(Duration::from_millis(10)).await;
@@ -445,6 +458,19 @@ async fn main() {
     tokio::select! {
         _ = sigterm.recv() => {}
         _ = async { while stdin.read(&mut sink).await.is_ok_and(|n| n > 0) {} } => {}
+    }
+    agent_task.abort();
+    let _ = agent_task.await;
+    if let Some(posture_reporter) = posture_reporter {
+        posture_reporter.abort();
+    }
+    // Match the Runtime daemon's shutdown behavior so the end-to-end test can observe workspace
+    // cleanup without exposing the temporary root path.
+    for session_id in sessions.session_ids() {
+        let workspace = sessions.session_workspace(&session_id);
+        let stopped = sessions.stop_session(&session_id).await.is_ok();
+        let workspace_removed = workspace.as_ref().map_or(true, |path| !path.exists());
+        eprintln!("SHUTDOWN_CLEANUP stopped={stopped} workspace_removed={workspace_removed}");
     }
     drop(workspace_root);
 }
