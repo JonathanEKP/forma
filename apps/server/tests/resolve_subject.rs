@@ -332,7 +332,8 @@ async fn a_revoked_credential_cannot_resolve() {
 
 /// The exception is the path, not the subject token: the same pair of
 /// credentials anywhere else is a service request with no represented user, and
-/// is refused. Resolving acts as nobody.
+/// is refused. Resolving acts as nobody. Refused as out of scope since F-50-1:
+/// the credential is checked first, so these are 403 rather than 401.
 #[actix_web::test]
 async fn the_exception_does_not_leave_its_path() {
     let (state, _dir) = hosted().await;
@@ -359,7 +360,12 @@ async fn the_exception_does_not_leave_its_path() {
                 .to_request(),
         )
         .await;
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{path}");
+        assert_eq!(response.status(), StatusCode::FORBIDDEN, "{path}");
+        assert_eq!(
+            code_of(response).await,
+            "SERVICE_CREDENTIAL_OUT_OF_SCOPE",
+            "{path}"
+        );
     }
 
     let post = TestRequest::post()

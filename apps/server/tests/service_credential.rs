@@ -97,7 +97,7 @@ async fn world(state: &AppState) -> World {
 
 fn projects(world: &World) -> TestRequest {
     TestRequest::get()
-        .uri("/api/v1/projects")
+        .uri("/api/v1/pontis/projects")
         .insert_header(bearer(&world.token))
         .insert_header((REPRESENTED_USER_HEADER, world.user.to_string()))
         .insert_header((APPLICATION_CONTEXT_HEADER, world.account.to_string()))
@@ -136,7 +136,7 @@ async fn the_credential_alone_is_not_account_access() {
     let app = serve!(state);
 
     let bare = TestRequest::get()
-        .uri("/api/v1/projects")
+        .uri("/api/v1/pontis/projects")
         .insert_header(bearer(&world.token))
         .to_request();
     assert_eq!(
@@ -146,7 +146,7 @@ async fn the_credential_alone_is_not_account_access() {
     );
 
     let user_only = TestRequest::get()
-        .uri("/api/v1/projects")
+        .uri("/api/v1/pontis/projects")
         .insert_header(bearer(&world.token))
         .insert_header((REPRESENTED_USER_HEADER, world.user.to_string()))
         .to_request();
@@ -157,7 +157,7 @@ async fn the_credential_alone_is_not_account_access() {
     );
 
     let context_only = TestRequest::get()
-        .uri("/api/v1/projects")
+        .uri("/api/v1/pontis/projects")
         .insert_header(bearer(&world.token))
         .insert_header((APPLICATION_CONTEXT_HEADER, world.account.to_string()))
         .to_request();
@@ -216,7 +216,7 @@ async fn a_context_the_user_does_not_belong_to_is_forbidden() {
     let response = test::call_service(
         &app,
         TestRequest::get()
-            .uri("/api/v1/projects")
+            .uri("/api/v1/pontis/projects")
             .insert_header(bearer(&world.token))
             .insert_header((REPRESENTED_USER_HEADER, world.user.to_string()))
             .insert_header((APPLICATION_CONTEXT_HEADER, elsewhere.to_string()))
@@ -231,7 +231,7 @@ async fn a_context_the_user_does_not_belong_to_is_forbidden() {
     let stranger = test::call_service(
         &app,
         TestRequest::get()
-            .uri("/api/v1/projects")
+            .uri("/api/v1/pontis/projects")
             .insert_header(bearer(&world.token))
             .insert_header((REPRESENTED_USER_HEADER, AuthUserId::new().to_string()))
             .insert_header((APPLICATION_CONTEXT_HEADER, world.account.to_string()))
@@ -314,22 +314,202 @@ async fn the_two_classes_cannot_be_confused() {
 }
 
 /// No REST route mints, lists or revokes one: an account owner must not be
-/// able to create a credential that reaches every account.
+/// able to create a credential that reaches every account. Asked with a PAT,
+/// because a service credential is now refused before routing can say anything.
 #[actix_web::test]
 async fn service_credentials_are_not_managed_over_rest() {
     let (state, _dir) = hosted().await;
     let world = world(&state).await;
+    let pat = state
+        .api_keys
+        .create(world.account, None, "a script")
+        .await
+        .unwrap()
+        .token;
     let app = serve!(state);
 
     let attempt = test::call_service(
         &app,
         TestRequest::get()
             .uri("/api/v1/service-credentials")
-            .insert_header(bearer(&world.token))
-            .insert_header((REPRESENTED_USER_HEADER, world.user.to_string()))
-            .insert_header((APPLICATION_CONTEXT_HEADER, world.account.to_string()))
+            .insert_header(bearer(&pat))
             .to_request(),
     )
     .await;
     assert_eq!(attempt.status(), StatusCode::NOT_FOUND);
+}
+
+/// A request as the sidecar would make it, for any method and path.
+fn service_request(world: &World, request: TestRequest) -> TestRequest {
+    request
+        .insert_header(bearer(&world.token))
+        .insert_header((REPRESENTED_USER_HEADER, world.user.to_string()))
+        .insert_header((APPLICATION_CONTEXT_HEADER, world.account.to_string()))
+}
+
+async fn code_of(
+    response: actix_web::dev::ServiceResponse<impl actix_web::body::MessageBody>,
+) -> String {
+    let body: serde_json::Value = test::read_body_json(response).await;
+    body["error"]["code"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string()
+}
+
+/// F-50-1. The credential is worth Boundary F and nothing else: with a
+/// perfectly valid represented user and context it still reaches no ordinary
+/// REST route — not a read, not a write, and above all not the one that mints
+/// a personal access token that would outlive it.
+#[actix_web::test]
+async fn the_credential_is_refused_outside_boundary_f() {
+    let (state, _dir) = hosted().await;
+    let world = world(&state).await;
+    let app = serve!(state.clone());
+
+    let read = test::call_service(
+        &app,
+        service_request(&world, TestRequest::get().uri("/api/v1/projects")).to_request(),
+    )
+    .await;
+    assert_eq!(read.status(), StatusCode::FORBIDDEN, "a normal REST read");
+    assert_eq!(code_of(read).await, "SERVICE_CREDENTIAL_OUT_OF_SCOPE");
+
+    let write = test::call_service(
+        &app,
+        service_request(&world, TestRequest::post().uri("/api/v1/projects"))
+            .set_json(serde_json::json!({ "name": "throwaway" }))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(write.status(), StatusCode::FORBIDDEN, "a normal REST write");
+    assert_eq!(code_of(write).await, "SERVICE_CREDENTIAL_OUT_OF_SCOPE");
+
+    let mint = test::call_service(
+        &app,
+        service_request(&world, TestRequest::post().uri("/api/v1/api-keys"))
+            .set_json(serde_json::json!({ "name": "probe" }))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(mint.status(), StatusCode::FORBIDDEN, "minting a PAT");
+    assert_eq!(code_of(mint).await, "SERVICE_CREDENTIAL_OUT_OF_SCOPE");
+
+    // Refused is not the same as ignored: nothing was created behind the 403.
+    let projects = state.projects.list(world.account).await.expect("list");
+    assert_eq!(projects.len(), 1, "the refused write created no project");
+    assert!(
+        state
+            .api_keys
+            .list(world.account)
+            .await
+            .expect("keys")
+            .is_empty(),
+        "the refused request minted no personal access token"
+    );
+}
+
+/// The check is on the normalised path, so no spelling of one outside
+/// Boundary F is let through by starting with the right words.
+#[actix_web::test]
+async fn no_spelling_of_the_path_routes_around_the_scope() {
+    let (state, _dir) = hosted().await;
+    let world = world(&state).await;
+    let app = serve!(state);
+
+    for path in [
+        "/api/v1/pontis/../projects",
+        "/api/v1/pontis/./../projects",
+        "/api/v1/pontis/%2e%2e/projects",
+        "/api/v1/pontis/%2E%2E/projects",
+        "/api/v1/pontis%2F..%2Fprojects",
+        "/api/v1/pontis%2fprojects",
+        "/api/v1/pontis/..%5Cprojects",
+        "/api/v1/PONTIS/projects",
+        "/api/v1/pontis",
+        "/api/v1/pontisx/projects",
+        "/api/v1//projects",
+        "/api/v1/pontis//projects",
+        "/api/v1/service/resolve/../../projects",
+        "/api/v1/service/resolve/",
+        "/api/v1/service/%72esolve",
+        "/api/v1/service/resolvex",
+        "/api/v1/pontis/%zz",
+        "/api/v1/pontis/%ff",
+    ] {
+        let response = test::call_service(
+            &app,
+            service_request(&world, TestRequest::get().uri(path)).to_request(),
+        )
+        .await;
+        assert_eq!(
+            response.status(),
+            StatusCode::FORBIDDEN,
+            "{path} is not Boundary F"
+        );
+        assert_eq!(
+            code_of(response).await,
+            "SERVICE_CREDENTIAL_OUT_OF_SCOPE",
+            "{path}"
+        );
+    }
+}
+
+/// The 403 must not tell a stranger that a guessed credential is real: an
+/// unknown one is a 401 on every path, in or out of scope.
+#[actix_web::test]
+async fn an_unknown_credential_learns_nothing_from_the_scope() {
+    let (state, _dir) = hosted().await;
+    let world = world(&state).await;
+    let app = serve!(state);
+
+    let forged = format!("{}not-a-real-secret", persistence::SERVICE_PREFIX);
+    for path in [
+        "/api/v1/projects",
+        "/api/v1/api-keys",
+        "/api/v1/pontis/projects",
+    ] {
+        let response = test::call_service(
+            &app,
+            TestRequest::get()
+                .uri(path)
+                .insert_header(bearer(&forged))
+                .insert_header((REPRESENTED_USER_HEADER, world.user.to_string()))
+                .insert_header((APPLICATION_CONTEXT_HEADER, world.account.to_string()))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{path}");
+        assert_eq!(code_of(response).await, "UNAUTHORIZED", "{path}");
+    }
+}
+
+/// The other half: what the sidecar actually calls keeps working, including a
+/// spelling that percent-encodes an id the way `encodeURIComponent` would.
+#[actix_web::test]
+async fn boundary_f_is_still_open_to_the_credential() {
+    let (state, _dir) = hosted().await;
+    let world = world(&state).await;
+    let app = serve!(state);
+
+    for path in [
+        "/api/v1/pontis/projects".to_string(),
+        "/api/v1/pontis/guide".to_string(),
+        format!("/api/v1/pontis/designs/{}", uuid::Uuid::new_v4()),
+    ] {
+        let response = test::call_service(
+            &app,
+            service_request(&world, TestRequest::get().uri(&path)).to_request(),
+        )
+        .await;
+        assert_ne!(response.status(), StatusCode::FORBIDDEN, "{path}");
+        assert_ne!(response.status(), StatusCode::UNAUTHORIZED, "{path}");
+    }
+
+    let listed = test::call_service(
+        &app,
+        service_request(&world, TestRequest::get().uri("/api/v1/pontis/projects")).to_request(),
+    )
+    .await;
+    assert_eq!(listed.status(), StatusCode::OK);
 }
