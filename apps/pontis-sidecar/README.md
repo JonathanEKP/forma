@@ -9,8 +9,12 @@ authority and does not depend on this process. That credential is accepted **onl
 `/api/v1/pontis/*` and `/api/v1/service/resolve`; on any other route forma-server answers
 `403 SERVICE_CREDENTIAL_OUT_OF_SCOPE`, so a leaked one is worth Boundary F and nothing more.
 
-This is plan §11 **steps 7 to 9**, plus the real Codex run of step 11. What is left before PV-1 is
-the evidence (step 12).
+This is plan §11 **steps 7 to 9**, plus the real Codex run of step 11, hardened by two fix batches
+after a browser break-test: [batch 1](../../docs/pontis-fix-batch-1.md) (the chat per window and its
+view line, windows, durable state, the credential's scope) and [batch 2](../../docs/pontis-fix-batch-2.md)
+(the smaller defects, and step 12's PV-1 evidence). What PV-1 still waits on is Pontis's: the visual
+loop (CR-2.3) and long sessions ([upstream report](../../docs/pontis-upstream-report.md) §1). The live
+state is the *Progress* table in plan §11.
 
 ## What is Forma's here
 
