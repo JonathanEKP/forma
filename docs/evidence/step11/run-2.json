@@ -1,0 +1,191 @@
+{
+  "toolchain": {
+    "codex": "codex-cli 0.158.0",
+    "platform": "linux-x64",
+    "codexHomeConfig": [
+      "model = \"gpt-6-luna\"",
+      "model_reasoning_effort = \"low\""
+    ],
+    "reasoningEffortPassedByDriver": "low",
+    "devices": {
+      "protocol": "pons/1.0",
+      "devices": [
+        {
+          "id": "dev_f6e623148ddd4e3abbf4f5368fe5fa97",
+          "userId": "<person>",
+          "applicationId": "forma",
+          "publicIdentityKey": "5cSpIF0ICKZn3lJL49SXdbg7aK2RCQ8egrupnxj1CNM",
+          "name": "Forma local run",
+          "platform": "linux-x86_64",
+          "runtimeVersion": "test-driver",
+          "pairedAt": "2026-10-04T00:39:45.097Z",
+          "lastSeenAt": "2026-10-04T00:39:45.105Z",
+          "revokedAt": null,
+          "capabilities": null,
+          "capabilitiesReportedAt": null,
+          "online": true
+        }
+      ]
+    },
+    "driverLines": [
+      "POSTURE ses_d9931274c92f40d6889e81e8c0e83a84 {\"sessionId\":\"ses_d9931274c92f40d6889e81e8c0e83a84\",\"providerId\":\"codex\",\"providerVersion\":\"0.158.0\",\"platform\":\"linux-x86_64\",\"policy\":\"capability_only\",\"charterVersion\":\"pontis_application_charter_v1\",\"lifecycleGeneration\":1,\"verifiedAt\":\"2026-10-04T00:39:45.276Z\",\"checks\":[{\"check\":\"guidance_applied\",\"state\":\"verified\",\"method\":\"effective_config\"},{\"check\":\"instruction_sources_verified\",\"state\":\"verified\",\"method\":\"provider_result\"},{\"check\":\"neutral_workspace_verified\",\"state\":\"verified\",\"method\":\"provider_result\"},{\"check\":\"mcp_catalog_isolated\",\"state\":\"verified\",\"method\":\"effective_config\"},{\"check\":\"native_tool_boundary_verified\",\"state\":\"verified\",\"method\":\"provider_result\"},{\"check\":\"model_network_denied\",\"state\":\"verified\",\"method\":\"effective_config\"},{\"check\":\"provider_request_policy_verified\",\"state\":\"verified\",\"method\":\"effective_config\"}]}",
+      "POSTURE ses_c9d5ce19e2e2482fac7eb1addbb60ede {\"sessionId\":\"ses_c9d5ce19e2e2482fac7eb1addbb60ede\",\"providerId\":\"codex\",\"providerVersion\":\"0.158.0\",\"platform\":\"linux-x86_64\",\"policy\":\"capability_only\",\"charterVersion\":\"pontis_application_charter_v1\",\"lifecycleGeneration\":1,\"verifiedAt\":\"2026-10-04T00:39:59.166Z\",\"checks\":[{\"check\":\"guidance_applied\",\"state\":\"verified\",\"method\":\"effective_config\"},{\"check\":\"instruction_sources_verified\",\"state\":\"verified\",\"method\":\"provider_result\"},{\"check\":\"neutral_workspace_verified\",\"state\":\"verified\",\"method\":\"provider_result\"},{\"check\":\"mcp_catalog_isolated\",\"state\":\"verified\",\"method\":\"effective_config\"},{\"check\":\"native_tool_boundary_verified\",\"state\":\"verified\",\"method\":\"provider_result\"},{\"check\":\"model_network_denied\",\"state\":\"verified\",\"method\":\"effective_config\"},{\"check\":\"provider_request_policy_verified\",\"state\":\"verified\",\"method\":\"effective_config\"}]}"
+    ],
+    "boundaryF": [
+      {
+        "operation": "design.get",
+        "status": 200
+      },
+      {
+        "operation": "design.get",
+        "status": 200
+      },
+      {
+        "operation": "forma.guide",
+        "status": 200
+      }
+    ]
+  },
+  "record": [
+    {
+      "scenario": "S8",
+      "prompt": "In design 54c177bb-2a4f-4421-9ab3-8cb98bde6728, change the headline text to \"Cancelled\" and then validate it.",
+      "sessionId": "ses_d9931274c92f40d6889e81e8c0e83a84",
+      "observations": {
+        "endedWith": "turn.cancelled",
+        "versionBefore": 1,
+        "versionAfter": 1
+      },
+      "events": [
+        {
+          "sequence": 3,
+          "type": "turn.started",
+          "payload": {
+            "sessionId": "ses_d9931274c92f40d6889e81e8c0e83a84",
+            "turnId": "turn_6fded3e911356d033209209ed73cb87c"
+          }
+        },
+        {
+          "sequence": 4,
+          "type": "agent.output.completed",
+          "payload": {
+            "sessionId": "ses_d9931274c92f40d6889e81e8c0e83a84",
+            "text": "I’ll read the Forma guide and the design, then update the headline and validate the result.",
+            "turnId": "turn_6fded3e911356d033209209ed73cb87c"
+          }
+        },
+        {
+          "sequence": 5,
+          "type": "capability.requested",
+          "payload": {
+            "capabilityId": "forma.guide",
+            "input": {},
+            "invocationId": "inv_b648886c193844ddb11879d2f2a64bdf",
+            "sessionId": "ses_d9931274c92f40d6889e81e8c0e83a84",
+            "turnId": "turn_6fded3e911356d033209209ed73cb87c"
+          }
+        },
+        {
+          "sequence": 6,
+          "type": "capability.completed",
+          "payload": "{\"capabilityId\":\"forma.guide\",\"invocationId\":\"inv_b648886c193844ddb11879d2f2a64bdf\",\"result\":{\"revision\":\"blake3:f98bb3c7f7455d9060e5890bb43fecf16907c929ec5535894334efaa828e8c77\",\"text\":\"---\\nname: forma\\ndescription: >\\n  Design graphics with Forma, a local design runtime driven over MCP. Use when\\n  asked to make a post, carousel, poster, cover or any laid-out visual piece in\\n  a Forma project, or when a Forma tool is available and the user mentions a\\n  design, a Brand Kit or an asset.\\n---\\n\\n# Forma\\n\\nForma is a local design runtime. **You make the design decisions; Forma executes\\nthem deterministically and renders them.** It integrates no image generation and\\nno model API of its own, so anything a design needs that does not exist yet is\\nsomething you ask a person for.\\n\\n## 1. Mental model\\n\\nYou are editing a structured document, not writing HTML or CSS. There is a fixed\\nset… (22792 bytes)"
+        },
+        {
+          "sequence": 7,
+          "type": "turn.cancelled",
+          "payload": {
+            "sessionId": "ses_d9931274c92f40d6889e81e8c0e83a84",
+            "turnId": "turn_6fded3e911356d033209209ed73cb87c"
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "S7",
+      "prompt": "Open design b751a9ca-255a-4ff5-94d9-be204132c0af in the editor.",
+      "sessionId": "ses_c9d5ce19e2e2482fac7eb1addbb60ede",
+      "observations": {
+        "action": {
+          "capabilityId": "ui.openDesign",
+          "input": {
+            "design_id": "b751a9ca-255a-4ff5-94d9-be204132c0af"
+          }
+        },
+        "acknowledged": "handled"
+      },
+      "events": [
+        {
+          "sequence": 10,
+          "type": "turn.started",
+          "payload": {
+            "sessionId": "ses_c9d5ce19e2e2482fac7eb1addbb60ede",
+            "turnId": "turn_7e8e5d6726f89c9e6cd119b1e9dd760a"
+          }
+        },
+        {
+          "sequence": 11,
+          "type": "capability.requested",
+          "payload": {
+            "capabilityId": "design.get",
+            "input": {
+              "design_id": "b751a9ca-255a-4ff5-94d9-be204132c0af"
+            },
+            "invocationId": "inv_eb7d62272d50d2a477135d617d0a7794",
+            "sessionId": "ses_c9d5ce19e2e2482fac7eb1addbb60ede",
+            "turnId": "turn_7e8e5d6726f89c9e6cd119b1e9dd760a"
+          }
+        },
+        {
+          "sequence": 12,
+          "type": "capability.completed",
+          "payload": "{\"capabilityId\":\"design.get\",\"invocationId\":\"inv_eb7d62272d50d2a477135d617d0a7794\",\"result\":{\"created_at\":\"2026-10-04T00:39:59.034Z\",\"document\":{\"format\":{\"height\":1920,\"preset\":\"story\",\"width\":1080},\"pages\":[{\"id\":\"e9122a7a-c8df-4777-9c34-760b7b4dfa9b\",\"layers\":[{\"align\":\"left\",\"color\":\"#171717\",\"font_family\":\"Geist\",\"font_size\":72,\"font_weight\":700,\"id\":\"878c58ba-b42f-409a-801b-b0d80fe02b3b\",\"letter_spacing\":0,\"line_height\":1.2,\"locked\":false,\"name\":\"Headline\",\"opacity\":1,\"text\":\"HELLO\",\"transform\":{\"height\":220,\"rotation_deg\":0,\"width\":920,\"x\":80,\"y\":160},\"type\":\"text\",\"visible\":true},{\"align\":\"left\",\"color\":\"#171717\",\"font_family\":\"Geist\",\"font_size\":72,\"font_weight\":700,\"id\":\"8754a6a3-c2e0-4ce7-838d-9e60dd674ba6\",\"letter_spacing\":0,\"line_height\":1.2,\"locked\":false,\"name\":\"Tagline\",\"opacity\":1,\"text\":\"A long line of\\nset type to measure\",\"transform\":{\"height\":220,\"rotation_deg\":0,\"wi… (1261 bytes)"
+        },
+        {
+          "sequence": 13,
+          "type": "capability.requested",
+          "payload": {
+            "capabilityId": "ui.openDesign",
+            "input": {
+              "design_id": "b751a9ca-255a-4ff5-94d9-be204132c0af"
+            },
+            "invocationId": "inv_e530359409916d98bda5f2d8026f2dd0",
+            "sessionId": "ses_c9d5ce19e2e2482fac7eb1addbb60ede",
+            "turnId": "turn_7e8e5d6726f89c9e6cd119b1e9dd760a"
+          }
+        },
+        {
+          "sequence": 14,
+          "type": "capability.completed",
+          "payload": {
+            "capabilityId": "ui.openDesign",
+            "invocationId": "inv_e530359409916d98bda5f2d8026f2dd0",
+            "result": {
+              "clientId": "uic_05a09115-59e6-4017-87df-93788ddc3e4b",
+              "detail": "S7 cover",
+              "outcome": "handled"
+            },
+            "sessionId": "ses_c9d5ce19e2e2482fac7eb1addbb60ede",
+            "turnId": "turn_7e8e5d6726f89c9e6cd119b1e9dd760a"
+          }
+        },
+        {
+          "sequence": 15,
+          "type": "agent.output.completed",
+          "payload": {
+            "sessionId": "ses_c9d5ce19e2e2482fac7eb1addbb60ede",
+            "text": "Opened **S7 cover** in the editor.",
+            "turnId": "turn_7e8e5d6726f89c9e6cd119b1e9dd760a"
+          }
+        },
+        {
+          "sequence": 16,
+          "type": "turn.completed",
+          "payload": {
+            "sessionId": "ses_c9d5ce19e2e2482fac7eb1addbb60ede",
+            "turnId": "turn_7e8e5d6726f89c9e6cd119b1e9dd760a"
+          }
+        }
+      ]
+    }
+  ]
+}

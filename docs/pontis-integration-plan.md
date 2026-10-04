@@ -805,7 +805,7 @@ Read this before the list below; the list is the plan, this is what happened to 
 | 10a Device panel and proxy routes | done, merged into `main` | `70dae4e`, `d6b000c`, `ad74373`, `f37b358`, `bd4cd8b`, `6edc1b6` (branch `JonathanEKP/pontis-10a-devices`) |
 | 10b In-app chat and `/agent/context` | done, merged into `main` | `93dde1a`, `58b754f`, `f081782`, `0a34a10`, `005d9d0` (branch `JonathanEKP/pontis-10b-chat`) |
 | 10c Live delivery and device presence | done, merged into `main` | `f501cc9`, `ce96b88`, `93731c2`, `821e33d` (branch `JonathanEKP/pontis-10c-live`) |
-| 11 Real Codex local run | **in progress** — owner authorized it on 2026-10-03; see *Step 11, as dispatched* | |
+| 11 Real Codex local run | **done** — Codex 0.158.0, `capability_only`, `gpt-6-luna` at low effort; posture verified 7/7; S1, S2, S6, S7, S8 and S13 passed on real turns (7 turns, one retry spent strengthening S8). What was *not* run is its own section in [pontis-step11-real-codex.md](pontis-step11-real-codex.md). Branch `JonathanEKP/pontis-11-real-codex`, not merged | `bc72278`, `d3d95c9`, `19c633c`, `748e862`, `7383789`, evidence EVIDENCE_HASH |
 | 12 PV-1 evidence | not started; follows 11 | |
 
 **Step 11, as dispatched (2026-10-03).** The owner authorized a real run on their Codex account

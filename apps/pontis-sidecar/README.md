@@ -7,8 +7,8 @@ Realtime Gateway, composed from public Pontis packages. It reaches Forma only th
 (`/api/v1/pontis`, authenticated with a `forma_svc_` credential). forma-server stays the domain
 authority and does not depend on this process.
 
-This is plan §11 **steps 7 to 9**. What is left before PV-1 is the editor's own Pontis surface
-(step 10: the device panel and in-app chat), the real Codex run and the evidence.
+This is plan §11 **steps 7 to 9**, plus the real Codex run of step 11. What is left before PV-1 is
+the evidence (step 12).
 
 ## What is Forma's here
 
@@ -22,7 +22,8 @@ This is plan §11 **steps 7 to 9**. What is left before PV-1 is the editor's own
 | `src/live.ts` | what the person's open windows hear while the agent works (durable events from the store with their `sequence`, deltas and presence from the Device's own notification), and `GET /pons/v1/devices` with `online` merged from the live sockets |
 | `src/sidecar.ts` | the composition |
 | `src/guidance.ts` | the `ApplicationAgentGuidance`: the opening context only; the manual is `forma.guide` |
-| `test-driver/` | a test-only Pontis Runtime with FakeProvider, in Rust |
+| `src/stack.ts`, `src/ui-window.ts` | test support: the processes of a local run and the person who drives them, and a stand-in for the editor's window. Shared by `local-run.test.ts`, `real-codex.test.ts` and `ui.test.ts`; nothing else may import them |
+| `test-driver/` | a test-only Pontis Runtime, in Rust, with FakeProvider or — `FORMA_DRIVER_PROVIDER=codex` — the real Codex in `capability_only` |
 
 Everything else is Pontis, imported from `@pontis/core`, `@pontis/server` and
 `@pontis/control-plane` as they ship.
@@ -100,6 +101,22 @@ person through the sidecar's routes and reads the durable event stream and Forma
 does not register it and its scripts are Rust values, so every FakeProvider run, Pontis's own
 included, links the runtime crates. The driver has no library target and is its own Cargo
 workspace, so nothing can depend on it and `cargo test --workspace` never builds it.
+
+## The real Codex run
+
+`src/real-codex.test.ts` is the same chain with the model swapped, and it **spends the owner's
+tokens**, so it is opt-in: skipped unless `FORMA_REAL_CODEX=1`, never part of `pnpm test` or CI
+(listed in `scripts/pontis-skipped-checks.txt`). It needs the Codex release Pontis accepts for
+`capability_only` (0.158.0, installed under the gitignored `.codex-pinned/` so the global install is
+untouched), a dedicated `CODEX_HOME` there with `auth.json` symlinked to the owner's, and the
+`pontis-mcp-bridge` binary. One command, once those exist:
+
+```bash
+FORMA_REAL_CODEX_OUT=/tmp/record.json pnpm --filter forma-pontis-sidecar test:real-codex
+```
+
+[docs/pontis-step11-real-codex.md](../../docs/pontis-step11-real-codex.md) has the setup, what the
+run showed, and — as a section of its own — what it did not.
 
 ## Decisions recorded here
 
