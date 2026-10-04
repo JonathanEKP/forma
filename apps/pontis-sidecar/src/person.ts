@@ -21,6 +21,13 @@ export interface Person {
 
 export type ResolvePerson = (request: IncomingMessage) => Promise<Person | undefined>;
 
+export interface PersonResolvers {
+  /** Ordinary HTTP routes resolve one person per request object. */
+  readonly memoized: ResolvePerson;
+  /** A live UI stream asks Forma again for every event, even on the same request. */
+  readonly fresh: ResolvePerson;
+}
+
 /**
  * Resolves each request at most once. The Control Plane's routes ask for the
  * user and then for the context as two hooks; both read the same answer.
@@ -30,9 +37,9 @@ export type ResolvePerson = (request: IncomingMessage) => Promise<Person | undef
  * makes it immutable); what Forma must re-decide every time — whether the person
  * still holds that membership — it re-decides at Boundary F on every call.
  */
-export function personResolver(boundary: FormaBoundary): ResolvePerson {
+export function personResolver(boundary: FormaBoundary): PersonResolvers {
   const answered = new WeakMap<IncomingMessage, Promise<Person | undefined>>();
-  return (request) => {
+  const memoized: ResolvePerson = (request) => {
     let answer = answered.get(request);
     if (!answer) {
       answer = resolve(boundary, request);
@@ -40,6 +47,24 @@ export function personResolver(boundary: FormaBoundary): ResolvePerson {
     }
     return answer;
   };
+  return { memoized, fresh: (request) => resolve(boundary, request) };
+}
+
+/**
+ * Reads an unverified session JWT's expiration only to schedule a safe early
+ * stream close. Forma still verifies the token on the connection and each event.
+ */
+export function tokenExpiresAt(request: IncomingMessage): number | undefined {
+  const payload = bearerToken(request)?.split('.')[1];
+  if (!payload) return undefined;
+  try {
+    const claims: unknown = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    if (!isRecord(claims) || typeof claims.exp !== 'number' || !Number.isFinite(claims.exp)) return undefined;
+    const expiresAt = claims.exp * 1_000;
+    return Number.isSafeInteger(expiresAt) ? expiresAt : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 async function resolve(boundary: FormaBoundary, request: IncomingMessage): Promise<Person | undefined> {
@@ -47,4 +72,8 @@ async function resolve(boundary: FormaBoundary, request: IncomingMessage): Promi
   if (!token) return undefined;
   const resolution = await boundary.resolveSubject(token);
   return resolution ? { userId: resolution.subject, applicationContextId: resolution.account_id } : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
