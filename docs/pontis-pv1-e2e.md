@@ -127,10 +127,14 @@ run of S13.
 
 ### S8 — Cancellation · full stack
 
-Cancel mid-turn, both ways: MCP request cancellation and a Pontis `session.cancel`.
+Cancel mid-turn while a real MCP `tools/call` is in flight by issuing Pontis `session.cancel`. The
+Runtime documents this as cancelling the same invocation as inbound `notifications/cancelled`;
+the sidecar does not expose a separate request-level cancel control.
 
-Asserts: the invocation settles cancelled; no domain write happened; the neutral workspace is
-removed; no orphaned render or export is left behind.
+Asserts: the invocation settles cancelled; no domain write happened; the session remains usable and
+its neutral workspace stays with it after `session.cancel`; no orphaned render or export is left
+behind. The neutral workspace is removed when the session is later stopped. The sidecar exposes no
+session-stop intent, so the full-stack check uses Runtime shutdown for that final assertion.
 
 ### S9 — Idempotency and replay · sidecar contract
 
