@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../App";
+import { liveFeed } from "./channel";
 
 /**
  * The device panel on the Agents page (plan §11 step 10a).
@@ -162,6 +163,39 @@ describe("the device panel on the Agents page", () => {
     expect(within(card).getByText("0.156.1")).toBeTruthy();
     expect(within(card).getByText(/api_key — usage is billed directly/)).toBeTruthy();
     expect(within(card).getAllByText(/execution supervised_child_process/)).toHaveLength(2);
+  });
+
+  it("refreshes paired devices and presence from live device frames", async () => {
+    renderAgents();
+    await screen.findByRole("article", { name: "Studio laptop" });
+
+    devices = [...devices, record({ id: "dev_2", name: "Office workstation" })];
+    act(() => liveFeed.publish({ type: "device.online", payload: {} }));
+    expect(await screen.findByRole("article", { name: "Office workstation" })).toBeTruthy();
+
+    devices = devices.map((device) => (device.id === "dev_1" ? { ...device, online: false } : device));
+    act(() => liveFeed.publish({ type: "device.offline", payload: {} }));
+    expect(await within(screen.getByRole("article", { name: "Studio laptop" })).findByText("offline")).toBeTruthy();
+  });
+
+  it("refreshes on its slow fallback poll when no presence frame arrives", async () => {
+    let poll: (() => void) | undefined;
+    const nativeSetInterval = globalThis.setInterval;
+    const interval = vi.spyOn(globalThis, "setInterval").mockImplementation((handler, timeout) => {
+      if (timeout === 30_000 && typeof handler === "function") poll = () => handler();
+      return nativeSetInterval(handler, timeout);
+    });
+
+    try {
+      renderAgents();
+      await screen.findByRole("article", { name: "Studio laptop" });
+
+      devices = [...devices, record({ id: "dev_2", name: "Office workstation" })];
+      act(() => poll?.());
+      expect(await screen.findByRole("article", { name: "Office workstation" })).toBeTruthy();
+    } finally {
+      interval.mockRestore();
+    }
   });
 
   it("calls a provider_managed sandbox exactly that and keeps the classifications distinct", async () => {

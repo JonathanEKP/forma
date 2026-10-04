@@ -11,8 +11,9 @@
  * transport, not a record (docs/13), and the panel is not mounted there at all.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
+import { liveFeed } from "./channel";
 import {
   PontisUnavailable,
   createPairingCode,
@@ -26,6 +27,9 @@ import {
   type PairingCode,
   type ProviderInstallation,
 } from "./devices";
+import { parseLiveFrame } from "./events";
+
+const DEVICE_REFRESH_MS = 30_000;
 
 type Load =
   | { readonly at: "loading" }
@@ -36,11 +40,16 @@ type Load =
 export function DevicePanel() {
   const [load, setLoad] = useState<Load>({ at: "loading" });
   const [notice, setNotice] = useState<string | null>(null);
+  const reads = useRef(0);
 
   const refresh = useCallback(async () => {
+    reads.current += 1;
+    const mine = reads.current;
     try {
-      setLoad({ at: "ready", devices: await listDevices() });
+      const devices = await listDevices();
+      if (mine === reads.current) setLoad({ at: "ready", devices });
     } catch (cause) {
+      if (mine !== reads.current) return;
       setLoad(
         cause instanceof PontisUnavailable
           ? { at: "unavailable" }
@@ -51,6 +60,19 @@ export function DevicePanel() {
 
   useEffect(() => {
     void refresh();
+    const stop = liveFeed.subscribe({
+      state: (state) => {
+        if (state.at === "connected") void refresh();
+      },
+      frame: (raw) => {
+        if (parseLiveFrame(raw)?.type.startsWith("device.")) void refresh();
+      },
+    });
+    const timer = setInterval(() => void refresh(), DEVICE_REFRESH_MS);
+    return () => {
+      stop();
+      clearInterval(timer);
+    };
   }, [refresh]);
 
   return (
