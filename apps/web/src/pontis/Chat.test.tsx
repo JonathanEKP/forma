@@ -266,7 +266,7 @@ describe("a conversation", () => {
     first.unmount();
     backend.startGate = null;
     render(<Harness enabled />);
-    const draft = await screen.findByLabelText("Message the agent");
+    const draft = await screen.findByRole<HTMLTextAreaElement>("textbox", { name: "Message the agent" });
     expect(draft.value).toBe(text);
     expect(backend.intents()).toEqual([{ type: "session.start", payload: { providerId: "codex" } }]);
 
@@ -393,7 +393,7 @@ describe("a conversation", () => {
 
     expect(await screen.findByText("That message is too long (max 64 KB).")).toBeTruthy();
     expect(screen.getByRole<HTMLButtonElement>("button", { name: "Send" }).disabled).toBe(true);
-    expect(screen.getByLabelText("Message the agent").value).toBe(draft);
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message the agent" }).value).toBe(draft);
     expect(backend.intents()).toEqual([]);
   });
 
@@ -802,6 +802,6 @@ describe("an unsent draft", () => {
     first.unmount();
 
     render(<Harness enabled />);
-    expect((await screen.findByLabelText("Message the agent")).value).toBe("keep this draft");
+    expect((await screen.findByRole<HTMLTextAreaElement>("textbox", { name: "Message the agent" })).value).toBe("keep this draft");
   });
 });
