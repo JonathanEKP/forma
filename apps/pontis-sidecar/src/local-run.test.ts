@@ -27,6 +27,7 @@ import { strict as assert } from 'node:assert';
 import { randomUUID } from 'node:crypto';
 import { after, before, describe, it } from 'node:test';
 
+import { specOf } from './capabilities.ts';
 import { approvalId, documentOf, json, Stack, type Design } from './stack.ts';
 
 /** The inputs test-driver/src/main.rs scripts, byte for byte. */
@@ -42,15 +43,31 @@ const LIST = 'List the designs of my project.';
 /** Pages in the design whose validation is cancelled: enough that it is still running when the cancel lands. */
 const LONG_PAGES = 120;
 
-const stack = new Stack();
+const stack = new Stack(180_000);
 let design: Design | undefined;
 let layer = '';
+let tagline = '';
+
+interface MutableDocument {
+  readonly pages: { readonly id: string; readonly layers: { readonly id: string; transform: { x: number } }[] }[];
+}
+
+interface ValidationIssue {
+  readonly code: string;
+  readonly severity: string;
+  readonly layer_id?: string;
+}
+
+interface ValidationReport {
+  readonly valid: boolean;
+  readonly issues: readonly ValidationIssue[];
+}
 
 describe('the sidecar, run locally against FakeProvider', () => {
   before(async () => {
     await stack.boot('Local run');
     layer = randomUUID();
-    const tagline = randomUUID();
+    tagline = randomUUID();
     design = await stack.createDesign('Cover', documentOf(1, [layer, tagline]));
     const longDesign = (await stack.createDesign('Long', documentOf(LONG_PAGES, [randomUUID()]))).id;
     await stack.attachDriver(
@@ -79,6 +96,105 @@ describe('the sidecar, run locally against FakeProvider', () => {
     const [projects, read] = completed.map((event) => JSON.stringify(event.payload.result));
     assert.ok(projects?.includes('Local run'), projects);
     assert.ok(read?.includes(layer), 'the design comes back with its headline');
+  });
+
+  it('S4 validates the validator’s ordered issue list, repairs the same design, then renders it', async () => {
+    const firstLayer = randomUUID();
+    const secondLayer = randomUUID();
+    const document = documentOf(1, [firstLayer, secondLayer]) as MutableDocument;
+    const page = document.pages[0];
+    assert.ok(page);
+    page.layers[0].transform.x = 3_000;
+    page.layers[1].transform.x = 4_000;
+    const broken = await stack.createDesign('S4 known issues', document);
+    const pageId = page.id;
+
+    const sidecarOutcome = await stack.invokeCapabilityForTest('design.validate', { design_id: broken.id });
+    assert.equal(sidecarOutcome.status, 'completed');
+    if (sidecarOutcome.status !== 'completed') assert.fail('design.validate completed through the sidecar');
+    const sidecarReport = validationReport(sidecarOutcome.result);
+    const directReport = validationReport(await json(await stack.asPerson('POST', `/api/v1/designs/${broken.id}/validate`)));
+    assert.deepEqual(sidecarReport, directReport, 'the sidecar returns Forma’s complete validator report unchanged');
+    assert.equal(sidecarReport.valid, false);
+    assert.deepEqual(
+      sidecarReport.issues.map(({ code, severity, layer_id }) => [code, severity, layer_id]),
+      [
+        ['OUTSIDE_CANVAS', 'error', firstLayer],
+        ['OUTSIDE_CANVAS', 'error', secondLayer],
+      ],
+      'the known issues retain their code, severity, layer and document order',
+    );
+    assert.ok(
+      Buffer.byteLength(JSON.stringify(sidecarReport)) <= specOf('design.validate').bounds.maxResultBytes,
+      'the report fits the generated design.validate result bound',
+    );
+
+    const repaired = await stack.invokeCapabilityForTest('design.applyOperations', {
+      design_id: broken.id,
+      base_version: broken.version,
+      operations: [
+        { op: 'move_layer', layer_id: firstLayer, frame: { x: 80 } },
+        { op: 'move_layer', layer_id: secondLayer, frame: { x: 80 } },
+      ],
+    });
+    assert.equal(repaired.status, 'completed');
+    assert.equal((await stack.read(broken.id)).version, broken.version + 1);
+
+    const cleanOutcome = await stack.invokeCapabilityForTest('design.validate', { design_id: broken.id });
+    assert.equal(cleanOutcome.status, 'completed');
+    if (cleanOutcome.status !== 'completed') assert.fail('repaired design.validate completed through the sidecar');
+    const cleanReport = validationReport(cleanOutcome.result);
+    assert.deepEqual(cleanReport, validationReport(await json(await stack.asPerson('POST', `/api/v1/designs/${broken.id}/validate`))));
+    assert.deepEqual(cleanReport, { valid: true, issues: [] });
+
+    // Pontis deliberately has no render capability while image results remain S5's upstream gap.
+    // Exercise the same authenticated Forma render route that design.renderPreview uses.
+    const renderResponse = await stack.asPerson('POST', `/api/v1/designs/${broken.id}/render`, { page_id: pageId, scale: 1 });
+    assert.equal(renderResponse.status, 200, 'the repaired design renders through Forma');
+    const rendered = (await renderResponse.json()) as Record<string, unknown>;
+    assert.equal(rendered.design_id, broken.id);
+    assert.equal(rendered.page_id, pageId);
+    assert.equal(rendered.version, broken.version + 1);
+    assert.equal(rendered.scale, 1);
+    assert.equal(rendered.mime_type, 'image/png');
+    assert.equal(typeof rendered.png_base64, 'string');
+    assert.ok(typeof rendered.byte_size === 'number' && rendered.byte_size > 0);
+  });
+
+  it('S10 rechecks account authorization for a live session and gives the same refusal for a missing resource', async () => {
+    const foreign = await stack.createOtherAccountDesign('S10 other account');
+    const warmRead = await stack.turn(READ, 'turn.completed');
+    assert.ok(warmRead.some((event) => event.type === 'capability.completed' && event.payload.capabilityId === 'design.get'));
+    const sessionId = stack.sessionId;
+    const startedSessions = stack.seen.filter((event) => event.type === 'session.started').length;
+    const ownRead = await stack.invokeCapabilityForTest('design.get', { design_id: design!.id });
+    assert.equal(ownRead.status, 'completed', 'the session can read its represented account before revocation');
+
+    const crossAccount = await stack.invokeCapabilityForTest('design.get', { design_id: foreign.id });
+    const absentId = randomUUID();
+    const absent = await stack.invokeCapabilityForTest('design.get', { design_id: absentId });
+    const crossAccountRefusal = publicFailure(crossAccount, foreign.id);
+    assert.equal(crossAccountRefusal.code, 'not_found', 'account A cannot read account B’s design');
+    assert.deepEqual(crossAccountRefusal, publicFailure(absent, absentId), 'the foreign design is indistinguishable from an unknown id');
+    assert.ok(!JSON.stringify(crossAccountRefusal).includes(foreign.id));
+
+    const writesBefore = stack.boundaryCalls('design.applyOperations').length;
+    try {
+      stack.revokeMembership();
+      const revokedRead = await stack.invokeCapabilityForTest('design.get', { design_id: design!.id });
+      const revokedAbsentId = randomUUID();
+      const revokedAbsent = await stack.invokeCapabilityForTest('design.get', { design_id: revokedAbsentId });
+      const revokedRefusal = publicFailure(revokedRead, design!.id);
+      assert.equal(revokedRefusal.code, 'authorization_denied');
+      assert.deepEqual(revokedRefusal, publicFailure(revokedAbsent, revokedAbsentId), 'the refusal does not disclose whether the id exists');
+      assert.ok(!JSON.stringify(revokedRefusal).includes(design!.id));
+      assert.equal(stack.boundaryCalls('design.applyOperations').length, writesBefore, 'authorization refusal reaches no write');
+    } finally {
+      stack.restoreMembership();
+    }
+
+    assert.equal(stack.sessionId, sessionId, 'the Runtime session remains the same across revocation');
+    assert.equal(stack.seen.filter((event) => event.type === 'session.started').length, startedSessions, 'no new Runtime session was created');
   });
 
   it('lists the designs of a project, so the agent can learn an id it was not given (design.list)', async () => {
@@ -205,6 +321,38 @@ describe('the sidecar, run locally against FakeProvider', () => {
     assert.ok(resumed.some((event) => event.type === 'capability.completed' && event.payload.capabilityId === 'forma.guide'));
   });
 
+  it('S6 expiry leaves the design intact and a late approve executes nothing', async (t) => {
+    const before = await stack.read(design!.id);
+    const writesBefore = stack.boundaryCalls('design.applyOperations').length;
+    const sent = stack.cursor;
+    await stack.say(DENY);
+    const pending = await stack.nextEvent('approval.requested');
+    const id = approvalId(pending);
+    assert.equal(stack.boundaryCalls('design.applyOperations').length, writesBefore, 'no write reached Boundary F while pending');
+    assert.deepEqual(await stack.read(design!.id), before, 'the design remains readable and unchanged while pending');
+
+    await stack.nextEvent('approval.resolved', (event) => event.payload.approvalId === id && event.payload.status === 'expired');
+    const terminal = await stack.nextEvent('turn.completed');
+    const terminalSequence = terminal.at(-1)?.sequence;
+    assert.ok(terminalSequence !== undefined);
+    const expiryEvents = stack.seen.filter((event) => event.sequence > sent && event.sequence <= terminalSequence && event.sessionId === stack.sessionId);
+    assert.ok(expiryEvents.some((event) => event.type === 'capability.failed' && JSON.stringify(event.payload).includes('approval_expired')));
+    assert.equal(stack.boundaryCalls('design.applyOperations').length, writesBefore, 'expiry is terminal without a Boundary F write');
+    assert.deepEqual(await stack.read(design!.id), before, 'the design is still readable and unchanged after expiry');
+
+    const late = await stack.intent('approval.resolve', { approvalId: id, decision: 'approveOnce' });
+    assert.equal(late.delivered, true, 'the sidecar reports the late resolution as delivered');
+    await stack.say(GUIDE);
+    await stack.nextEvent('turn.completed');
+    const driver = stack.children.find(({ name }) => name === 'test-driver');
+    const refusalDiagnostic = driver?.stderr.includes('REFUSED approval_expired') ?? false;
+    assert.equal(stack.boundaryCalls('design.applyOperations').length, writesBefore, 'the late resolution caused no write');
+    const after = await stack.read(design!.id);
+    assert.equal(after.version, before.version);
+    assert.ok(after.document.pages.flatMap((page) => page.layers).some((candidate) => candidate.id === tagline), 'the removed layer remains');
+    t.diagnostic(refusalDiagnostic ? 'Runtime emitted REFUSED approval_expired for the late resolution.' : 'No Runtime refusal diagnostic followed the late resolution.');
+  });
+
   it('asks before removing anything, and a refusal writes nothing', async () => {
     const before = await stack.read(design!.id);
     const applies = stack.boundaryCalls('design.applyOperations').length;
@@ -235,6 +383,37 @@ describe('the sidecar, run locally against FakeProvider', () => {
     assert.equal(stack.boundaryCalls('design.applyOperations').length, applies + 1, 'one write, carrying the approval');
   });
 });
+
+function validationReport(value: unknown): ValidationReport {
+  assert.ok(isValidationReport(value), 'the response is a validation report');
+  return value;
+}
+
+function isValidationReport(value: unknown): value is ValidationReport {
+  if (!isRecord(value) || typeof value.valid !== 'boolean' || !Array.isArray(value.issues)) return false;
+  return value.issues.every(isValidationIssue);
+}
+
+function isValidationIssue(value: unknown): value is ValidationIssue {
+  return isRecord(value) && typeof value.code === 'string' && typeof value.severity === 'string';
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function publicFailure(
+  outcome: Awaited<ReturnType<Stack['invokeCapabilityForTest']>>,
+  resourceId: string,
+): { code: string; message: string; details: unknown } {
+  assert.equal(outcome.status, 'failed');
+  if (outcome.status !== 'failed') assert.fail('the capability was refused');
+  return {
+    code: outcome.error.code,
+    message: outcome.error.message.replaceAll(resourceId, '<resource>'),
+    details: outcome.error.details,
+  };
+}
 
 
 function headline(record: Design): { id: string; font_size?: number } | undefined {

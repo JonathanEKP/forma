@@ -32,6 +32,13 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 
+import { defineAgentApp, type InvokeOutcome } from '@pontis/server';
+
+import { FormaBoundary } from './boundary.ts';
+import { formaCapabilities, isUuid } from './capabilities.ts';
+import { GUIDANCE } from './guidance.ts';
+import { silentLog } from './log.ts';
+
 export const PACKAGE = resolve(import.meta.dirname, '..');
 export const REPO = resolve(PACKAGE, '../..');
 const FORMA_SERVER = process.env.FORMA_SERVER_BIN ?? join(REPO, 'target/debug/forma-server');
@@ -76,6 +83,7 @@ export class Stack {
   deadlineMs: number;
 
   private readonly servers: Server[] = [];
+  private serverEnvironment: Record<string, string> = {};
   readonly subject = randomUUID();
   /** The person's session, for a test that has to speak as their browser does. */
   readonly sessionToken = mintSession(this.subject);
@@ -95,6 +103,7 @@ export class Stack {
     }
     this.directory = await mkdtemp(join(tmpdir(), 'forma-pontis-'));
     const environment = this.formaEnvironment(await this.serveJwks(), await freePort());
+    this.serverEnvironment = environment;
 
     // An account for the person, and the sidecar's credential — both minted by
     // the operator commands a deployment uses.
@@ -110,6 +119,7 @@ export class Stack {
 
     const sidecarProcess = this.start('sidecar', process.execPath, [join(PACKAGE, 'src/main.ts')], {
       PATH: process.env.PATH ?? '',
+      ...(process.env.TMPDIR ? { TMPDIR: process.env.TMPDIR } : {}),
       FORMA_SERVER_URL: this.forma,
       FORMA_SERVICE_CREDENTIAL: this.credential,
       FORMA_PONTIS_BIND: '127.0.0.1:0',
@@ -127,6 +137,7 @@ export class Stack {
     const pairing = (await json(await this.toSidecar('POST', '/pons/v1/pairing/codes', {}))) as { code: string; applicationId: string };
     const driver = this.start('test-driver', DRIVER, [], {
       PATH: process.env.PATH ?? '',
+      ...(process.env.TMPDIR ? { TMPDIR: process.env.TMPDIR } : {}),
       FORMA_PONTIS_ORIGIN: this.sidecar,
       FORMA_PONTIS_APPLICATION_ID: pairing.applicationId,
       FORMA_DRIVER_PAIRING_CODE: pairing.code,
@@ -171,10 +182,10 @@ export class Stack {
     return await fetch(`${this.sidecar}${path}`, this.request(method, body));
   }
 
-  private request(method: string, body?: unknown): RequestInit {
+  private request(method: string, body?: unknown, token = this.sessionToken): RequestInit {
     return {
       method,
-      headers: { authorization: `Bearer ${this.sessionToken}`, 'content-type': 'application/json' },
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     };
   }
@@ -187,9 +198,66 @@ export class Stack {
     return (await json(await this.asPerson('POST', `/api/v1/projects/${this.projectId}/designs`, { name, format: null, document }))) as Design;
   }
 
-  async intent(type: string, payload: Record<string, unknown>): Promise<void> {
+  /** Creates a second account and design in this server's isolated test database. */
+  async createOtherAccountDesign(name: string): Promise<Design> {
+    const subject = randomUUID();
+    const email = `pontis-${subject}@example.com`;
+    run(FORMA_SERVER, ['invite', email], this.serverEnvironment);
+    const token = mintSession(subject, { email });
+    await json(await fetch(`${this.forma}/api/v1/accounts`, this.request('POST', undefined, token)));
+    const project = (await json(
+      await fetch(`${this.forma}/api/v1/projects`, this.request('POST', { name: `${name} project` }, token)),
+    )) as { id: string };
+    return (await json(
+      await fetch(
+        `${this.forma}/api/v1/projects/${project.id}/designs`,
+        this.request('POST', { name, format: null, document: documentOf(1, [randomUUID()]) }, token),
+      ),
+    )) as Design;
+  }
+
+  /**
+   * Test-only membership mutation for the live-session authorization contract.
+   * It edits only this stack's scratch SQLite database; no Forma route is added.
+   */
+  revokeMembership(): void {
+    const script =
+      'import sqlite3,sys; db=sqlite3.connect(sys.argv[1]); result=db.execute("DELETE FROM account_memberships WHERE account_id=? AND user_id=?", (sys.argv[2],sys.argv[3])); db.commit(); print(result.rowcount); db.close()';
+    const result = spawnSync('python3', ['-c', script, join(this.directory, 'forma.db'), this.account, this.subject], { encoding: 'utf8' });
+    assert.equal(result.status, 0, `the test-only membership revoke failed: ${result.stderr}`);
+    assert.equal(result.stdout.trim(), '1', 'one membership was revoked in the scratch database');
+  }
+
+  /** Restores the fixture owner after the revocation assertion. */
+  restoreMembership(): void {
+    run(FORMA_SERVER, ['grant-owner', 'person@example.com', this.subject], this.serverEnvironment);
+  }
+
+  /**
+   * Invokes the registered sidecar gateway directly for contracts that must
+   * mutate host membership while a Runtime session is open. Test code only.
+   */
+  async invokeCapabilityForTest(capabilityId: string, input: unknown): Promise<InvokeOutcome> {
+    const app = defineAgentApp({
+      id: 'forma',
+      guidance: GUIDANCE,
+      capabilities: formaCapabilities(new FormaBoundary(this.forma, this.credential, silentLog)),
+      resolveUser: (userId) => (isUuid(userId) ? { id: userId } : undefined),
+    });
+    return await app.gateway.invoke({
+      invocationId: `inv_${randomUUID().replaceAll('-', '')}`,
+      sessionId: this.sessionId,
+      applicationContextId: this.account,
+      userId: this.subject,
+      capabilityId,
+      input,
+    });
+  }
+
+  async intent(type: string, payload: Record<string, unknown>): Promise<{ delivered: boolean }> {
     const answer = (await json(await this.toSidecar('POST', '/agent/intent', { type, payload }))) as { delivered: boolean };
     assert.equal(answer.delivered, true, `${type} reached the Runtime`);
+    return answer;
   }
 
   async say(text: string, view?: Record<string, unknown>): Promise<void> {
@@ -272,6 +340,7 @@ export class Stack {
       FORMA_SUPABASE_ISSUER: ISSUER,
       FORMA_SUPABASE_JWKS_URL: jwks,
       FORMA_LOG: 'warn',
+      ...(process.env.TMPDIR ? { TMPDIR: process.env.TMPDIR } : {}),
     };
   }
 

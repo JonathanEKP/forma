@@ -206,18 +206,35 @@ describe('the sidecar, run against the real Codex in capability_only', { skip: E
     await stack.say(prompt);
     const pending = await stack.nextEvent('approval.requested');
     const id = approvalId(pending);
+    assert.equal(stack.boundaryCalls('design.applyOperations').length, writesBefore, 'no Boundary F write while consent is pending');
+    assert.equal((await stack.read(design.id)).version, design.version, 'the design is readable and unchanged while consent is pending');
     await stack.nextEvent('approval.resolved', (event) => event.payload.approvalId === id && event.payload.status === 'expired');
-    await stack.nextEvent('turn.completed');
-    await stack.intent('approval.resolve', { approvalId: id, decision: 'approveOnce' });
-    await stack.until('Runtime to refuse the expired approval', () =>
-      Promise.resolve(stack.children.find(({ name }) => name === 'test-driver')?.stderr.includes('REFUSED approval_expired') ?? false),
-    );
-    const events = stack.seen.filter((event) => event.sequence > sent && event.sessionId === stack.sessionId);
+    const terminal = await stack.nextEvent('turn.completed');
+    const terminalSequence = terminal.at(-1)?.sequence;
+    assert.ok(terminalSequence !== undefined);
+    const events = stack.seen.filter((event) => event.sequence > sent && event.sequence <= terminalSequence && event.sessionId === stack.sessionId);
     assert.ok(events.some((event) => event.type === 'capability.failed' && JSON.stringify(event.payload).includes('approval_expired')));
-    assert.equal(stack.boundaryCalls('design.applyOperations').length, writesBefore, 'an expired approval never reached the write boundary');
-    assert.equal((await stack.read(design.id)).version, design.version);
-    assert.ok(textOf(await stack.read(design.id), 'Tagline') !== undefined);
-    keep('S6-expiry', prompt, events, { staleResolveRefused: true, versionBefore: design.version, versionAfter: (await stack.read(design.id)).version });
+    assert.equal(stack.boundaryCalls('design.applyOperations').length, writesBefore, 'expiry is terminal without a Boundary F write');
+    assert.equal((await stack.read(design.id)).version, design.version, 'the design remains unchanged after expiry');
+    assert.ok(textOf(await stack.read(design.id), 'Tagline') !== undefined, 'the expired action left its target in place');
+
+    const late = await stack.intent('approval.resolve', { approvalId: id, decision: 'approveOnce' });
+    const runtimeRefusalDiagnostic = stack.children.find(({ name }) => name === 'test-driver')?.stderr.includes('REFUSED approval_expired') ?? false;
+    assert.equal(late.delivered, true, 'the sidecar reports the late resolution as delivered');
+    const afterLate = await stack.read(design.id);
+    assert.equal(stack.boundaryCalls('design.applyOperations').length, writesBefore, 'the late resolution executed no write');
+    assert.equal(afterLate.version, design.version);
+    assert.ok(textOf(afterLate, 'Tagline') !== undefined);
+    keep('S6-expiry', prompt, events, {
+      approvalExpiredEvent: true,
+      turnTerminal: 'turn.completed',
+      lateResolutionDelivered: late.delivered,
+      runtimeRefusalDiagnostic,
+      versionBefore: design.version,
+      versionAfter: afterLate.version,
+      targetRemained: textOf(afterLate, 'Tagline') !== undefined,
+      additionalBoundaryFWrites: stack.boundaryCalls('design.applyOperations').length - writesBefore,
+    });
   });
 
   it('S6 replay refuses a second resolution of the same approval', { skip: skipUnlessSelected('S6-replay') }, async () => {
