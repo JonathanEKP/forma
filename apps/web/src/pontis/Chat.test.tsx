@@ -266,7 +266,7 @@ describe("a conversation", () => {
     first.unmount();
     backend.startGate = null;
     render(<Harness enabled />);
-    const draft = await screen.findByLabelText("Message the agent") as HTMLTextAreaElement;
+    const draft = await screen.findByLabelText("Message the agent");
     expect(draft.value).toBe(text);
     expect(backend.intents()).toEqual([{ type: "session.start", payload: { providerId: "codex" } }]);
 
@@ -393,7 +393,7 @@ describe("a conversation", () => {
 
     expect(await screen.findByText("That message is too long (max 64 KB).")).toBeTruthy();
     expect(screen.getByRole<HTMLButtonElement>("button", { name: "Send" }).disabled).toBe(true);
-    expect((screen.getByLabelText("Message the agent") as HTMLTextAreaElement).value).toBe(draft);
+    expect(screen.getByLabelText("Message the agent").value).toBe(draft);
     expect(backend.intents()).toEqual([]);
   });
 
@@ -406,7 +406,7 @@ describe("a conversation", () => {
     const agent = await screen.findByText(bidi);
     for (const bubble of [person, agent]) {
       expect(bubble.getAttribute("dir")).toBe("auto");
-      expect((bubble as HTMLElement).style.unicodeBidi).toBe("plaintext");
+      expect(bubble.style.unicodeBidi).toBe("plaintext");
     }
   });
 
@@ -802,6 +802,6 @@ describe("an unsent draft", () => {
     first.unmount();
 
     render(<Harness enabled />);
-    expect((await screen.findByLabelText("Message the agent") as HTMLTextAreaElement).value).toBe("keep this draft");
+    expect((await screen.findByLabelText("Message the agent")).value).toBe("keep this draft");
   });
 });

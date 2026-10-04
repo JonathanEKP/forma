@@ -302,9 +302,11 @@ describe('the composition', () => {
       assert.equal(discovered.guidance.version, 1);
 
       const devices = await fetch(`${sidecar.origin}/pons/v1/devices`);
-      assert.equal(devices.status, 403, 'a request with no Forma session sees no device');
+      assert.equal(devices.status, 401, 'a request with no Forma session sees no device');
+      assert.deepEqual(await devices.json(), { error: { code: 'unauthenticated' } });
       const intent = await fetch(`${sidecar.origin}/agent/intent`, { method: 'POST', body: '{}' });
-      assert.equal(intent.status, 403);
+      assert.equal(intent.status, 401);
+      assert.deepEqual(await intent.json(), { error: { code: 'unauthenticated' } });
       const unknown = await fetch(`${sidecar.origin}/api/v1/pontis/projects`);
       assert.equal(unknown.status, 404, 'there is no generic proxy to Forma here');
     } finally {
