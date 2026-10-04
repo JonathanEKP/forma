@@ -157,6 +157,14 @@ export interface ProviderView {
   readonly usable: boolean;
   /** Why it cannot be used, when it cannot. */
   readonly unusableBecause?: string;
+  /**
+   * The provider cannot say whether it is signed in (`authMode` `unknown`), so it is offered anyway.
+   * Pontis's Codex probe reports exactly this for every installed Codex — it has no supported
+   * auth-status query — and treating "cannot be known" as "not signed in" would make Codex
+   * unreachable from the chat. A provider that is not signed in fails at `session.start` instead,
+   * with the `not_authenticated` failure the chat already words.
+   */
+  readonly signInNotVerified?: true;
   /** Each of these is shown as the registry token it is, never softened (ADR-019). */
   readonly classification?: string;
   readonly sandbox?: string;
@@ -175,12 +183,13 @@ function providerView(raw: unknown): ProviderView | null {
   let unusableBecause: string | undefined;
   if (raw.installed !== true) unusableBecause = "not installed on this device";
   else if (raw.compatible !== true) unusableBecause = "this version is not one Forma supports";
-  else if (raw.authenticated !== true) unusableBecause = "not signed in on this device";
+  else if (raw.authenticated !== true && authMode !== "unknown") unusableBecause = "not signed in on this device";
   return {
     id: raw.providerId,
     authMode,
     usable: unusableBecause === undefined,
     ...(unusableBecause === undefined ? {} : { unusableBecause }),
+    ...(unusableBecause === undefined && raw.authenticated !== true ? { signInNotVerified: true as const } : {}),
     ...(typeof profile.classification === "string" ? { classification: profile.classification } : {}),
     ...(typeof profile.sandboxBoundary === "string" ? { sandbox: profile.sandboxBoundary } : {}),
   };

@@ -154,6 +154,15 @@ describe("the status block", () => {
     expect(await screen.findByText(/billed to that API key/)).toBeTruthy();
   });
 
+  it("lets a message through to a provider whose sign-in cannot be known, and says it is unverified", async () => {
+    backend.devices = { devices: [{ id: "d", name: "Box", online: true, revokedAt: null, runtimeVersion: "1", capabilities: [{ providerId: "codex", installed: true, compatible: true, authenticated: false, authMode: "unknown" }] }] };
+    render(<Harness enabled />);
+    expect(await screen.findByText(/Sign-in not verified/)).toBeTruthy();
+    expect(screen.queryByText(/Unavailable/)).toBeNull();
+    fireEvent.change(screen.getByLabelText("Message the agent"), { target: { value: "hello" } });
+    await waitFor(() => expect(screen.getByRole<HTMLButtonElement>("button", { name: "Send" }).disabled).toBe(false));
+  });
+
   it("says plainly when the device is offline, and will not take a message", async () => {
     backend.devices = { devices: [{ id: "d", name: "Studio laptop", online: false, revokedAt: null, runtimeVersion: "1", capabilities: [] }] };
     render(<Harness enabled />);

@@ -202,6 +202,9 @@ function Provider({ provider }: { provider: ProviderView }) {
         {provider.authMode === "api_key" && " — usage is billed to that API key"}
       </p>
       {!provider.usable && <p className="text-paper">Unavailable: {provider.unusableBecause}.</p>}
+      {provider.signInNotVerified && (
+        <p>Sign-in not verified: this provider can&apos;t report it. If it isn&apos;t signed in, the first message will say so.</p>
+      )}
       {/* The registry tokens, verbatim and apart: ADR-019 keeps `provider_managed`
           from being read as runtime-enforced, and the four classifications from
           running together. */}
