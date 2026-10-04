@@ -149,7 +149,7 @@ test-driver was observed. `forma-server backup` does not include this directory 
 ## F-10-2 — Revoking a device or killing its Runtime mid-turn leaves the chat stuck for good
 
 - **Severity:** high
-- **Status:** fixed (28a295e)
+- **Status:** fixed (56d3e1c)
 - **Instance / provider:** instance 2, FakeProvider (the stuck state is in the editor and the event log; no model involved)
 
 **Steps to reproduce**
@@ -222,7 +222,7 @@ The pairing-code card has the same problem: after the code is claimed it still s
 ## F-10-4 — After a revoke the chat gives three different, unhelpful answers
 
 - **Severity:** medium
-- **Status:** fixed (28a295e)
+- **Status:** fixed (56d3e1c)
 - **Instance / provider:** instance 2, FakeProvider
 
 **Steps to reproduce**

@@ -92,7 +92,7 @@ filed). "Both" = Fake and Codex.
 ## F-chat-1 — The first message of a window, and the whole transcript, vanish when the window starts its first session
 
 - **Severity:** medium
-- **Status:** partly fixed (9a5d2dd): the first form is fixed, the second form (reload within about a second of Send) is open
+- **Status:** partly fixed (29ca7e8): the first form is fixed, the second form (reload within about a second of Send) is open
 - **Instance / provider:** instance 3, FakeProvider and real Codex (both reproduce)
 
 **Steps to reproduce**
@@ -127,14 +127,14 @@ excerpt for the second form was read with `curl` against `/pons/v1/events`.
 
 **Fixed in passing (fix batch 1, Task A), first form only.** While a session is being started, events of
 a session whose id is not yet known are held instead of being adopted as someone else's conversation,
-and replayed once the sidecar answers (9a5d2dd). The person's first line, and an earlier transcript,
+and replayed once the sidecar answers (29ca7e8). The person's first line, and an earlier transcript,
 are no longer wiped. The second form — a reload before the message is sent — still loses the message:
 the tab only remembers a session once the sidecar has answered with its id.
 
 ## F-chat-2 — The agent's edit is real in Forma but the open editor never learns of it
 
 - **Severity:** high
-- **Status:** fixed (28a295e)
+- **Status:** fixed (56d3e1c)
 - **Instance / provider:** instance 3, both (Fake `Raise the headline to 96pt.`; Codex tagline and footer edits)
 
 **Steps to reproduce**
@@ -205,7 +205,7 @@ claiming one chat session would make Pontis answer `ui_unavailable` rather than 
 ## F-chat-4 — Killing the Runtime mid-turn leaves "working…" forever, even after a reload
 
 - **Severity:** high
-- **Status:** fixed (28a295e)
+- **Status:** fixed (56d3e1c)
 - **Instance / provider:** instance 3, Fake and Codex (`kill -9` of the driver, which is the Runtime)
 
 **Steps to reproduce**
@@ -239,7 +239,7 @@ cannot be carried on".
 ## F-chat-5 — After a Runtime restart the chat is wedged on the dead session, and cannot start another
 
 - **Severity:** high
-- **Status:** fixed (28a295e)
+- **Status:** fixed (56d3e1c)
 - **Instance / provider:** instance 3, FakeProvider (continuation of F-chat-4)
 
 **Steps to reproduce**
@@ -399,7 +399,7 @@ answered something unexpected." The draft is cleared on Send and the 70k line st
 ## F-chat-11 — The agent is not told which design is open (confirms F-00-4); naming it is the recovery
 
 - **Severity:** medium
-- **Status:** fixed (24e52ba)
+- **Status:** fixed (68d861c)
 - **Instance / provider:** instance 3, real Codex
 
 **Steps to reproduce**
@@ -421,7 +421,7 @@ same conversation in every design of the account (see *Leave and come back*).
 **Fixed (fix batch 1, Task A).** Each message carries the editor's view; the sidecar validates it
 (UUIDs only), reads the design's name through Boundary F as the person and prepends one fixed line,
 `[forma-view] project=… design=… name="…" page=… layer=…` (`[forma-view] none` when nothing is
-open), which the guidance explains. `design.list` is now served (adff512), so naming a design also
+open), which the guidance explains. `design.list` is now served (4793180), so naming a design also
 works. The chat shows what the person typed with a chip (design · page · layer). Checked on instance 7:
 the driver received the line for the open design and a different one after switching designs.
 Tests: `intents.test.ts`, `local-run.test.ts`, `App.chat.test.tsx`.

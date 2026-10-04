@@ -48,7 +48,7 @@ picture; the person's first sign is a `VERSION_CONFLICT` banner on their own nex
 in the editor refetches the design when the agent writes (the cause is not yet traced). This is the
 most visible defect in normal use.
 
-*Fix batch 1, Task A: fixed* (`28a295e`) — the editor follows the agent's completed write.
+*Fix batch 1, Task A: fixed* (`56d3e1c`) — the editor follows the agent's completed write.
 
 ### 2. A chat whose session dies cannot be recovered — high
 
@@ -61,7 +61,7 @@ isn't allowed to do that" — across reloads, and even after pairing a new devic
 start a new session. One fix probably covers all six: the chat needs to notice a session is
 terminal or unreachable and offer a new one.
 
-*Fix batch 1, Task A: fixed on Forma's side* (`28a295e`) — the chat recognises each of these, says why and
+*Fix batch 1, Task A: fixed on Forma's side* (`56d3e1c`) — the chat recognises each of these, says why and
 offers **New session** with the history kept above a divider. The five-minute death itself is a **Pontis
 defect** (a stale delegation is refused before it can be refreshed; production has it too) — see the
 Pontis-side observations below and [F-30-5](30-approvals.md).
@@ -105,7 +105,7 @@ Step 11's open question, answered in the browser: the agent guesses ids, and nam
 the only recovery. `ui.openDesign` is usable only with ids the person pastes, because there is no
 way to list designs. This needs the owner's decision on what context the chat sends.
 
-*Fix batch 1, Task A: fixed* (`adff512`, `24e52ba`) — each message carries a `[forma-view]` line, and
+*Fix batch 1, Task A: fixed* (`4793180`, `68d861c`) — each message carries a `[forma-view]` line, and
 `design.list` is served.
 
 ### 7. Smaller defects worth a pass

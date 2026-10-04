@@ -73,7 +73,7 @@ a long-idle Codex approval, mixed destructive+benign card reading.
 ## F-30-3 — The editor does not show an approved (or any) agent write
 
 - **Severity:** high
-- **Status:** fixed (28a295e)
+- **Status:** fixed (56d3e1c)
 - **Instance / provider:** instance 4, FakeProvider
 
 **Steps** — open the cover, ask "Raise the headline…" then "Remove the headline.", approve.
@@ -86,7 +86,7 @@ removal included) and shows the new version without a conflict first.
 ## F-30-4 — With the Runtime dead, a pending card never expires and keeps live buttons
 
 - **Severity:** medium
-- **Status:** fixed (28a295e)
+- **Status:** fixed (56d3e1c)
 - **Instance / provider:** instance 4, FakeProvider (own driver killed with SIGKILL)
 
 **Steps** — raise a card, kill driver-a, wait past `expiresAt` (2 min), also reload.
@@ -101,7 +101,7 @@ not guess at the server's deadline; the end of the session is what settles it.)
 ## F-30-5 — A chat session dies about 5 minutes after it starts, and nothing lets the person start another
 
 - **Severity:** high
-- **Status:** upstream (Pontis) — Forma side: the death is now legible and recoverable (28a295e)
+- **Status:** upstream (Pontis) — Forma side: the death is now legible and recoverable (56d3e1c)
 - **Instance / provider:** instance 4, both Codex and FakeProvider
 
 **Steps** — start a session, keep using it past ~5 minutes (Codex: started 03:02:29, last capability OK 03:06:54, failed 03:08:13; Fake: started 03:11:09, failed 03:16:56).

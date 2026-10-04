@@ -100,7 +100,7 @@ until it starts, so a tester's first message is not the one that pays. The warm-
 ## F-00-4 — The chat's agent does not know which design is open, and guesses ids
 
 - **Severity:** medium
-- **Status:** fixed (24e52ba)
+- **Status:** fixed (68d861c)
 - **Instance / provider:** instance 1, real Codex
 
 **Steps to reproduce**
@@ -122,7 +122,7 @@ person has to paste an id, or the application context has to carry the open desi
 **Evidence** — [screenshot](evidence/00-harness-codex-chat.png) of the transcript.
 
 **Fixed (fix batch 1, Task A)** — see F-chat-11: the editor reports the view with each message and the
-sidecar writes the `[forma-view]` line; `design.list` (adff512) answers "what designs are there".
+sidecar writes the `[forma-view]` line; `design.list` (4793180) answers "what designs are there".
 
 ## F-00-5 — Orca's `click` is unreliable on the editor's first interaction after a navigation
 

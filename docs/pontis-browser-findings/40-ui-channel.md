@@ -261,7 +261,7 @@ sidecar that is hung rather than dead.
 ## F-40-5 — `ui.openDesign` answers a permission error for ids that are merely malformed
 
 - **Severity:** low (ux, agent-facing wording)
-- **Status:** fixed (adff512)
+- **Status:** fixed (4793180)
 - **Instance / provider:** deterministic door
 
 **Actual** — `design_id: "ALPHA Square post"` and `""` both answer `authorization_denied: the
@@ -281,7 +281,7 @@ exist or belongs to another account still collapses to `authorization_denied`. T
 ## F-40-6 — The agent has no way to learn a design id, so `ui.openDesign` can only be used with ids the person pastes
 
 - **Severity:** medium (ux; blocks the natural request "open my cover")
-- **Status:** fixed (adff512)
+- **Status:** fixed (4793180)
 - **Instance / provider:** instance 5, real Codex
 
 **Steps to reproduce** — in the chat: "Open the design called ALPHA Square post in my editor."
