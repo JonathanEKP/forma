@@ -20,7 +20,7 @@ the evidence (step 12).
 | `src/ui.ts` | the four editor actions, which have no execution binding at all: they are routed to the person's window, and what is Forma's is who may aim one |
 | `src/boundary.ts` | the Boundary F client: fixed operations, bounded answers, Forma's refusals as registry errors |
 | `src/person.ts` | who is behind a browser request, asked of `GET /api/v1/service/resolve` |
-| `src/intents.ts` | the browser's route to its Runtime: start, input, cancel, approve — and `GET /agent/context`, the application context the event stream has to be asked for by name |
+| `src/intents.ts` | the browser's route to its Runtime: start, input, cancel, approve — and `GET /agent/context`, the application context the event stream has to be asked for by name. It also writes the first line of every message, `[forma-view] project=… design=… name="…" page=… layer=…` (`[forma-view] none` when nothing is open): the editor reports a `view` of ids, the sidecar keeps the ones that are UUIDs and reads the design's name through Boundary F as the person, so the line is always the sidecar's own and what the person types is never the first line |
 | `src/live.ts` | what the person's open windows hear while the agent works (durable events from the store with their `sequence`, deltas and presence from the Device's own notification), and `GET /pons/v1/devices` with `online` merged from the live sockets |
 | `src/windows.ts` | which window is asking and which agent session its chat belongs to: the fixed-format window id, and the check that a claimed session is this person's before it binds anything |
 | `src/sidecar.ts` | the composition |
@@ -145,6 +145,16 @@ it, sign in, pick a provider and stop it, and what is not modelled, is in
 
 ## Decisions recorded here
 
+- **The agent learns where the person is from one line the sidecar writes.** `session.input` carries only
+  text, so the editor's view (D-3) travels as a prepended `[forma-view]` line, built here and not in the
+  browser: a client that could write it could also forge what the agent believes is open. The guidance says
+  what it means and that only the first line is the application's. `design.list` is served so "open my
+  cover" can become an id. FakeProvider matches inputs byte for byte, so the test driver takes the line off
+  before the provider sees it and prints it (`VIEW …`) for `local-run.test.ts` to assert.
+- **The test driver does not keep delegations alive.** A session dies about five minutes after its first
+  call because Pontis's Runtime refuses a stale delegation before it can refresh it (F-30-5, a Pontis
+  defect). A keep-alive here would hide it from the browser re-test; the chat recovers with a notice and
+  **New session** instead.
 - **The four `ui.*` capabilities were held back until their handlers existed.** Pontis answers
   `ui_unavailable` when no window is connected, which is meant for a state the person can fix by
   opening Forma; with no handler written anywhere it would have been permanent and every call

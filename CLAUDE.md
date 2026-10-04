@@ -166,6 +166,15 @@ from Signal and unrelated to it; do not unify them.
   sidecar puts in the app session, and names its chat's agent session on the stream, which
   binds only once the Control Plane confirms the session is that person's. Without the id
   every window of one person shared a registration and evicted the others every two seconds.
+- **The agent learns where the person is from a line the sidecar writes, never from the browser or
+  the person's text.** Each message to the agent starts with `[forma-view] project=… design=…
+  name="…" page=… layer=…`, built in `apps/pontis-sidecar/src/intents.ts` from a `view` of ids the
+  editor reports: each id is kept only if it is a UUID and the name is read through Boundary F as the
+  person, so a design they cannot read has no name, and what they type is always below the line, never
+  it. The chat belongs to the window (`apps/web/src/App.tsx`), not to a design, and a session that
+  cannot be carried on (failed, revoked, replaced, delegation expired) is said so with **New session** —
+  nothing starts by itself. The session's five-minute death is Pontis's defect (F-30-5), not something to
+  mask in the harness.
 - **A client never mints server-owned identity.** `PUT /projects/{id}/brand` takes a
   `BrandKitDraft` — what the brand *is* — while the `BrandId` and the kit's version are
   decided server-side, with the id kept stable across edits so the project's `brand_id`

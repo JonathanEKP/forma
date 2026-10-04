@@ -48,6 +48,8 @@ picture; the person's first sign is a `VERSION_CONFLICT` banner on their own nex
 in the editor refetches the design when the agent writes (the cause is not yet traced). This is the
 most visible defect in normal use.
 
+*Fix batch 1, Task A: fixed* (`28a295e`) — the editor follows the agent's completed write.
+
 ### 2. A chat whose session dies cannot be recovered — high
 
 [F-chat-4](20-chat-lifecycle.md), [F-chat-5](20-chat-lifecycle.md), [F-10-2](10-pairing-devices.md),
@@ -58,6 +60,11 @@ session: "working…" forever, Send disabled, a pending approval card with live 
 isn't allowed to do that" — across reloads, and even after pairing a new device. There is no way to
 start a new session. One fix probably covers all six: the chat needs to notice a session is
 terminal or unreachable and offer a new one.
+
+*Fix batch 1, Task A: fixed on Forma's side* (`28a295e`) — the chat recognises each of these, says why and
+offers **New session** with the history kept above a divider. The five-minute death itself is a **Pontis
+defect** (a stale delegation is refused before it can be refreshed; production has it too) — see the
+Pontis-side observations below and [F-30-5](30-approvals.md).
 
 ### 3. The sidecar keeps its state in memory, and restarts badly — high for a deployment
 
@@ -98,6 +105,9 @@ Step 11's open question, answered in the browser: the agent guesses ids, and nam
 the only recovery. `ui.openDesign` is usable only with ids the person pastes, because there is no
 way to list designs. This needs the owner's decision on what context the chat sends.
 
+*Fix batch 1, Task A: fixed* (`adff512`, `24e52ba`) — each message carries a `[forma-view]` line, and
+`design.list` is served.
+
 ### 7. Smaller defects worth a pass
 
 - **Stop and send.** Stop abandons rather than ends, leaving one Codex App Server alive per Stop
@@ -137,8 +147,17 @@ Collected from the `ux`-tagged findings, for the owner's UX review rather than a
 
 ## Pontis-side observations (not Forma's to change)
 
-To raise with Pontis later; the Pontis repository was not touched:
-the Codex probe never reports authentication ([F-00-2](00-harness.md)); `lastSeenAt` is set on
+To raise with Pontis later; the Pontis repository was not touched.
+
+**The most important one: a session dies about five minutes after its first call, in production too.**
+The Runtime refreshes an `AppDelegation` only in `SessionDelegations::bearer_for`, but every capability
+call first runs the synchronous `SessionDelegations::validate_session`, which refuses a grant with ≤ 15 s
+left as `delegation_expired` — so a stale grant is rejected before the refresh path can replace it, and the
+session never recovers (`pontis/crates/runtime/src/delegation.rs`; Fake and Codex paths alike). Found and
+reproduced by fix batch 1, Task A — the exact path, the timing and the two candidate fixes are under
+[F-30-5](30-approvals.md). Forma now ends such a session legibly and offers a new one; the cause is Pontis's.
+
+The rest: the Codex probe never reports authentication ([F-00-2](00-harness.md)); `lastSeenAt` is set on
 connect and use, not liveness ([F-10-7](10-pairing-devices.md)); the pairing rate limit shares one
 bucket and answers `bad_request` ([F-10-8](10-pairing-devices.md)); refusals answer 403
 `origin_not_allowed` whatever the cause ([F-10-10](10-pairing-devices.md),

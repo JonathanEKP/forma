@@ -92,7 +92,7 @@ filed). "Both" = Fake and Codex.
 ## F-chat-1 — The first message of a window, and the whole transcript, vanish when the window starts its first session
 
 - **Severity:** medium
-- **Status:** open
+- **Status:** partly fixed (9a5d2dd): the first form is fixed, the second form (reload within about a second of Send) is open
 - **Instance / provider:** instance 3, FakeProvider and real Codex (both reproduce)
 
 **Steps to reproduce**
@@ -125,10 +125,16 @@ session is the empty one and "the latest session replaces an earlier one".
 [after](evidence/chat/F-chat-1-after.png) (one more message: 3 lines, no "You"); the event page
 excerpt for the second form was read with `curl` against `/pons/v1/events`.
 
+**Fixed in passing (fix batch 1, Task A), first form only.** While a session is being started, events of
+a session whose id is not yet known are held instead of being adopted as someone else's conversation,
+and replayed once the sidecar answers (9a5d2dd). The person's first line, and an earlier transcript,
+are no longer wiped. The second form — a reload before the message is sent — still loses the message:
+the tab only remembers a session once the sidecar has answered with its id.
+
 ## F-chat-2 — The agent's edit is real in Forma but the open editor never learns of it
 
 - **Severity:** high
-- **Status:** open
+- **Status:** fixed (28a295e)
 - **Instance / provider:** instance 3, both (Fake `Raise the headline to 96pt.`; Codex tagline and footer edits)
 
 **Steps to reproduce**
@@ -153,6 +159,15 @@ over it. `queries.ts` sets `staleTime: Infinity` for the design and nothing inva
 **Evidence** — [Codex](evidence/chat/F-chat-2-codex-edit-canvas-stale.png): the transcript says the
 tagline now reads "Edited by Codex" next to a canvas that still shows the old tagline and `v1`;
 [the conflict banner](evidence/chat/F-chat-2-stale-canvas-conflict.png).
+
+**Fixed (fix batch 1, Task A).** The chat reads the agent's completed `design.applyOperations` from the
+history it already holds (`agentWrites` in `chat.ts`) and `pontis/follow.ts` follows it: the design and
+the project's list are invalidated; for the open design the editor refetches, keeps the selected layer
+if it still exists (else clears it), clears an in-progress drag and shows "The agent updated the
+design (vN)". A write whose version the cache already holds is ignored, so the replay of the history
+after a reload does not announce old writes. Browser proof on instance 7: "Raise the headline to
+96pt." → header `v2`, notice shown, no conflict banner
+([evidence](evidence/chat/F-chat-2-fixed-agent-write-followed.png)). Tests: `App.chat.test.tsx`.
 
 ## F-chat-3 — Stopping from one tab leaves another tab saying "The agent is working…"
 
@@ -190,7 +205,7 @@ claiming one chat session would make Pontis answer `ui_unavailable` rather than 
 ## F-chat-4 — Killing the Runtime mid-turn leaves "working…" forever, even after a reload
 
 - **Severity:** high
-- **Status:** open
+- **Status:** fixed (28a295e)
 - **Instance / provider:** instance 3, Fake and Codex (`kill -9` of the driver, which is the Runtime)
 
 **Steps to reproduce**
@@ -211,10 +226,20 @@ running capability and "working…" — the state is now permanent.
 above a still-running capability). With Codex the three App Servers of the instance died with the driver
 (`ps`: none left), so no orphan processes.
 
+**Fixed (fix batch 1, Task A).** A Runtime that goes offline in the middle of a turn and stays so for
+8 s ends the conversation: the capability line says failed, "working…" goes, a notice says "Your
+Runtime went offline during this turn, so the conversation has stopped. Start it again, then start a new
+session." with a **New session** button, and the state survives a reload (the tab remembers it).
+Stop on an unreachable Runtime ends it too, instead of answering "offline" over a turn that stays
+running. Browser proof on instance 7 (`kill -9` of the driver mid-validate, then a new driver and
+**New session**): [dead](evidence/chat/F-chat-4-fixed-runtime-killed.png) and
+[recovered](evidence/chat/F-chat-4-fixed-new-session.png). Tests: `Chat.test.tsx` "a session that
+cannot be carried on".
+
 ## F-chat-5 — After a Runtime restart the chat is wedged on the dead session, and cannot start another
 
 - **Severity:** high
-- **Status:** open
+- **Status:** fixed (28a295e)
 - **Instance / provider:** instance 3, FakeProvider (continuation of F-chat-4)
 
 **Steps to reproduce**
@@ -236,6 +261,14 @@ unusable until something else starts a session.
 
 **Evidence** — [screenshot](evidence/chat/F-chat-5-session-wedged-after-runtime-restart.png) (the
 error under the person's line, Runtime online); log excerpt from `logs/sidecar.log` above.
+
+**Fixed (fix batch 1, Task A).** Three signals end a session whose Runtime is no longer the person's:
+a refusal as `not_authorized` ("This session isn't allowed to do that"), the Device that wrote the
+session's events no longer being the one online (events and live frames now carry `deviceId`), and a
+revoked or unpaired device. Each leaves the notice and **New session**; nothing starts by itself, and
+the old history stays above a divider with pending approvals expired. A reload re-attaches to the
+tab's own session (and to its ended state) instead of replaying "the latest". Tests: `chat.test.ts`,
+`Chat.test.tsx`, `App.chat.test.tsx`.
 
 ## F-chat-6 — Restarting the sidecar forgets every paired device and the whole history
 
@@ -366,7 +399,7 @@ answered something unexpected." The draft is cleared on Send and the 70k line st
 ## F-chat-11 — The agent is not told which design is open (confirms F-00-4); naming it is the recovery
 
 - **Severity:** medium
-- **Status:** open (the step 11 finding 5 question, answered)
+- **Status:** fixed (24e52ba)
 - **Instance / provider:** instance 3, real Codex
 
 **Steps to reproduce**
@@ -384,6 +417,14 @@ panel shows the person no indication of which design the agent would act on. The
 same conversation in every design of the account (see *Leave and come back*).
 
 **Evidence** — the transcript of the two runs.
+
+**Fixed (fix batch 1, Task A).** Each message carries the editor's view; the sidecar validates it
+(UUIDs only), reads the design's name through Boundary F as the person and prepends one fixed line,
+`[forma-view] project=… design=… name="…" page=… layer=…` (`[forma-view] none` when nothing is
+open), which the guidance explains. `design.list` is now served (adff512), so naming a design also
+works. The chat shows what the person typed with a chip (design · page · layer). Checked on instance 7:
+the driver received the line for the open design and a different one after switching designs.
+Tests: `intents.test.ts`, `local-run.test.ts`, `App.chat.test.tsx`.
 
 ## F-chat-12 — A right-to-left override in a message is kept and rendered as typed
 

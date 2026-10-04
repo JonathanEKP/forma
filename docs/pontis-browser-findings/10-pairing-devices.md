@@ -149,7 +149,7 @@ test-driver was observed. `forma-server backup` does not include this directory 
 ## F-10-2 — Revoking a device or killing its Runtime mid-turn leaves the chat stuck for good
 
 - **Severity:** high
-- **Status:** open
+- **Status:** fixed (28a295e)
 - **Instance / provider:** instance 2, FakeProvider (the stuck state is in the editor and the event log; no model involved)
 
 **Steps to reproduce**
@@ -186,6 +186,11 @@ design.validate`, `head: 11`; principal stream: `3 device.revoked dev_5e99…`. 
 design.validate 200 3325 ms` one second *after* the revoke — the work the Runtime had already asked for still
 ran and its result went nowhere — then `intent session.cancel delivered:false authorized:false`.
 
+**Fixed (fix batch 1, Task A)** with F-chat-4 / F-chat-5: a revoked device (the device list now says
+`revoked`, not `none` or `offline`) ends the conversation with a notice that names it and a **New session**
+button once a device is paired; a Runtime killed mid-turn ends it after 8 s; Stop on an unreachable Runtime
+ends it. A reload shows the same, and with a new, online device the person can start a session.
+
 ## F-10-3 — The Devices panel is a snapshot: new devices do not appear, a dead one stays "online"
 
 - **Severity:** medium
@@ -217,7 +222,7 @@ The pairing-code card has the same problem: after the code is claimed it still s
 ## F-10-4 — After a revoke the chat gives three different, unhelpful answers
 
 - **Severity:** medium
-- **Status:** open
+- **Status:** fixed (28a295e)
 - **Instance / provider:** instance 2, FakeProvider
 
 **Steps to reproduce**
@@ -237,6 +242,10 @@ reason). `chat.ts` drops revoked devices before it classifies (`runtimeView`) an
 
 **Evidence** — [screenshot](evidence/pairing/10-chat-after-revoke-none-vs-offline.png) (crop of the panel:
 status line and the Send answer side by side).
+
+**Fixed (fix batch 1, Task A).** `runtimeView` keeps revoked apart from offline and from none; the
+status line says "<name> was revoked. Pair a new device from the Agents page." and the box says the same,
+instead of three different answers.
 
 ## F-10-5 — `ux` The pairing instructions stop one step early and use words a first-time person does not have
 

@@ -261,7 +261,7 @@ sidecar that is hung rather than dead.
 ## F-40-5 — `ui.openDesign` answers a permission error for ids that are merely malformed
 
 - **Severity:** low (ux, agent-facing wording)
-- **Status:** open
+- **Status:** fixed (adff512)
 - **Instance / provider:** deterministic door
 
 **Actual** — `design_id: "ALPHA Square post"` and `""` both answer `authorization_denied: the
@@ -274,10 +274,14 @@ permission", and an agent may stop rather than fix the id.
 with the message, as `design.get` does. (A well-formed id that does not exist or belongs to B staying
 `authorization_denied` is the intended collapse and is correct — A2/A3.)
 
+**Fixed (fix batch 1, Task A).** `ui.openDesign` and `ui.selectLayer` answer `validation_error` ("design id
+\"…\" is not a UUID", as `design.get` does) for a string that is not an id; a well-formed id that does not
+exist or belongs to another account still collapses to `authorization_denied`. Test: `ui.test.ts`.
+
 ## F-40-6 — The agent has no way to learn a design id, so `ui.openDesign` can only be used with ids the person pastes
 
 - **Severity:** medium (ux; blocks the natural request "open my cover")
-- **Status:** open (related: F-00-4)
+- **Status:** fixed (adff512)
 - **Instance / provider:** instance 5, real Codex
 
 **Steps to reproduce** — in the chat: "Open the design called ALPHA Square post in my editor."
@@ -293,6 +297,11 @@ project.list, ui.*`); the catalog has `design.list` and `project.get` but they a
 **Why it matters** — the four UI capabilities exist to let the agent show the person things; with no
 way to enumerate designs the only reachable case is "the person copies a UUID out of somewhere". The
 editor does not show design ids either.
+
+**Fixed (fix batch 1, Task A).** `design.list` is served on Boundary F (account-scoped, as `project.list`;
+`apps/server/src/routes/pontis.rs`, `capabilities.ts`, `boundary.ts`) and the guidance says to find a design
+by name with it and show it with `ui.openDesign`. MCP's `tools/list` is unchanged (the operation is
+`PontisOnly`). Tests: `apps/server/tests/pontis.rs`, `capabilities.test.ts`, `local-run.test.ts`.
 
 ## F-40-7 — An action that lands mid-drag changes the drag's arithmetic, or drops it without a word
 
