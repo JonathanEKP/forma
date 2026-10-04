@@ -487,9 +487,64 @@ describe("a session that cannot be carried on", () => {
     expect(screen.queryByText("The agent is working…")).toBeNull();
   });
 
+  it("ends a revoked session as revoked even when two older devices are offline (F-10-14)", async () => {
+    backend.devices = {
+      devices: [
+        { id: "dev_old_1", name: "Old desktop", online: false, revokedAt: null, pairedAt: "2026-10-01T00:00:00Z", capabilities: [] },
+        { id: "dev_old_2", name: "Old laptop", online: false, revokedAt: null, pairedAt: "2026-10-02T00:00:00Z", capabilities: [] },
+        { id: "dev_1", name: "Studio laptop", online: true, revokedAt: null, pairedAt: "2026-10-03T00:00:00Z", capabilities: [{ providerId: "codex", installed: true, compatible: true, authenticated: true, authMode: "subscription" }] },
+      ],
+    };
+    await inSession(() => render(<Harness enabled offlineGraceMs={20} />));
+    backend.push(3, "turn.started");
+    await screen.findByText("The agent is working…");
+
+    backend.devices = {
+      devices: [
+        { id: "dev_old_1", name: "Old desktop", online: false, revokedAt: null, pairedAt: "2026-10-01T00:00:00Z", capabilities: [] },
+        { id: "dev_old_2", name: "Old laptop", online: false, revokedAt: null, pairedAt: "2026-10-02T00:00:00Z", capabilities: [] },
+        { id: "dev_1", name: "Studio laptop", online: false, revokedAt: "2026-10-04T00:00:00Z", pairedAt: "2026-10-03T00:00:00Z", capabilities: [] },
+      ],
+    };
+    act(() => liveFeed.publish({ type: "device.revoked", payload: {} }));
+
+    const ended = await screen.findByRole("region", { name: "Session ended" });
+    expect(within(ended).getByText(DEAD.revoked)).toBeTruthy();
+    expect(within(ended).getByRole("button", { name: "New session" })).toBeTruthy();
+    expect(screen.getAllByText(/Studio laptop was revoked/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(DEAD.offline)).toBeNull();
+  });
+
+  it("judges the session device as revoked even when another device is online", async () => {
+    await inSession();
+    backend.devices = {
+      devices: [
+        { id: "dev_2", name: "Other laptop", online: true, revokedAt: null, capabilities: [] },
+        { id: "dev_1", name: "Studio laptop", online: false, revokedAt: "2026-10-04T00:00:00Z", capabilities: [] },
+      ],
+    };
+    act(() => liveFeed.publish({ type: "device.revoked", payload: {} }));
+    expect(await screen.findByText(DEAD.revoked)).toBeTruthy();
+    expect(screen.queryByText(DEAD.replaced)).toBeNull();
+  });
+
+  it("treats a session device missing from the device list as revoked", async () => {
+    await inSession();
+    backend.devices = {
+      devices: [{ id: "dev_2", name: "Other laptop", online: true, revokedAt: null, capabilities: [] }],
+    };
+    act(() => liveFeed.publish({ type: "device.online", payload: {} }));
+    expect(await screen.findByText(DEAD.revoked)).toBeTruthy();
+  });
+
   it("is what a Runtime that has been replaced by another device leaves behind (F-chat-5)", async () => {
     await inSession();
-    backend.devices = oneDevice({ id: "dev_2" });
+    backend.devices = {
+      devices: [
+        { id: "dev_1", name: "Studio laptop", online: false, revokedAt: null, capabilities: [] },
+        { id: "dev_2", name: "Other laptop", online: true, revokedAt: null, capabilities: [] },
+      ],
+    };
     act(() => liveFeed.publish({ type: "device.online", payload: {} }));
     expect(await screen.findByText(DEAD.replaced)).toBeTruthy();
   });

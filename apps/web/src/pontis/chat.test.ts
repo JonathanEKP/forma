@@ -197,6 +197,44 @@ describe("runtime status", () => {
     expect(runtimeView({ devices: [revoked, device({ online: false })] })).toEqual({ at: "offline", name: "Studio laptop" });
     expect(runtimeView({ devices: [revoked, device()] })).toMatchObject({ at: "online", deviceId: "dev_1" });
   });
+
+  it("reports the newest revoked device when the others are older and offline, independent of list order", () => {
+    const older = device({ id: "dev_old", name: "Old laptop", online: false, pairedAt: "2026-10-01T00:00:00Z" });
+    const newest = device({ id: "dev_new", name: "New laptop", online: false, revokedAt: "2026-10-03T00:00:00Z", pairedAt: "2026-10-03T00:00:00Z" });
+    const expected = { at: "revoked", name: "New laptop" };
+    expect(runtimeView({ devices: [older, newest] })).toEqual(expected);
+    expect(runtimeView({ devices: [newest, older] })).toEqual(expected);
+  });
+
+  it("reports the newest offline device when the revoked device is older, independent of list order", () => {
+    const older = device({ id: "dev_old", name: "Old laptop", online: false, revokedAt: "2026-10-01T00:00:00Z", pairedAt: "2026-10-01T00:00:00Z" });
+    const newest = device({ id: "dev_new", name: "New laptop", online: false, pairedAt: "2026-10-03T00:00:00Z" });
+    const expected = { at: "offline", name: "New laptop" };
+    expect(runtimeView({ devices: [older, newest] })).toEqual(expected);
+    expect(runtimeView({ devices: [newest, older] })).toEqual(expected);
+  });
+
+  it("uses last seen time when pairing time is unavailable", () => {
+    const older = device({ id: "dev_old", name: "Old laptop", online: false, pairedAt: "2026-10-01T00:00:00Z" });
+    const newest = device({ id: "dev_new", name: "New laptop", online: false, revokedAt: "2026-10-03T00:00:00Z", lastSeenAt: "2026-10-03T00:00:00Z" });
+    const expected = { at: "revoked", name: "New laptop" };
+    expect(runtimeView({ devices: [older, newest] })).toEqual(expected);
+    expect(runtimeView({ devices: [newest, older] })).toEqual(expected);
+  });
+
+  it("keeps the session device's state when another device is online or the session device is missing", () => {
+    const sessionDevice = device({ id: "dev_session", name: "Session laptop", online: false, revokedAt: "2026-10-03T00:00:00Z" });
+    const other = device({ id: "dev_other", name: "Other laptop" });
+    expect(runtimeView({ devices: [other, sessionDevice] }, "dev_session")).toMatchObject({
+      at: "online",
+      deviceId: "dev_other",
+      sessionDevice: { at: "revoked", name: "Session laptop" },
+    });
+    expect(runtimeView({ devices: [other] }, "dev_session")).toMatchObject({
+      at: "online",
+      sessionDevice: { at: "missing", name: "your device" },
+    });
+  });
 });
 
 describe("an approval card", () => {

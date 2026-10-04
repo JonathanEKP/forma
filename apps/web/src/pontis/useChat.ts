@@ -217,9 +217,9 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
   const readDevices = useCallback(async (): Promise<RuntimeView | { readonly at: "unreachable" } | null> => {
     reads.current += 1;
     const mine = reads.current;
-    const answer = await agent.devices();
+    const answer = await agent.devices(state.deviceId);
     return mine === reads.current ? (answer.ok ? answer.value : { at: "unreachable" }) : null;
-  }, [agent]);
+  }, [agent, state.deviceId]);
   const refreshRuntime = useCallback(async () => {
     const read = await readDevices();
     if (read) setRuntime(read);
@@ -320,6 +320,8 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
   const sessionEnded = session === null || session.status === "ended" || state.dead !== null;
   useEffect(() => {
     if (!enabled || sessionEnded) return;
+    const sessionDevice = "sessionDevice" in runtime ? runtime.sessionDevice : undefined;
+    if (sessionDevice?.at === "revoked" || sessionDevice?.at === "missing") return die(DEAD.revoked);
     if (runtime.at === "revoked") return die(DEAD.revoked);
     if (runtime.at === "none") return die(DEAD.none);
     if (runtime.at === "online" && runtime.deviceId !== null && deviceId !== null && runtime.deviceId !== deviceId) {
