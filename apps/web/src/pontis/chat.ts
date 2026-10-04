@@ -69,7 +69,7 @@ export interface AgentClientOptions {
 export interface AgentClient {
   /** Which application context the session is bound to — the event stream must name it. */
   context(): Promise<Outcome<string>>;
-  devices(): Promise<Outcome<RuntimeView>>;
+  devices(sessionDeviceId?: string | null): Promise<Outcome<RuntimeView>>;
   start(providerId: string): Promise<Outcome<{ sessionId: string }>>;
   /** `view` is what the editor shows; the sidecar turns it into the line in front of the text. */
   input(sessionId: string, text: string, view?: ViewIds): Promise<Outcome<null>>;
@@ -129,9 +129,9 @@ export function createAgentClient(options: AgentClientOptions): AgentClient {
       const id = isRecord(answer.value) ? answer.value.applicationContextId : undefined;
       return typeof id === "string" && id.length > 0 ? { ok: true, value: id } : failure("unexpected");
     },
-    async devices() {
+    async devices(sessionDeviceId) {
       const answer = await call(DEVICES_PATH, { method: "GET" });
-      return answer.ok ? { ok: true, value: runtimeView(answer.value) } : answer;
+      return answer.ok ? { ok: true, value: runtimeView(answer.value, sessionDeviceId) } : answer;
     },
     async start(providerId) {
       const answer = await intent("session.start", { providerId });
@@ -171,13 +171,18 @@ export interface ProviderView {
   readonly sandbox?: string;
 }
 
-export type RuntimeView =
+type RuntimeStatus =
   | { readonly at: "online"; readonly deviceId: string | null; readonly name: string; readonly runtimeVersion: string; readonly provider: ProviderView | null }
   | { readonly at: "offline"; readonly name: string }
-  /** Every device the person ever paired has been revoked: none will come back, and none is an instruction to pair. */
+  /** Revoked differs from offline: a revoked Runtime cannot come back, so the advice differs. */
   | { readonly at: "revoked"; readonly name: string }
   | { readonly at: "ambiguous" }
   | { readonly at: "none" };
+
+export type RuntimeView = RuntimeStatus & {
+  /** What happened to the device this window's session was using, if it is known. */
+  readonly sessionDevice?: { readonly at: "online" | "offline" | "revoked" | "missing"; readonly name: string };
+};
 
 function providerView(raw: unknown): ProviderView | null {
   if (!isRecord(raw) || typeof raw.providerId !== "string") return null;
@@ -199,39 +204,82 @@ function providerView(raw: unknown): ProviderView | null {
 }
 
 /**
- * Which device a message would go to, and with which provider.
+ * Which device a message would go to, what status to show, and with which provider.
  *
  * The sidecar's own rule is exactly one online device, and says `ambiguous_device`
  * otherwise; this mirrors it so the panel says so before a message is typed
- * rather than after. Of a device's providers the first usable one is shown and
- * used: the paired-agent path is Codex (plan §6.3), and nothing here offers a
- * choice the plan has pinned.
+ * rather than after. A session keeps the device its Runtime started on, even if
+ * another device is online. Without a session device, the newest pairing decides
+ * which offline state to show; the server's list order carries no meaning.
+ * Of a device's providers the first usable one is shown and used: the
+ * paired-agent path is Codex (plan §6.3), and nothing here offers a choice the
+ * plan has pinned.
  */
-export function runtimeView(body: unknown): RuntimeView {
+export function runtimeView(body: unknown, sessionDeviceId?: string | null): RuntimeView {
   const devices = isRecord(body) && Array.isArray(body.devices) ? (body.devices as unknown[]) : [];
   const known = devices.filter(isRecord);
   const live = known.filter((device) => typeof device.revokedAt !== "string");
   const online = live.filter((device) => device.online === true);
-  if (online.length > 1) return { at: "ambiguous" };
+  const sessionDevice = sessionDeviceId === undefined || sessionDeviceId === null
+    ? undefined
+    : known.find((device) => device.id === sessionDeviceId);
+  const sessionStatus: RuntimeView["sessionDevice"] =
+    sessionDeviceId === undefined || sessionDeviceId === null
+      ? undefined
+      : sessionDevice === undefined
+        ? { at: "missing" as const, name: "your device" }
+        : {
+            at: typeof sessionDevice.revokedAt === "string" ? "revoked" : sessionDevice.online === true ? "online" : "offline",
+            name: typeof sessionDevice.name === "string" ? sessionDevice.name : "your device",
+          };
+  const withSession = (view: RuntimeStatus): RuntimeView =>
+    sessionStatus === undefined ? view : { ...view, sessionDevice: sessionStatus };
+  if (online.length > 1) return withSession({ at: "ambiguous" });
   const [device] = online;
   if (!device) {
-    const [waiting] = live;
-    if (waiting) return { at: "offline", name: typeof waiting.name === "string" ? waiting.name : "your device" };
-    // Revoked is not offline: a revoked Runtime never comes back, and "start it
-    // on your device" is the wrong advice for it (F-10-4).
-    const [revoked] = known;
-    return revoked ? { at: "revoked", name: typeof revoked.name === "string" ? revoked.name : "your device" } : { at: "none" };
+    if (sessionStatus?.at === "revoked" || sessionStatus?.at === "missing") {
+      return withSession({ at: "revoked", name: sessionStatus.name });
+    }
+    if (sessionStatus?.at === "offline") return withSession({ at: "offline", name: sessionStatus.name });
+
+    const latestLive = [...live].sort(newerDeviceFirst)[0];
+    const latestRevoked = known.filter((candidate) => typeof candidate.revokedAt === "string").sort(newerDeviceFirst)[0];
+    if (latestRevoked && (!latestLive || pairedTime(latestRevoked) > pairedTime(latestLive))) {
+      return withSession({ at: "revoked", name: deviceName(latestRevoked) });
+    }
+    if (latestLive) return withSession({ at: "offline", name: deviceName(latestLive) });
+    return latestRevoked ? withSession({ at: "revoked", name: deviceName(latestRevoked) }) : withSession({ at: "none" });
   }
   const providers = (Array.isArray(device.capabilities) ? (device.capabilities as unknown[]) : [])
     .map(providerView)
     .filter((provider): provider is ProviderView => provider !== null);
-  return {
+  return withSession({
     at: "online",
     deviceId: typeof device.id === "string" ? device.id : null,
-    name: typeof device.name === "string" ? device.name : "your device",
+    name: deviceName(device),
     runtimeVersion: typeof device.runtimeVersion === "string" ? device.runtimeVersion : "unknown",
     provider: providers.find((provider) => provider.usable) ?? providers[0] ?? null,
-  };
+  });
+}
+
+function deviceName(device: Record<string, unknown>): string {
+  return typeof device.name === "string" ? device.name : "your device";
+}
+
+function pairedTime(device: Record<string, unknown>): number {
+  const pairedAt = typeof device.pairedAt === "string" ? Date.parse(device.pairedAt) : Number.NaN;
+  if (Number.isFinite(pairedAt)) return pairedAt;
+  const lastSeenAt = typeof device.lastSeenAt === "string" ? Date.parse(device.lastSeenAt) : Number.NaN;
+  return Number.isFinite(lastSeenAt) ? lastSeenAt : Number.NEGATIVE_INFINITY;
+}
+
+function newerDeviceFirst(left: Record<string, unknown>, right: Record<string, unknown>): number {
+  const leftTime = pairedTime(left);
+  const rightTime = pairedTime(right);
+  if (leftTime !== rightTime) return rightTime > leftTime ? 1 : -1;
+  const leftId = typeof left.id === "string" ? left.id : "";
+  const rightId = typeof right.id === "string" ? right.id : "";
+  return leftId < rightId ? -1 : leftId > rightId ? 1 : 0;
 }
 
 // ---------------------------------------------------------------------------
