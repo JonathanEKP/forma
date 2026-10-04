@@ -58,6 +58,8 @@ describe('the package boundary', () => {
       'apps/pontis-sidecar/README.md',
       // This debt note documents the seam; prose is not a second resolution path.
       'docs/plan-status.md',
+      // Task G1 records its required local symlink setup without changing the package's runtime seam.
+      'docs/pontis-pv1-gaps.md',
       'apps/pontis-sidecar/package.json',
       'apps/pontis-sidecar/eslint.config.js',
       'apps/pontis-sidecar/test-driver/Cargo.toml',

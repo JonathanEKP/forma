@@ -202,7 +202,7 @@ describe('the sidecar, run locally against FakeProvider', () => {
     const completed = events.filter((event) => event.type === 'capability.completed');
     assert.deepEqual(completed.map((event) => event.payload.capabilityId), ['design.list']);
     const { designs } = completed[0]?.payload.result as { designs: { id: string; name: string; page_count: number }[] };
-    assert.deepEqual(designs.map(({ name }) => name).sort(), ['Cover', 'Long']);
+    assert.deepEqual(designs.map(({ name }) => name).sort(), ['Cover', 'Long', 'S4 known issues']);
     assert.equal(designs.find(({ id }) => id === design?.id)?.page_count, 1);
     assert.ok(!JSON.stringify(designs).includes('"document"'), 'a listing carries no document');
     assert.equal(stack.boundaryCalls('design.list').filter((line) => line.status === 200).length, 1);
