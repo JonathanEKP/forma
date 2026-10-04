@@ -1,0 +1,62 @@
+{
+  "runDate": "2026-10-04",
+  "provider": "Codex 0.158.0",
+  "model": "gpt-6-luna",
+  "reasoningEffort": "low",
+  "executionPolicy": "capability_only",
+  "readiness": {
+    "status": "passed",
+    "postureChecks": "7/7 verified",
+    "modelTurns": 0
+  },
+  "scenarios": [
+    {
+      "id": "S6-deny",
+      "status": "passed",
+      "modelTurns": 1,
+      "observed": {
+        "denialLeftStateUnchanged": true,
+        "writeBoundaryReachedAfterDenial": false,
+        "targetResourceRemained": true
+      }
+    },
+    {
+      "id": "S6-expiry",
+      "status": "incomplete",
+      "modelTurns": 1,
+      "observed": {
+        "approvalExpiredEvent": true,
+        "turnCompletedBeforeLateResolution": true,
+        "lateResolutionAttempted": true,
+        "runtimeRefusalDiagnostic": false,
+        "postResolutionNoWriteAssertionReached": false
+      },
+      "failure": "The one attempt timed out waiting for the Runtime to report approval_expired after a late resolution. The test did not reach its post-resolution mutation assertions; no no-write result is claimed."
+    },
+    {
+      "id": "S6-replay",
+      "status": "passed",
+      "modelTurns": 1,
+      "observed": {
+        "firstResolutionAppliedOneWrite": true,
+        "replayedResolutionAppliedNoAdditionalWrite": true
+      }
+    },
+    {
+      "id": "S8",
+      "status": "passed",
+      "modelTurns": 2,
+      "observed": {
+        "mcpOperation": "design.validate",
+        "cancellation": "session.cancel",
+        "runtimeInvocationOutcome": "approval_cancelled",
+        "boundaryFRequest": "aborted before a Forma response",
+        "domainWrites": 0,
+        "turnOutcome": "turn.cancelled",
+        "followUpReply": "READY in the same session",
+        "workspaceRemovedOnRuntimeShutdown": true
+      }
+    }
+  ],
+  "recordNote": "Sanitized manual collation from one runner attempt. The runner's configured OUT path was relative to its package working directory and the after-hook could not write the report; no scenario was retried."
+}
