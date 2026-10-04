@@ -546,6 +546,28 @@ describe("a window's session", () => {
     expect(screen.getByLabelText("session").textContent).toBe("none");
   });
 
+  it("binds the window only to a session this window started, and lets go once it is over (D-2)", async () => {
+    agentBinding.set(null);
+    // A session in the history that this window did not start is shown, and not spoken for.
+    render(<Harness enabled offlineGraceMs={150} />);
+    await screen.findByText(/Studio laptop/);
+    backend.push(1, "session.created");
+    backend.push(2, "session.started");
+    backend.push(3, "agent.output.completed", { turnId: "t", text: "From before." });
+    await screen.findByText("From before.");
+    expect(agentBinding.get()).toBeNull();
+    cleanup();
+
+    // One it started is bound — until it dies.
+    sessionStorage.clear();
+    backend.events = [];
+    await inSession();
+    await waitFor(() => expect(agentBinding.get()).toBe(SESSION));
+    backend.push(3, "session.failed", { error: { message: "gone" } });
+    await screen.findByRole("region", { name: "Session ended" });
+    expect(agentBinding.get()).toBeNull();
+  });
+
   it("is forgotten by a tab that signs out", async () => {
     await inSession();
     expect(sessionStorage.getItem("forma.chat")).toContain(SESSION);

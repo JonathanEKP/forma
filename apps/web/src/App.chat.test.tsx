@@ -13,6 +13,8 @@ vi.mock("./identity", () => ({
   supabase: null,
   accessToken: () => Promise.resolve("session-token"),
   currentSession: () => Promise.resolve({}),
+  currentSubject: () => Promise.resolve("subject"),
+  onSessionChange: () => () => undefined,
   signOut: () => Promise.resolve(),
 }));
 

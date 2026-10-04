@@ -288,8 +288,11 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
   // provider is not there to take input until then, and sending it early is a
   // race the person would see as a message that vanished.
   const session = state.session;
-  // D-2: an agent's actions go to the window whose chat started the session.
-  useWindowBinding(session?.id ?? null);
+  // D-2: an agent's actions go to the window whose chat *started* the session — not one it merely
+  // adopted from the history, and not one that is over: a dead or stopped conversation has nobody
+  // running it, so the window stops speaking for it.
+  const sessionId = state.owned !== null && session?.id === state.owned && session.status !== "ended" ? state.owned : null;
+  useWindowBinding(sessionId);
   useEffect(() => {
     const waiting = queued.current;
     if (!waiting || !session || session.id !== waiting.sessionId) return;
@@ -413,7 +416,7 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
     pending: pendingApprovals(state).length,
     answering,
     blocked,
-    sessionId: state.owned !== null && session?.id === state.owned && session.status !== "ended" ? state.owned : null,
+    sessionId,
     dead,
     send,
     newSession,
