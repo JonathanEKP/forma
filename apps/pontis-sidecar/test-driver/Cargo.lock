@@ -359,6 +359,7 @@ version = "0.0.0"
 dependencies = [
  "pontis-identity",
  "pontis-protocol",
+ "pontis-provider-codex",
  "pontis-provider-fake",
  "pontis-runtime",
  "pontis-transport",

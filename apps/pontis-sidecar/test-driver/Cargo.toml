@@ -29,6 +29,7 @@ path = "src/main.rs"
 [dependencies]
 pontis-identity = { path = "../.pontis/crates/identity" }
 pontis-protocol = { path = "../.pontis/crates/protocol" }
+pontis-provider-codex = { path = "../.pontis/crates/providers/codex" }
 pontis-provider-fake = { path = "../.pontis/crates/providers/fake" }
 pontis-runtime = { path = "../.pontis/crates/runtime" }
 pontis-transport = { path = "../.pontis/crates/transport" }
