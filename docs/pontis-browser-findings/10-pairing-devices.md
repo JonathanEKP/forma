@@ -22,7 +22,7 @@ other sections of the page through the DOM and screenshotting at scroll 0 gave c
 
 ## Summary
 
-35 cases, 13 findings. By severity: **0 blocker, 2 high, 4 medium, 5 low, 2 info** (the info items are
+36 cases, 13 findings. By severity: **0 blocker, 2 high, 4 medium, 5 low, 2 info** (the info items are
 limitations or observations, not defects). The two highs are the same hole seen from two sides: the
 sidecar keeps no state across a restart, and the chat has no way out of a turn whose Runtime disappeared.
 
@@ -60,7 +60,7 @@ sidecar keeps no state across a restart, and the chat has no way out of a turn w
 | P10 | **Revoke while a chat turn is running** (`Validate the long design.`) | **FAIL** → F-10-2 |
 | P11 | `kill -9` the Runtime while a turn is running | **FAIL** → F-10-2 |
 | P12 | Reuse a consumed code | pass — `401 pairing_code_consumed: "this pairing code has already been used; generate a new one"` |
-| P13 | Use an expired code (lifetime: **10 minutes**, `PAIRING_CODE_TTL_MS`) | see *P13 result* below |
+| P13 | Use an expired code (lifetime: **10 minutes**, `PAIRING_CODE_TTL_MS`) | pass, with a wrinkle — see *P13 result* below |
 | P14 | Garbage: unknown code, empty, whitespace, `code: 5`, non-JSON body, `{}` | pass — `pairing_code_invalid` (same text for unknown and malformed, by design), `bad_request`, `unsupported_protocol_version` |
 | P15 | Code minted by B, claimed by a Runtime; where does the device land | pass — B's list only; A's list unchanged; the claim answers with B's `userId`. A has no way to use B's code from A's session (the UI only mints for the signed-in person) |
 | P16 | As B: list/revoke A's devices with B's token (API) and `/agents` as B (UI); as A: B's | pass — own list only; revoke of a foreign id is `403 device_not_found` ("no such Device is paired with this account"), identical to a nonexistent id; UI as B shows only B's device |
@@ -83,10 +83,17 @@ sidecar keeps no state across a restart, and the chat has no way out of a turn w
 | P33 | A person types the code: lowercase, without dashes, with spaces and padding | pass — all accepted (normalised); a wrong character is `pairing_code_invalid` |
 | P34 | Clone a paired Runtime's data dir to a second dir and run both real `pontis` daemons; then revoke | **FAIL (low)** → F-10-13; revoke stopped both (`the paired Device has been revoked`) |
 | P35 | Revoked driver cannot act: freeze the driver (`SIGSTOP`), `session.input`, revoke, `SIGCONT` | pass — the revoked driver never ran the buffered input (no `turn.started`, no Boundary F call in `sidecar.log`). Not exercised: replaying a delegation token captured before the revoke (by code `validateDelegation` refuses a revoked device, `control-plane.ts:679`) |
+| P36 | Sidecar down: click Create pairing code on an already-loaded `/agents` | pass — the panel switches to the "Pontis is unavailable…" state, no raw error |
 
 ### P13 result
 
-PENDING — filled in at the end of the run.
+Code minted 03:06:02, `expiresAt` 03:16:02.339Z (exactly 10 minutes). Claimed at 03:16:26: first attempt `401
+{"code":"pairing_code_expired","message":"this pairing code has expired; generate a new one"}`, no device created;
+ **second** attempt `401 pairing_code_consumed` ("this pairing code has already been used; generate a new
+one"). The expiry check runs after the atomic consume (`claimPairing`, by design, so two racers produce one
+Device), so an expired code is spent by being tried and a person retyping it is told the wrong reason the
+second time. (An earlier attempt at this case was lost to a mistake of mine — I claimed the code early — and
+another to F-10-1: a sidecar restart turned the code into `pairing_code_invalid`.)
 
 ## F-10-1 — A sidecar restart forgets every device, pairing code and conversation, and the Runtime never finds out
 
@@ -189,6 +196,8 @@ still showed one article (`document.querySelectorAll('article').length === 1`) f
 reload showed three. After `kill -9`, the API said `online: false` within 24 ms and the page said
 "online · last seen 2026-10-04 02:55 UTC" 45 s later. "Online" is the one word this panel exists to get
 right and it is a snapshot of whenever the page was loaded.
+
+The pairing-code card has the same problem: after the code is claimed it still shows "Shown once and expires …" as if live.
 
 **Evidence** — DOM text read from the page (`article` count, `online · last seen …`) against
 `GET /pons/v1/devices` in the same minute. No screenshot (the "wrong" state is two lines of text).
@@ -331,7 +340,8 @@ A 429 does **not** consume the code: the same code claimed after the window gave
 connected, nearly all named "Forma local run" (the driver's name; the real CLI's "My laptop" has the same
 problem when copied). A card shows no device id, no way to rename, no paired-at date (the API returns `pairedAt`; the card does not show it),
 and no way to remove a revoked one. Revoked and live cards are interleaved by
-creation order, with the live one near the bottom. Long names are cut with `…` and have no tooltip.
+creation order, with the live one near the bottom. Long names are cut with `…` and have no tooltip. Every Revoke button's accessible name is "Revoke Forma local run", so
+neither a screen reader nor an automation can say which one it is pressing (I had to count `article`s).
 
 **Expected** — A person with three machines can tell which is which and can clear the graveyard.
 
@@ -373,6 +383,8 @@ editor can say so (the chat already has `not_authenticated`: "Your sign-in has e
   Device is already paired; refusing to replace its identity` (exit 2) — no mention of revocation or of
   `pontis unpair --yes`, which works (`local Device key and metadata removed; server-side revocation remains
   unchanged`) — and `pontis status` still prints `Paired: true` for a revoked device.
+- **An expired code is spent by trying it.** First claim `pairing_code_expired`, second `pairing_code_consumed`
+  (P13).
 - **The in-flight work still lands.** The `design.validate` the Runtime had already asked for completed in
   Forma one second after the revoke (see F-10-2); a revoked Runtime's already-delegated call is not cancelled.
 - **Device JSON.** `GET /pons/v1/devices` returns the person's own `userId` (the Supabase subject) and
