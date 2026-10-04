@@ -14,14 +14,26 @@
 //!
 //! Prints `READY <device id>` once the socket is up, and exits on SIGTERM or
 //! when stdin closes, so it cannot outlive the test that started it.
+//!
+//! Two providers, chosen by `FORMA_DRIVER_PROVIDER`: `fake` (the default, and
+//! the only one CI-adjacent runs use) and `codex`, the opt-in real run of plan
+//! §11 step 11. The Codex mode is `capability_only` — it is given the Runtime's
+//! MCP boundary, which is what selects that execution policy — and never the
+//! provider-native compatibility mode, which claims no posture and so is not
+//! evidence of anything. It runs the executable and `CODEX_HOME` the caller
+//! names, so a run never touches the owner's own install or configuration.
 
+use std::collections::HashMap;
 use std::os::unix::fs::PermissionsExt;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
 use pontis_identity::key::DeviceKeyPair;
 use pontis_protocol::device::DeviceMetadataBody;
 use pontis_protocol::errors::TypedError;
+use pontis_protocol::provider::ProviderDriver;
+use pontis_provider_codex::CodexProvider;
 use pontis_provider_fake::{ExpectedOutcome, FakeProvider, FakeScript};
 use pontis_runtime::{
     ApprovalManager, ChannelEventSink, DelegationSource, HttpsGatewayClient, IntentObserver,
@@ -165,22 +177,66 @@ fn provider(
         .build()
 }
 
+/// The real provider: the Codex the caller pinned, in the `CODEX_HOME` the caller made, in
+/// `capability_only` — `with_mcp_runtime` is what selects that execution policy, and the
+/// provider-native compatibility mode is deliberately unreachable from here.
+///
+/// The environment is the parent's three variables Codex needs to start plus `CODEX_HOME`; the
+/// provider applies its own allowlist on top and drops anything else. Nothing is read from the
+/// auth store here: Codex finds its own credential through the home's `auth.json`.
+fn codex_provider(runtime_dir: &std::path::Path) -> Arc<dyn ProviderDriver> {
+    let mut environment: HashMap<String, String> = ["PATH", "HOME", "LANG", "TERM"]
+        .into_iter()
+        .filter_map(|name| {
+            std::env::var(name)
+                .ok()
+                .map(|value| (name.to_owned(), value))
+        })
+        .collect();
+    environment.insert("CODEX_HOME".into(), env("FORMA_DRIVER_CODEX_HOME"));
+    Arc::new(
+        CodexProvider::with_executable(PathBuf::from(env("FORMA_DRIVER_CODEX_BIN")))
+            .with_environment(environment)
+            .with_reasoning_effort("low")
+            .with_mcp_runtime(PathBuf::from(env("FORMA_DRIVER_MCP_BRIDGE")), runtime_dir),
+    )
+}
+
 #[tokio::main]
 async fn main() {
     let origin = env("FORMA_PONTIS_ORIGIN");
     let application_id = env("FORMA_PONTIS_APPLICATION_ID");
     let code = env("FORMA_DRIVER_PAIRING_CODE");
-    let version: u64 = env("FORMA_DRIVER_BASE_VERSION")
-        .parse()
-        .expect("FORMA_DRIVER_BASE_VERSION is a version number");
-    let provider = provider(
-        &env("FORMA_DRIVER_PROJECT"),
-        &env("FORMA_DRIVER_DESIGN"),
-        &env("FORMA_DRIVER_LONG_DESIGN"),
-        &env("FORMA_DRIVER_LAYER"),
-        &env("FORMA_DRIVER_TAGLINE"),
-        version,
-    );
+    // Only FakeProvider's scripts name a version; a real model reads it from the design.
+    let version: u64 = std::env::var("FORMA_DRIVER_BASE_VERSION").map_or(0, |value| {
+        value
+            .parse()
+            .expect("FORMA_DRIVER_BASE_VERSION is a version number")
+    });
+    let codex = std::env::var("FORMA_DRIVER_PROVIDER").is_ok_and(|name| name == "codex");
+    // The directory for the Runtime's per-session MCP sockets, which also holds the neutral
+    // workspaces. Kept alive for the whole run: dropping it removes the sockets under a session.
+    let workspace_root = tempfile::Builder::new()
+        .prefix("p-mcp-")
+        .tempdir()
+        .expect("a runtime directory");
+    std::fs::set_permissions(
+        workspace_root.path(),
+        std::fs::Permissions::from_mode(0o700),
+    )
+    .expect("the runtime directory is owner-only");
+    let provider: Arc<dyn ProviderDriver> = if codex {
+        codex_provider(workspace_root.path())
+    } else {
+        Arc::new(provider(
+            &env("FORMA_DRIVER_PROJECT"),
+            &env("FORMA_DRIVER_DESIGN"),
+            &env("FORMA_DRIVER_LONG_DESIGN"),
+            &env("FORMA_DRIVER_LAYER"),
+            &env("FORMA_DRIVER_TAGLINE"),
+            version,
+        ))
+    };
 
     let metadata = DeviceMetadataBody {
         name: "Forma local run".into(),
@@ -220,28 +276,27 @@ async fn main() {
     let (channel, intents) =
         RemoteChannel::connect(RemoteChannelOptions::new(Arc::clone(&client), credentials));
 
-    let workspace_root = tempfile::tempdir().expect("a runtime directory");
-    std::fs::set_permissions(
-        workspace_root.path(),
-        std::fs::Permissions::from_mode(0o700),
-    )
-    .expect("the runtime directory is owner-only");
-    let workspaces =
-        Arc::new(ProviderWorkspaces::open(workspace_root.path()).expect("a workspace root"));
-
     let approvals = Arc::new(RemoteApprovals::new());
+    let manager = SessionManager::new_with_policy(
+        ProviderRouter::new().with(provider),
+        gateway,
+        Arc::new(ChannelEventSink::new(
+            Arc::clone(&channel) as Arc<dyn DeviceChannel>
+        )),
+        Arc::new(RiskPolicy::v1_defaults()),
+        Arc::new(ApprovalManager::new(Arc::clone(&approvals) as Arc<_>)),
+    );
+    // The Codex session's MCP sockets live beside its neutral workspaces; FakeProvider has no
+    // MCP boundary and needs only the workspaces.
+    let manager = if codex {
+        manager.with_mcp_runtime_dir(workspace_root.path())
+    } else {
+        manager.with_provider_workspaces(Arc::new(
+            ProviderWorkspaces::open(workspace_root.path()).expect("a workspace root"),
+        ))
+    };
     let sessions = Arc::new(
-        SessionManager::new_with_policy(
-            ProviderRouter::new().with(Arc::new(provider)),
-            gateway,
-            Arc::new(ChannelEventSink::new(
-                Arc::clone(&channel) as Arc<dyn DeviceChannel>
-            )),
-            Arc::new(RiskPolicy::v1_defaults()),
-            Arc::new(ApprovalManager::new(Arc::clone(&approvals) as Arc<_>)),
-        )
-        .with_provider_workspaces(workspaces)
-        .with_delegation_issuer(Arc::new(RemoteDelegationIssuer::new(delegations))),
+        manager.with_delegation_issuer(Arc::new(RemoteDelegationIssuer::new(delegations))),
     );
     let agent = Arc::new(
         RemoteAgent::new(
