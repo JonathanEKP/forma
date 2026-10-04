@@ -485,6 +485,8 @@ describe("a session that cannot be carried on", () => {
     expect(state.session?.status).toBe("ended");
     expect(pendingApprovals(state)).toHaveLength(0);
     expect(state.lines.filter((line) => line.kind === "approval")).toMatchObject([{ status: "expired" }]);
+    // A call that was still running when it ended never finished, and no longer says it is running.
+    expect(state.lines.filter((line) => line.kind === "capability")).toMatchObject([{ status: "failed" }]);
   });
 
   it("is not brought back by what the session says afterwards", () => {

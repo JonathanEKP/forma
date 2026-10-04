@@ -479,6 +479,13 @@ function expirePending(lines: readonly Line[]): readonly Line[] {
   return lines.map((line) => (line.kind === "approval" && line.status === "pending" ? { ...line, status: "expired" as const } : line));
 }
 
+/** A call still "running" in a conversation that is over never finished: it says so, instead of running for ever. */
+function settle(lines: readonly Line[]): readonly Line[] {
+  return expirePending(lines).map((line) =>
+    (line.kind === "capability" || line.kind === "navigation") && line.status === "running" ? { ...line, status: "failed" as const } : line,
+  );
+}
+
 function die(state: ChatState, reason: string): ChatState {
   if (state.dead) return state;
   return {
@@ -487,7 +494,7 @@ function die(state: ChatState, reason: string): ChatState {
     working: false,
     streaming: null,
     session: state.session ? { ...state.session, status: "ended" } : null,
-    lines: expirePending(state.lines),
+    lines: settle(state.lines),
   };
 }
 
@@ -509,7 +516,7 @@ function step(state: ChatState, event: DurableEvent): ChatState {
   }
   let next = applyEvent(state, event);
   // Nothing a dead session says afterwards can be answered or is still happening.
-  if (next.dead && next !== state) next = { ...next, working: false, streaming: null, lines: expirePending(next.lines) };
+  if (next.dead && next !== state) next = { ...next, working: false, streaming: null, lines: settle(next.lines) };
   // The Device is learned from the session's own events; the first one names it.
   if (next.deviceId === null && event.deviceId !== undefined && event.sessionId !== undefined && event.sessionId === next.session?.id) {
     next = { ...next, deviceId: event.deviceId };
@@ -547,7 +554,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         ...emptyChat,
         seq: state.seq,
         lines: [
-          ...expirePending(earlier),
+          ...settle(earlier),
           ...(earlier.length > 0 ? [{ kind: "divider" as const, id: action.id, text: "New session" }] : []),
           ...current,
         ],
