@@ -25,6 +25,8 @@ const provider = vi.hoisted(() => ({
 vi.mock("./identity", () => ({
   supabase: {},
   accessToken: () => Promise.resolve("a-session"),
+  currentSubject: () => Promise.resolve(null),
+  onSessionChange: () => () => undefined,
   currentSession: () => Promise.resolve({ access_token: "a-session" }),
   sendMagicLink: () => Promise.resolve(),
   signOut: () => Promise.resolve(),

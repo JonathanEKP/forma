@@ -19,6 +19,8 @@ vi.mock("../identity", () => ({
     return identity.hosted ? {} : null;
   },
   accessToken: () => Promise.resolve(identity.hosted ? "a-session" : null),
+  currentSubject: () => Promise.resolve(null),
+  onSessionChange: () => () => undefined,
   currentSession: () => Promise.resolve(identity.hosted ? { access_token: "a-session" } : null),
   sendMagicLink: () => Promise.resolve(),
   signOut: () => Promise.resolve(),

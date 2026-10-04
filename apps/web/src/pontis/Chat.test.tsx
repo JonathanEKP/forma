@@ -10,6 +10,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("../identity", () => ({
   supabase: null,
   accessToken: () => Promise.resolve("session-token"),
+  currentSubject: () => Promise.resolve(null),
+  onSessionChange: () => () => undefined,
   currentSession: () => Promise.resolve(null),
 }));
 

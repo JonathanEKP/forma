@@ -35,6 +35,27 @@ export async function accessToken(): Promise<string | null> {
   return data.session?.access_token ?? null;
 }
 
+/**
+ * Who is signed in, which is not what the token is: it is refreshed under the
+ * page and changes for the same person, so anything asking "is this still the
+ * same person" compares this instead.
+ */
+export async function currentSubject(): Promise<string | null> {
+  return (await currentSession())?.user.id ?? null;
+}
+
+/**
+ * Calls `listener` whenever the provider says the session changed — signed in,
+ * out, refreshed — and returns how to stop. The provider's own callback runs
+ * inside its lock, so it is only a prompt to look again later, never a place to
+ * ask it anything.
+ */
+export function onSessionChange(listener: () => void): () => void {
+  if (!supabase) return () => undefined;
+  const { data } = supabase.auth.onAuthStateChange(() => listener());
+  return () => data.subscription.unsubscribe();
+}
+
 export async function currentSession(): Promise<Session | null> {
   if (!supabase) return null;
   const { data } = await supabase.auth.getSession();
