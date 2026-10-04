@@ -48,7 +48,7 @@ sidecar keeps no state across a restart, and the chat has no way out of a turn w
 | Id | What | Result |
 |---|---|---|
 | P01 | A, `/agents`: Create pairing code | pass — code, the `pontis pair …` command, "Shown once and expires 2026-10-04 02:48 UTC" ([screenshot](evidence/pairing/10-baseline-devices-panel.png)) |
-| P02 | Pair the test-driver with that code; see it listed | pass at the API (`online: true` in 0.1 s); **FAIL in the UI** until reload → F-10-3 |
+| P02 | Pair the test-driver with that code; see it listed | pass at the API (`online: true` within 3 s); **FAIL in the UI** until reload → F-10-3 |
 | P03 | Real `pontis pair` with the UI's command (plus isolation flags) | pass — `paired Device dev_… for application forma`; the name is the placeholder "My laptop" unless changed |
 | P04 | Real `PONTIS_MODE=remote pontis run --foreground` | pass — `runtime.started`, listed online with its real provider row (Codex 0.160.0, `authMode unknown`) |
 | P05 | `kill -9` the driver: how long until offline | API offline in **24 ms** (loopback: the kernel closes the socket); **FAIL in the UI** — still "online" 45 s later → F-10-3 |
@@ -107,10 +107,10 @@ Agents page lists no device; the chat's status becomes "No device is paired. Pai
 and the history is empty; the unclaimed code answers `401 pairing_code_invalid` ("the pairing code is not a
 valid code" — not "expired"). The Runtimes are orphaned and say nothing: the real daemon stays
 `Runtime: running / Paired: true / Providers enabled: 1` with the log `runtime.started` and nothing after
-it, holds **no socket** (`ss -tnp`: none, checked at ~1 min and ~2 min), and never reports an error; the
-test-driver is the same. The only recovery is `pontis unpair --yes`, a new code and `pontis pair` — which the
-person has no reason to think of, because nothing tells them. A pairing-restart also silently drops every
-**revocation** record.
+it, holds **no socket** (`ss -tnp`: none at 25 s and again 30 s later; the test-driver the same at ~40 s), and
+never reports an error. I did not watch beyond about a minute, so a very slow back-off is not excluded. The only recovery is `pontis unpair --yes`, a new code and `pontis pair` — which the
+person has no reason to think of, because nothing tells them. The restart also drops every **revocation** record
+with the rest.
 
 **Cause (read, not fixed)** — `apps/pontis-sidecar/src/sidecar.ts:90` builds
 `new ControlPlane({ applicationId, audience })`, which defaults to the in-memory stores; Pontis ships the
@@ -139,7 +139,7 @@ Not captured as a screenshot: the browser showed the two sentences quoted.
 
 **Expected** — The turn ends: either the Runtime's disappearance is shown ("This device was revoked / went
 away; the turn did not finish") and the box is usable again, or at least **Stop** unsticks it. The person is
-never left unable to talk to a perfectly good new device. Plan §10b / `chat.ts` already says why the Stop
+never left unable to talk to a perfectly good new device. `chat.ts` (the `stopped` action) already says why the Stop
 path exists: "waiting for [a terminal event] would leave the box saying 'working' over a session nobody is
 running".
 
@@ -230,9 +230,8 @@ Walked through as someone who has never heard of Pontis, using only what the pag
 2. **"Pontis" is never explained or linked.** The page says "with Pontis installed there and its daemon
    stopped" and the command starts `pontis pair`. Where Pontis comes from is not said, and it is
    unpublished (the sidecar README: `private: true`).
-3. **"daemon stopped"** is jargon and a precondition nobody can check from the page; pairing with a
-   running daemon is refused by the CLI (the real message was `configuration error: a Device is already
-   paired…` for a *second* pair, not for a running daemon — I did not exercise that one).
+3. **"daemon stopped"** is jargon and a precondition nobody can check from the page (I did not test pairing
+   with the daemon running).
 4. **The step after pairing is missing.** After `pontis pair` prints `paired Device dev_…`, the device is
    **offline** until `pontis run --foreground` is started; the page never says to start it, and the panel
    will not show anything change (F-10-3). A person who follows the page exactly ends with a paired,
@@ -264,9 +263,10 @@ and a visible state for "paired, waiting for it to start".
 
 **Expected** — A person who is told "Pair a new machine" is told the consequence, or can pick the machine.
 
-**Actual** — Pairing works and both show online. The chat says "More than one of your devices is online, so
-Forma can't tell which one to use." (the transcript wording differs: "Leave one connected."), Send does
-nothing useful. The Devices page never mentions that only one Runtime may be online at a time, there is no
+**Actual** — Pairing works and both show online. The chat's status line says "More than one of your devices is online, so
+Forma can't tell which one to use." and `POST /agent/intent session.start` answers `409 ambiguous_device`
+(the failure message in `chat.ts` adds "Leave one connected."; I did not type into the box in that state, because
+the chat was already stuck by F-10-2). The Devices page never mentions that only one Runtime may be online at a time, there is no
 way to choose, and the only remedies are to stop one machine or revoke it. A person with a laptop and a
 desktop is invited to pair both and then cannot chat from either whenever both are on.
 
@@ -282,8 +282,8 @@ desktop is invited to pair both and then cannot chat from either whenever both a
 
 **Actual** — "online · last seen 2026-10-04 02:37 UTC" for a device that has been connected for seven
 minutes; a killed device's "offline · last seen" is the time it connected, not the time it vanished
-(driver killed ~02:41, card says 02:39). The time moves only when something new happens (a chat session
-start moved it to 02:44:21). Wording suggests presence data that the field does not carry.
+(driver killed ~02:41, card says 02:39). The time moves only when something new happens (starting a chat turn
+moved it to 02:44:21). Wording suggests presence data that the field does not carry.
 
 **Expected** — For online: no "last seen" (or "connected since"); for offline: when it went away — or the
 label says what the time is.
@@ -306,8 +306,8 @@ for the rest of the 60 s window, for the valid claim and for the challenge route
 `request.socket.remoteAddress` shared by claim, challenge and auth (`services/control-plane/src/http.ts`
 `RATE_LIMIT_ATTEMPTS = 20`), so every Runtime and every attacker behind one address — loopback here, a
 proxy in the deployment — is one bucket. A Runtime whose credential is valid reconnects without a challenge
-(a frozen-and-resumed driver came back in 0.55 s right after a 25-claim burst), so the effect is on
-pairing and on the 15-minute credential refresh.
+(a frozen-and-resumed driver came back in 0.55 s right after a 25-claim burst), so the effect shows on pairing and on anything that needs a challenge (read from the code: the 15-minute
+credential refresh; not exercised).
 
 **Expected** — A distinguishable "too many attempts, try again in N s" (the code `bad_request` is also what
 a malformed body gets), and the person minting a code is not locked out by someone else's guesses.
@@ -320,10 +320,10 @@ a malformed body gets), and the person minting a code is not locked out by someo
 - **Status:** open
 - **Instance / provider:** instance 2
 
-**Actual** — Every pairing is a card for ever: after an hour of testing the page held 13 cards, ten of them
-revoked, all but one named "Forma local run" (the driver's name; the real CLI's "My laptop" has the same
-problem when copied). A card shows no device id, no way to rename, no "pair date" beyond what the API
-returns as `last seen`, and no way to remove a revoked one. Revoked and live cards are interleaved by
+**Actual** — Every pairing is a card for ever: after about forty minutes of testing the page held 13 cards (DOM count), most revoked or never
+connected, nearly all named "Forma local run" (the driver's name; the real CLI's "My laptop" has the same
+problem when copied). A card shows no device id, no way to rename, no paired-at date (the API returns `pairedAt`; the card does not show it),
+and no way to remove a revoked one. Revoked and live cards are interleaved by
 creation order, with the live one near the bottom. Long names are cut with `…` and have no tooltip.
 
 **Expected** — A person with three machines can tell which is which and can clear the graveyard.
