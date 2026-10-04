@@ -25,7 +25,9 @@
  */
 import { strict as assert } from 'node:assert';
 import { randomUUID } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { arch, platform } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
@@ -66,6 +68,12 @@ describe('the sidecar, run against the real Codex in capability_only', { skip: E
     ] as const) {
       assert.ok(existsSync(path), `${what} is missing at ${path}: docs/pontis-step11-real-codex.md says how to make it`);
     }
+    toolchain.codex = execFileSync(CODEX_BIN, ['--version'], { encoding: 'utf8' }).trim();
+    toolchain.platform = `${platform()}-${arch()}`;
+    // The home's config is two settings and no secret; the credential beside it is a symlink the
+    // record never reads.
+    toolchain.codexHomeConfig = readFileSync(join(CODEX_HOME, 'config.toml'), 'utf8').trim().split('\n');
+    toolchain.reasoningEffortPassedByDriver = 'low';
     await stack.boot('Real run');
     // The session of S1 is also the readiness check: opening it spawns the real App Server and
     // verifies ADR-027's posture, before any model turn costs anything.
@@ -80,6 +88,14 @@ describe('the sidecar, run against the real Codex in capability_only', { skip: E
   });
 
   after(async () => {
+    // What the Runtime verified and refused, and what the sidecar did at Boundary F — read before
+    // the processes are stopped, from output the processes already keep free of credentials.
+    const driver = stack.children.find(({ name }) => name === 'test-driver');
+    toolchain.driverLines = (driver?.stderr ?? '').split('\n').filter((line) => line.startsWith('POSTURE ') || line.startsWith('REFUSED '));
+    toolchain.boundaryF = stack
+      .boundaryCalls('design.applyOperations')
+      .concat(stack.boundaryCalls('project.list'), stack.boundaryCalls('design.get'), stack.boundaryCalls('forma.guide'))
+      .map(({ operation, status, outcome }) => ({ operation, status, outcome }));
     try {
       await stack.close();
     } finally {

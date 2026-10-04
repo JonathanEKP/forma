@@ -38,7 +38,7 @@ use pontis_provider_fake::{ExpectedOutcome, FakeProvider, FakeScript};
 use pontis_runtime::{
     ApprovalManager, ChannelEventSink, DelegationSource, HttpsGatewayClient, IntentObserver,
     ProviderRouter, ProviderWorkspaces, RemoteAgent, RemoteApprovals, RemoteDelegationIssuer,
-    RiskPolicy, SessionDelegations, SessionManager,
+    RiskPolicy, SessionDelegations, SessionManager, SessionPostureReport,
 };
 use pontis_transport::channel::DeviceChannel;
 use pontis_transport::credentials::CredentialHolder;
@@ -177,6 +177,29 @@ fn provider(
         .build()
 }
 
+/// Prints, once per session, the posture the Runtime verified before it let the session start:
+/// `POSTURE <session id> <summary json>` on stderr. The summary is the bounded one the Runtime's
+/// own status surface carries — provider version, platform, policy and each check's state — with
+/// no guidance, path or provider output, so the step 11 evidence can say *what* was verified
+/// rather than only that a session started.
+async fn report_postures(sessions: Arc<SessionManager>) {
+    let mut reported = std::collections::HashSet::new();
+    loop {
+        for id in sessions.session_ids() {
+            if reported.contains(id.as_str()) {
+                continue;
+            }
+            if let Ok(SessionPostureReport::Verified(summary)) = sessions.session_posture(&id) {
+                if let Ok(line) = serde_json::to_string(&summary) {
+                    eprintln!("POSTURE {} {line}", id.as_str());
+                    reported.insert(id.as_str().to_owned());
+                }
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
 /// The real provider: the Codex the caller pinned, in the `CODEX_HOME` the caller made, in
 /// `capability_only` — `with_mcp_runtime` is what selects that execution policy, and the
 /// provider-native compatibility mode is deliberately unreachable from here.
@@ -298,6 +321,9 @@ async fn main() {
     let sessions = Arc::new(
         manager.with_delegation_issuer(Arc::new(RemoteDelegationIssuer::new(delegations))),
     );
+    if codex {
+        tokio::spawn(report_postures(Arc::clone(&sessions)));
+    }
     let agent = Arc::new(
         RemoteAgent::new(
             sessions,
