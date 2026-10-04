@@ -61,6 +61,7 @@ function fakeSidecar(options: { actions?: readonly unknown[]; events?: readonly 
   const encoder = new TextEncoder();
   let push: ((chunk: string) => void) | undefined;
   const posts: { path: string; body: unknown; headers: Record<string, string> }[] = [];
+  let streams = 0;
 
   const fetchImpl = vi.fn((input: string, init?: RequestInit) => {
     const path = input;
@@ -68,6 +69,9 @@ function fakeSidecar(options: { actions?: readonly unknown[]; events?: readonly 
     if (path.endsWith("/stream")) {
       const body = new ReadableStream<Uint8Array>({
         start(controller) {
+          streams += 1;
+          // A real fetch body errors when its request is aborted; the reader is otherwise left waiting.
+          init?.signal?.addEventListener("abort", () => controller.error(new DOMException("aborted", "AbortError")));
           push = (chunk) => controller.enqueue(encoder.encode(chunk));
           push(`event: ui.connected\ndata: ${JSON.stringify({ clientId: CLIENT })}\n\n`);
           for (const action of options.actions ?? []) {
@@ -87,7 +91,7 @@ function fakeSidecar(options: { actions?: readonly unknown[]; events?: readonly 
     return Promise.resolve(new Response('{"ok":true}', { status: 200 }));
   });
 
-  return { fetchImpl: fetchImpl as unknown as typeof fetch, posts, push: (chunk: string) => push?.(chunk) };
+  return { fetchImpl: fetchImpl as unknown as typeof fetch, posts, push: (chunk: string) => push?.(chunk), streams: () => streams };
 }
 
 const settled = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -289,5 +293,51 @@ describe("the channel", () => {
     // anyone, but it is not a reason to keep asking after the editor is gone.
     await settled();
     expect(fetchImpl.mock.calls.length).toBe(attempts);
+  });
+
+  // F-40-4. Behind Vite's proxy a restarted sidecar left the browser's stream open and silent, so
+  // "the stream ended" never fired and the window stayed registered with nothing.
+  it("reconnects a stream that has gone silent, which is how a proxy that kept it open looks", async () => {
+    const sidecar = fakeSidecar();
+    const states: ChannelState[] = [];
+    const channel = openChannel({
+      handlers: { "ui.setZoom": () => ({ outcome: "handled" }) },
+      token: () => Promise.resolve("t"),
+      fetchImpl: sidecar.fetchImpl,
+      onState: (state) => states.push(state),
+      silenceMs: 40,
+      reconnectMs: 5,
+    });
+    try {
+      await until(() => sidecar.streams() === 1);
+      await until(() => states.some((state) => state.at === "connected"));
+      // Nothing more is sent: not a frame and not a heartbeat.
+      await until(() => sidecar.streams() === 2, 200);
+      expect(states.some((state) => state.at === "offline")).toBe(true);
+      await until(() => sidecar.posts.filter((post) => post.path.endsWith("/actions")).length === 2);
+    } finally {
+      channel.close();
+    }
+  });
+
+  it("keeps a stream that is only sending heartbeats", async () => {
+    const sidecar = fakeSidecar();
+    const channel = openChannel({
+      handlers: { "ui.setZoom": () => ({ outcome: "handled" }) },
+      token: () => Promise.resolve("t"),
+      fetchImpl: sidecar.fetchImpl,
+      silenceMs: 60,
+      reconnectMs: 5,
+    });
+    try {
+      await until(() => sidecar.streams() === 1);
+      for (let beat = 0; beat < 6; beat += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        sidecar.push(": keep-alive\n\n");
+      }
+      expect(sidecar.streams()).toBe(1);
+    } finally {
+      channel.close();
+    }
   });
 });
