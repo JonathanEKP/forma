@@ -257,8 +257,11 @@ describe('a Device notification reaches its owner\'s windows', () => {
         assert.equal(frame.sequence, 1);
         assert.deepEqual(frame.scope, { kind: 'application_context', applicationContextId: CONTEXT });
         assert.deepEqual(frame.payload, { turnId: 'turn_1', text: 'Done.' });
-        // Bookkeeping the store keeps is not for a browser.
-        for (const field of ['streamKey', 'originMessageId', 'id', 'deviceId']) assert.ok(!(field in frame), `${field} is not sent`);
+        // Bookkeeping the store keeps is not for a browser. The Device is the exception, because the page
+        // already carries it and the chat compares it: a frame without it would leave a window that
+        // heard `session.created` live unable to tell that the Runtime has since been replaced.
+        for (const field of ['streamKey', 'originMessageId', 'id']) assert.ok(!(field in frame), `${field} is not sent`);
+        assert.equal(frame.deviceId, device.id, 'the frame names the Device that wrote it, as the page does');
 
         const page = await get(sidecar, `/pons/v1/events?scope=application_context&applicationContextId=${CONTEXT}&after=0`, 'session-user');
         const stored = isRecord(page.body) && Array.isArray(page.body.events) ? (page.body.events as unknown[]) : [];

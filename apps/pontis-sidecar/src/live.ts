@@ -46,7 +46,7 @@ function dropped(log: Log, source: string, type: string, cause: unknown): void {
  * What a window is told about a durable event.
  *
  * Only what a reader of the page would find there: the position, the scope, the
- * type, the session and the payload. The store's own id, stream key and origin
+ * type, the session, the Device and the payload. The store's own id, stream key and origin
  * message id are bookkeeping, and nothing in a browser needs them.
  */
 function durableFrame(event: DurableEvent) {
@@ -56,6 +56,9 @@ function durableFrame(event: DurableEvent) {
     scope: event.scope.kind === 'principal' ? { kind: 'principal' } : { kind: 'application_context', applicationContextId: event.scope.applicationContextId },
     type: event.type,
     ...(event.sessionId ? { sessionId: event.sessionId } : {}),
+    // Which Device's Runtime wrote it: the chat tells a session whose Runtime has been
+    // replaced from one that is still running by comparing it with the Device it sees.
+    ...(event.deviceId ? { deviceId: event.deviceId } : {}),
     payload: event.payload,
     sentAt: event.createdAt,
   };
