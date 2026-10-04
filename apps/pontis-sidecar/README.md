@@ -68,6 +68,18 @@ node apps/pontis-sidecar/src/main.ts      # binds 127.0.0.1:4767, prints READY <
 
 Node runs the TypeScript directly (type stripping, Node 24); there is no build step.
 
+`FORMA_PONTIS_DATA_DIR` is where the Control Plane keeps its state: paired devices, unclaimed pairing
+codes, revocations and the durable event history (the chat's transcript), as Pontis's append-only
+journals (`control-plane.jsonl`, `events.jsonl`; the sidecar has no job queue, so no job journal).
+The directory is created `0700` and the files `0600`. **Unset, everything is in memory** and the
+sidecar logs `pontis_state_in_memory` at warn level: a restart then unpairs every machine and empties
+every conversation. A restart on the same directory keeps all of it, and a Runtime that is still
+running reconnects by itself (the test-driver was `online` again about a second after the sidecar
+answered). `forma-server backup` does not include this directory yet, so it is not in the daily
+backup; [docs/deploy/runbook.md](../../docs/deploy/runbook.md) says what to do about that.
+`close()` ends every open editor stream and device socket first, so SIGTERM completes with a window
+open.
+
 `FORMA_PONTIS_EDITOR_ORIGIN` is where the editor is served from, and it is the UI channel's whole
 allowlist — the value above is Vite's dev server, which proxies the browser's Pontis paths here so
 the two share an origin (`FORMA_PONTIS_URL` moves its target off `127.0.0.1:4767`). In the

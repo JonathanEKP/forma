@@ -10,6 +10,9 @@
  * FORMA_PONTIS_ORIGIN=                   the public origin, when behind a proxy
  * FORMA_PONTIS_EDITOR_ORIGIN=            where the editor is served from, comma
  *                                        separated; the UI channel's allowlist
+ * FORMA_PONTIS_DATA_DIR=                 where devices, pairing codes and the event
+ *                                        history are kept; unset means memory, and a
+ *                                        restart forgets all of it (logged at warn)
  * ```
  *
  * Prints `READY <origin>` on stdout once it is listening, and logs JSON lines on
@@ -53,6 +56,7 @@ const editorOrigins = (process.env.FORMA_PONTIS_EDITOR_ORIGIN?.trim() ?? '')
   .split(',')
   .map((value) => value.trim())
   .filter((value) => value.length > 0);
+const dataDir = process.env.FORMA_PONTIS_DATA_DIR?.trim();
 const sidecar = await startSidecar({
   formaUrl: required('FORMA_SERVER_URL'),
   serviceCredential: required('FORMA_SERVICE_CREDENTIAL'),
@@ -60,6 +64,7 @@ const sidecar = await startSidecar({
   port,
   ...(origin ? { origin } : {}),
   ...(editorOrigins.length ? { editorOrigins } : {}),
+  ...(dataDir ? { dataDir } : {}),
   log: stderrLog,
 });
 process.stdout.write(`READY ${sidecar.origin}\n`);

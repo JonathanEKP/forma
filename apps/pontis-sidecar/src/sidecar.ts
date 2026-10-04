@@ -14,8 +14,16 @@
  * unaffected (§7.3).
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { join } from 'node:path';
 
-import { ControlPlane, DeviceGateway, bearerToken, createControlPlaneRoutes } from '@pontis/control-plane';
+import {
+  ControlPlane,
+  DeviceGateway,
+  JournalControlPlaneStore,
+  JournalEventStore,
+  bearerToken,
+  createControlPlaneRoutes,
+} from '@pontis/control-plane';
 import { createRemoteGatewayHandler, createUiRequestHandler, defineAgentApp, type AgentApp } from '@pontis/server';
 
 import { FormaBoundary } from './boundary.ts';
@@ -58,6 +66,16 @@ export interface SidecarOptions {
    * connect.
    */
   readonly editorOrigins?: readonly string[];
+  /**
+   * Where the Control Plane's state lives: devices, pairing codes, revocations and the durable
+   * event history (the chat's transcript), as Pontis's append-only journals, created `0700`
+   * with `0600` files.
+   *
+   * Omitted means in memory, which is right for a test and wrong for a deployment: a restart then
+   * forgets every paired machine and every conversation. The sidecar logs that at warn level
+   * rather than staying quiet about it.
+   */
+  readonly dataDir?: string;
   readonly log: Log;
 }
 
@@ -87,7 +105,12 @@ export async function startSidecar(options: SidecarOptions): Promise<Sidecar> {
     resolveUser: (userId): FormaUser | undefined => (isUuid(userId) ? { id: userId } : undefined),
   });
 
-  const controlPlane = new ControlPlane({ applicationId: APPLICATION_ID, audience: origin });
+  const state = await openState(options);
+  const controlPlane = new ControlPlane({
+    applicationId: APPLICATION_ID,
+    audience: origin,
+    ...(state ? { store: state.control, events: state.events } : {}),
+  });
   // Delivery to the person's open windows, in two halves the way Pontis's
   // reference app does it: what is stored is fanned out from the store with its
   // `sequence`, and what is not — output deltas, presence — from the Device's own
@@ -186,12 +209,55 @@ export async function startSidecar(options: SidecarOptions): Promise<Sidecar> {
     controlPlane,
     close: async () => {
       stopFanOut();
-      const closed = await Promise.allSettled([
-        devices.close(),
-        new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))),
-      ]);
+      // `server.close()` stops accepting and then waits for every open response to end, and the
+      // editor's UI stream is a response that ends only when its window goes away, so waiting
+      // first would wait for the person to close the tab (F-40-2). End the windows and the
+      // connections as it starts closing; `closeAllConnections` covers the device sockets too.
+      const closing = new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+      for (const window of windows.all()) windows.disconnect(window.id);
       server.closeAllConnections();
-      if (closed.some((result) => result.status === 'rejected')) throw new Error('the sidecar did not close cleanly');
+      const closed = await Promise.allSettled([devices.close(), closing]);
+      // After the last request and socket: nothing can append once the journals are closed.
+      const flushed = await Promise.allSettled([state?.close()]);
+      if ([...closed, ...flushed].some((result) => result.status === 'rejected')) {
+        throw new Error('the sidecar did not close cleanly');
+      }
+    },
+  };
+}
+
+interface DurableState {
+  readonly control: JournalControlPlaneStore;
+  readonly events: JournalEventStore;
+  close(): Promise<void>;
+}
+
+/**
+ * Open the journals under `dataDir`, or say that there is nowhere to put them.
+ *
+ * Pontis ships a third journal, for its job queue; the sidecar has no queue — the
+ * intent route sends to the Device directly — so nothing would ever be written to it.
+ */
+async function openState(options: SidecarOptions): Promise<DurableState | undefined> {
+  if (!options.dataDir) {
+    options.log('pontis_state_in_memory', {
+      level: 'warn',
+      message: 'FORMA_PONTIS_DATA_DIR is not set: paired devices, pairing codes and conversations are kept in memory and will not survive a restart',
+    });
+    return undefined;
+  }
+  const control = await JournalControlPlaneStore.open(join(options.dataDir, 'control-plane.jsonl'));
+  const events = await JournalEventStore.open(join(options.dataDir, 'events.jsonl')).catch(async (error: unknown) => {
+    await control.close();
+    throw error;
+  });
+  options.log('pontis_state_opened', { dir: options.dataDir });
+  return {
+    control,
+    events,
+    close: async () => {
+      const closed = await Promise.allSettled([control.close(), events.close()]);
+      if (closed.some((result) => result.status === 'rejected')) throw new Error('a journal did not close cleanly');
     },
   };
 }

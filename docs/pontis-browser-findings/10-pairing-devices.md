@@ -98,7 +98,7 @@ another to F-10-1: a sidecar restart turned the code into `pairing_code_invalid`
 ## F-10-1 — A sidecar restart forgets every device, pairing code and conversation, and the Runtime never finds out
 
 - **Severity:** high
-- **Status:** open
+- **Status:** fixed (dff7168)
 - **Instance / provider:** instance 2, FakeProvider test-driver **and** the real `pontis` daemon
 
 **Steps to reproduce**
@@ -133,6 +133,18 @@ restart without anyone having been told.
 **Evidence** — instance 2 `logs/sidecar.log` (`sidecar_stopping` 02:47:25, `sidecar_started` 02:47:38 and
 again at 02:56:57), `GET /pons/v1/devices` before/after quoted above, `pontis status` output quoted above.
 Not captured as a screenshot: the browser showed the two sentences quoted.
+
+**Fixed** — the sidecar takes `FORMA_PONTIS_DATA_DIR` and composes the Control Plane with Pontis's
+`JournalControlPlaneStore` and `JournalEventStore` there (`0700` directory, `0600` files; there is no
+job journal because the sidecar has no job queue). A restart on the same directory keeps devices,
+pairing codes still in date, revocations and the event history; `src/durable.test.ts` closes a sidecar
+and opens another on the same directory. Unset keeps today's in-memory behaviour and logs
+`pontis_state_in_memory` at warn. Browser proof, instance 9: a paired Runtime and a finished chat turn
+survived a `SIGTERM` + restart (device still listed, `online` again 1.2 s after the sidecar answered,
+transcript present after a reload). **The Runtime reconnects by itself** — that is the test-driver's
+(Pontis's `Runtime`) behaviour, not changed here. Not run: the real `pontis` daemon, which the finding
+saw hold no socket against an *empty* sidecar; against a sidecar that still knows it, only the
+test-driver was observed. `forma-server backup` does not include this directory yet (documented).
 
 ## F-10-2 — Revoking a device or killing its Runtime mid-turn leaves the chat stuck for good
 

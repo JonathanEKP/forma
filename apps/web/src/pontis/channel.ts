@@ -63,6 +63,10 @@ export interface ChannelOptions {
    * the frames mean is the subscriber's to decide, and none of them is an action.
    */
   readonly onEvent?: (frame: unknown) => void;
+  /** How long a stream may say nothing, not even a heartbeat, before it is treated as dead. Tests only. */
+  readonly silenceMs?: number;
+  /** How long to wait before reconnecting. Tests only. */
+  readonly reconnectMs?: number;
 }
 
 export type ChannelState =
@@ -84,6 +88,19 @@ const ACK_PATH = "/pons/v1/ui/ack";
  */
 export const RECONNECT_MS = 2_000;
 
+/**
+ * How long a stream may be silent before it is abandoned and reopened.
+ *
+ * The sidecar sends a `: keep-alive` comment every 15 s (`pontis/packages/sdk-server`
+ * `HEARTBEAT_MS`), so two missed beats and a margin is a stream nothing is writing to. A proxy
+ * that keeps the browser's response open after its upstream died — Vite's dev proxy does, which
+ * is F-40-4 — never ends the stream, so "it ended" alone cannot be the only way to notice, and
+ * until this the editor stayed registered with a sidecar that no longer knew it, deaf, with
+ * nothing on screen saying so. Caddy is reasoned about in the finding; the watchdog does not
+ * depend on the answer.
+ */
+export const SILENCE_MS = 35_000;
+
 export interface Channel {
   close(): void;
 }
@@ -102,6 +119,8 @@ export function openChannel(options: ChannelOptions): Channel {
   let closed = false;
   let abort: AbortController | undefined;
   let retry: ReturnType<typeof setTimeout> | undefined;
+  const silenceMs = options.silenceMs ?? SILENCE_MS;
+  const reconnectMs = options.reconnectMs ?? RECONNECT_MS;
 
   const state = (next: ChannelState) => {
     if (!closed) options.onState?.(next);
@@ -143,15 +162,32 @@ export function openChannel(options: ChannelOptions): Channel {
 
   const run = async (): Promise<void> => {
     state({ at: "connecting" });
-    abort = new AbortController();
+    const controller = new AbortController();
+    abort = controller;
+    // Armed before the request, so a connect that never answers is abandoned too, and re-armed on
+    // every chunk, heartbeat comments included: they are what `frames` otherwise swallows.
+    let silence: ReturnType<typeof setTimeout> | undefined;
+    const listen = () => {
+      clearTimeout(silence);
+      silence = setTimeout(() => controller.abort(), silenceMs);
+    };
+    listen();
+    try {
+      await stream(controller, listen);
+    } finally {
+      clearTimeout(silence);
+    }
+  };
+
+  const stream = async (controller: AbortController, heard: () => void): Promise<void> => {
     const response = await fetchImpl(`${base}${STREAM_PATH}`, {
       headers: { accept: "text/event-stream", ...(await headers()) },
-      signal: abort.signal,
+      signal: controller.signal,
     });
     if (!response.ok || !response.body) throw new Error(`the UI stream answered ${response.status}`);
 
     let clientId: string | null = null;
-    for await (const frame of frames(response.body, abort.signal)) {
+    for await (const frame of frames(response.body, controller.signal, heard)) {
       if (frame.event === "ui.connected") {
         const announced = parse(frame.data);
         if (!isRecord(announced) || typeof announced.clientId !== "string") continue;
@@ -194,7 +230,7 @@ export function openChannel(options: ChannelOptions): Channel {
       .finally(() => {
         if (closed) return;
         state({ at: "offline" });
-        retry = setTimeout(loop, RECONNECT_MS);
+        retry = setTimeout(loop, reconnectMs);
       });
   };
   loop();
@@ -256,7 +292,11 @@ interface Frame {
  * lines, a blank line ending a frame, and a `:` comment line — the heartbeat —
  * ignored. No `id:` and no `retry:`, because the sidecar sends neither.
  */
-export async function* frames(body: ReadableStream<Uint8Array>, signal?: AbortSignal): AsyncGenerator<Frame> {
+export async function* frames(
+  body: ReadableStream<Uint8Array>,
+  signal?: AbortSignal,
+  onChunk?: () => void,
+): AsyncGenerator<Frame> {
   const decoder = new TextDecoder();
   const reader = body.getReader();
   let buffer = "";
@@ -264,6 +304,7 @@ export async function* frames(body: ReadableStream<Uint8Array>, signal?: AbortSi
     while (!signal?.aborted) {
       const { done, value } = await reader.read();
       if (done) return;
+      onChunk?.();
       buffer += decoder.decode(value, { stream: true });
       let boundary = buffer.indexOf("\n\n");
       while (boundary !== -1) {

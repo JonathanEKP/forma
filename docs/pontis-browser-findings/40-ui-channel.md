@@ -136,7 +136,7 @@ shows the paired `service.resolve` bursts every 2 s while two tabs are open.
 ## F-40-2 — The sidecar cannot be stopped gracefully while any editor window is open
 
 - **Severity:** high (deployment: every restart waits for the supervisor's kill timeout)
-- **Status:** open
+- **Status:** fixed (dff7168)
 - **Instance / provider:** instance 5, the stock `src/main.ts` (reproduced with it, not only with the tester's wrapper)
 
 **Steps to reproduce**
@@ -155,6 +155,11 @@ open, so the line that would end it is never reached.
 
 **Evidence** — timestamps `21:03:47.8` (`sidecar_stopping` in `logs/sidecar.log`) → alive at `21:04:22.9`
 → exits at `21:04:26` when the tab is closed.
+
+**Fixed** — `Sidecar.close()` now ends the editor windows and the connections as `server.close()`
+starts, instead of after it returns. `src/durable.test.ts` stops a sidecar with a window attached
+within 3 s (it hung before). Instance 9, stock process: `SIGTERM` with the editor tab and the Runtime
+attached exited in **0.10 s**; the finding measured 35 s+.
 
 ## F-40-3 — `ui_action_timeout` does not mean the action did not happen
 
@@ -186,7 +191,7 @@ back on the project list in the first case.
 ## F-40-4 — A restarted sidecar leaves every open editor deaf until the page is reloaded
 
 - **Severity:** high (in this harness, i.e. behind Vite's dev proxy; unknown behind Caddy)
-- **Status:** open
+- **Status:** fixed (bbfca95)
 - **Instance / provider:** instance 5, deterministic
 
 **Steps to reproduce**
@@ -210,6 +215,25 @@ deployment may be fine; the editor still has no silence watchdog, so any proxy t
 reproduces it.
 
 **Evidence** — `GET /clients` samples above; `ss -tn` showing the tab's sockets alive after the kill.
+
+**Cause and fix** — as read: the channel reconnected only when the stream *ended or errored*, and
+Vite's proxy does not end the downstream when the upstream is killed. The channel now watches
+silence: any chunk, heartbeat comment included, re-arms a 35 s timer (the sidecar beats every 15 s);
+when it fires the request is aborted and the normal 2 s retry reconnects and registers again. A
+connect that never answers is covered by the same timer. `channel.test.ts` has a silent stream
+reconnect and re-register, and a heartbeat-only stream stay open. Instance 9, `SIGKILL` + restart
+within 1 s behind Vite with one tab open: no clients for ~26 s, then the tab registered again by itself
+(~28 s after the kill, no reload) and a `ui.setZoom` through the gateway came back `handled` with the
+readout going 100 % → 200 %. The wait is the watchdog, not `RECONNECT_MS`; a shorter wait would need
+the sidecar to beat faster.
+
+**Caddy** (reasoned from `deploy/caddy/Caddyfile`; it cannot be run here, so *unverified*): the
+stream route is a plain `reverse_proxy` with `flush_interval -1` to loopback. Go's reverse proxy
+notices an upstream that died mid-response (the copy loop errors) and finishes or aborts the
+downstream response, so the browser's stream ends or errors and the existing retry fires — Vite's
+http-proxy does not, which is why this reproduced there. I expect Caddy not to show F-40-4, but the
+answer no longer matters: the watchdog covers any proxy that keeps the response open, and a
+sidecar that is hung rather than dead.
 
 ## F-40-5 — `ui.openDesign` answers a permission error for ids that are merely malformed
 
@@ -305,14 +329,17 @@ Observed in the Orca tab (N1 screenshot):
 ## F-40-10 — A sidecar restart discards the paired Runtime; the driver does not come back
 
 - **Severity:** medium (not the UI channel, but it ends every agent action after a restart)
-- **Status:** open (the driver is test support — the control plane keeping pairings only in memory is the
-  fact to check)
+- **Status:** fixed (dff7168) — with F-10-1
 - **Instance / provider:** instance 5, real Codex driver
 
 After `SIGTERM` + start of the stock sidecar (window not attached): `/agent/context` answered again within 1.7 s,
 but `GET /pons/v1/devices` returned `[]` from then on and the driver (still running) logged nothing
 further and made no new connection. The person's chat would say there is no Runtime until they pair
 again. Not run: a second pairing to confirm re-pair works (that is the pairing tester's area).
+
+**Fixed** with [F-10-1](10-pairing-devices.md). The control plane keeping pairings only in memory *was*
+the fact. With a data directory the pairing survives, and the test-driver, still running, was `online`
+again 1.2 s after the restarted sidecar began answering (and the driver needed no new pairing).
 
 ## F-40-12 — `setZoom` and `setPanel` are `handled` while nothing is showing them, and the change waits for the next design
 
