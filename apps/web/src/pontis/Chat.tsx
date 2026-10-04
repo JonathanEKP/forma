@@ -11,7 +11,13 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import type { Line, ProviderView, ViewChip } from "./chat";
 import { ApprovalCard } from "./ChatApproval";
+import { recallDraft, rememberDraft } from "./session-store";
 import type { Chat as ChatController, Connection, Runtime } from "./useChat";
+
+const MAX_MESSAGE_BODY_BYTES = 64 * 1024;
+// The sidecar adds its bounded view line to the message before sending it to the Runtime.
+const VIEW_LINE_HEADROOM_BYTES = 1024;
+const SHOW_LIMIT_AT = 0.9;
 
 /** The header button. Nothing at all where there is no sidecar to talk to. */
 export function ChatToggle({ chat, open, onToggle }: { chat: ChatController; open: boolean; onToggle: () => void }) {
@@ -40,7 +46,7 @@ export function ChatToggle({ chat, open, onToggle }: { chat: ChatController; ope
 }
 
 export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: () => void }) {
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(recallDraft);
   const log = useRef<HTMLOListElement>(null);
   const { state } = chat;
 
@@ -53,13 +59,26 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
 
   // A live session already has its device; the block only matters for starting one. A dead one
   // is not carried on at all: the person starts another, from the button, on purpose.
-  const cannot = chat.dead !== null || (chat.blocked !== null && state.session?.status !== "live");
+  const cannot = chat.dead !== null || (chat.blocked !== null && (chat.runtime.at === "unauthenticated" || state.session?.status !== "live"));
+  const body = JSON.stringify({
+    type: "session.input",
+    payload: { sessionId: state.session?.id ?? `ses_${"0".repeat(32)}`, text: draft.trim() },
+  });
+  const encodedBytes = new TextEncoder().encode(body).byteLength;
+  const sizeWithHeadroom = encodedBytes + VIEW_LINE_HEADROOM_BYTES;
+  const overLimit = sizeWithHeadroom > MAX_MESSAGE_BODY_BYTES;
+  const nearLimit = sizeWithHeadroom >= MAX_MESSAGE_BODY_BYTES * SHOW_LIMIT_AT;
 
   const submit = () => {
     const text = draft.trim();
-    if (text.length === 0 || cannot) return;
+    if (text.length === 0 || cannot || state.working || overLimit) return;
     setDraft("");
+    rememberDraft("");
     void chat.send(text);
+  };
+  const changeDraft = (text: string) => {
+    setDraft(text);
+    rememberDraft(text);
   };
   const onKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
@@ -114,18 +133,23 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
       <footer className="border-t border-edge p-3">
         <textarea
           value={draft}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => changeDraft(event.target.value)}
           onKeyDown={onKey}
           rows={2}
           aria-label="Message the agent"
           placeholder={chat.dead !== null ? "Start a new session to carry on" : cannot ? (chat.blocked ?? "") : "Message the agent"}
           className="w-full resize-none rounded-lg border border-edge bg-surface-2 px-2.5 py-2 text-xs placeholder:text-faint focus:border-edge-strong focus:outline-none"
         />
+        {nearLimit && (
+          <p role={overLimit ? "alert" : "status"} className={`mt-1 text-[11px] ${overLimit ? "text-danger" : "text-muted"}`}>
+            {overLimit ? "That message is too long (max 64 KB)." : `Message size ${Math.ceil(encodedBytes / 1024)} KB; maximum 64 KB.`}
+          </p>
+        )}
         <div className="mt-2 flex items-center gap-2">
           <button
             type="button"
             onClick={submit}
-            disabled={draft.trim().length === 0 || cannot}
+            disabled={draft.trim().length === 0 || cannot || state.working || overLimit}
             className="rounded-lg bg-signal px-2.5 py-1.5 text-xs font-semibold text-ink disabled:opacity-40"
           >
             Send
@@ -175,6 +199,8 @@ function Device({ runtime }: { runtime: Runtime }) {
       return null;
     case "unreachable":
       return null;
+    case "unauthenticated":
+      return <p>Your sign-in has expired. Sign in again.</p>;
     case "none":
       return (
         <p>
@@ -235,7 +261,7 @@ function Row({ line, answering, onDecide }: { line: Line; answering: boolean; on
       return (
         <div className="ml-8 rounded-lg bg-surface-2 px-2.5 py-2 text-xs leading-5">
           <Label>You</Label>
-          <p className="whitespace-pre-wrap">{line.text}</p>
+          <p dir="auto" style={{ unicodeBidi: "plaintext" }} className="whitespace-pre-wrap">{line.text}</p>
           {line.chip && <Chip chip={line.chip} />}
         </div>
       );
@@ -251,7 +277,7 @@ function Row({ line, answering, onDecide }: { line: Line; answering: boolean; on
       return (
         <div className="text-xs leading-5">
           <Label>Agent</Label>
-          <p className="whitespace-pre-wrap">{line.text}</p>
+          <p dir="auto" style={{ unicodeBidi: "plaintext" }} className="whitespace-pre-wrap">{line.text}</p>
         </div>
       );
     case "capability":

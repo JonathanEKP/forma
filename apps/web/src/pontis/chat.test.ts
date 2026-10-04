@@ -24,7 +24,11 @@ import type { DurableEvent } from "./events";
 const SESSION = "ses_1";
 
 /** A chat attached to `SESSION`, as a window is once it has started one or been reattached to it. */
-const mine = (): ChatState => chatReducer(emptyChat, { type: "restore", remembered: { sessionId: SESSION, deviceId: null, dead: null, said: [] } });
+const mine = (): ChatState =>
+  chatReducer(
+    chatReducer(emptyChat, { type: "restore", remembered: { sessionId: SESSION, deviceId: null, dead: null, said: [] } }),
+    { type: "historyLoaded" },
+  );
 
 function client(answer: (path: string, init: RequestInit) => Response | Promise<Response>) {
   const calls: { path: string; method: string; body: unknown; authorization: string | null }[] = [];
@@ -442,12 +446,25 @@ describe("the reply as it streams", () => {
       remembered: { sessionId: SESSION, deviceId: null, dead: null, said: [] },
     });
     state = fold(state, ev(1, "session.created"), ev(2, "session.started"), ev(3, "turn.started", { turnId: "t1" }));
+    state = chatReducer(state, { type: "historyLoaded" });
     expect(state.working).toBe(true);
     expect(live(state, "middle of the answer").streaming).toBeNull();
 
     state = fold(state, ev(4, "agent.output.completed", { turnId: "t1", text: "The complete answer." }));
     expect(state.streaming).toBeNull();
     expect(state.lines).toContainEqual({ kind: "agent", id: "e4", text: "The complete answer." });
+  });
+
+  it("allows a new turn to stream after replay found no turn in progress", () => {
+    let state = chatReducer(emptyChat, {
+      type: "restore",
+      remembered: { sessionId: SESSION, deviceId: null, dead: null, said: [] },
+    });
+    state = fold(state, ev(1, "session.created"), ev(2, "session.started"));
+    state = chatReducer(state, { type: "historyLoaded" });
+    state = fold(state, ev(3, "turn.started", { turnId: "t2" }));
+
+    expect(live(state, "new reply", "t2").streaming).toEqual({ turnId: "t2", text: "new reply" });
   });
 });
 

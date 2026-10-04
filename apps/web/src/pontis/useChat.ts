@@ -52,7 +52,7 @@ export const DEVICES_MS = 10_000;
  */
 export type Connection = StreamState["at"];
 
-export type Runtime = RuntimeView | { readonly at: "unknown" } | { readonly at: "unreachable" };
+export type Runtime = RuntimeView | { readonly at: "unknown" } | { readonly at: "unreachable" } | { readonly at: "unauthenticated" };
 
 export interface Chat {
   readonly enabled: boolean;
@@ -99,6 +99,7 @@ export interface ChatOptions {
 
 /** Why the current runtime cannot take a message, in words, or `null` if it can. */
 export function whyBlocked(connection: Connection, runtime: Runtime): string | null {
+  if (runtime.at === "unauthenticated") return "Your sign-in has expired. Sign in again.";
   if (connection === "offline") return "The agent service can't be reached.";
   switch (runtime.at) {
     case "unknown":
@@ -136,6 +137,7 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
   // The reader and the context it reads, for the live path to hand frames to.
   const reader = useRef<{ stream: EventStream; context: string } | null>(null);
   const queued = useRef<{ sessionId: string; text: string; view: ViewIds } | null>(null);
+  const stopPending = useRef<string | null>(null);
 
   const agent = useMemo(() => client ?? createAgentClient({ token: accessToken }), [client]);
   const localId = useCallback(() => {
@@ -159,6 +161,7 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
       const context = await agent.context();
       if (closed) return;
       if (!context.ok) {
+        if (context.failure.reason === "not_authenticated") setRuntime({ at: "unauthenticated" });
         setStream("offline");
         timer = setTimeout(() => void connect(), RETRY_MS);
         return;
@@ -177,7 +180,10 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
           dispatch({ type: "events", events });
           for (const write of agentWrites(events)) writeRef.current?.(write);
         },
-        onState: (next) => setStream(next.at),
+        onState: (next) => {
+          setStream(next.at);
+          if (next.at === "live") dispatch({ type: "historyLoaded" });
+        },
         ...(pollMs === undefined ? {} : { pollMs }),
       });
       opened.setLive(liveFeed.state().at === "connected");
@@ -214,11 +220,12 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
   // Reads can overlap — a presence frame lands while the ten-second read is out — and the answer that
   // was asked for last is the one that is true: a slower, older one must not overwrite it.
   const reads = useRef(0);
-  const readDevices = useCallback(async (): Promise<RuntimeView | { readonly at: "unreachable" } | null> => {
+  const readDevices = useCallback(async (): Promise<RuntimeView | { readonly at: "unreachable" | "unauthenticated" } | null> => {
     reads.current += 1;
     const mine = reads.current;
     const answer = await agent.devices(state.deviceId);
-    return mine === reads.current ? (answer.ok ? answer.value : { at: "unreachable" }) : null;
+    const value = answer.ok ? answer.value : answer.failure.reason === "not_authenticated" ? { at: "unauthenticated" as const } : { at: "unreachable" as const };
+    return mine === reads.current ? value : null;
   }, [agent, state.deviceId]);
   const refreshRuntime = useCallback(async () => {
     const read = await readDevices();
@@ -356,7 +363,7 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
   const send = useCallback(
     async (raw: string) => {
       const text = raw.trim();
-      if (text.length === 0 || dead !== null) return;
+      if (text.length === 0 || dead !== null || state.working) return;
       const seen = viewRef.current?.();
       dispatch({ type: "person", id: localId(), text, ...(seen?.chip ? { chip: seen.chip } : {}) });
       const ids = seen?.ids ?? {};
@@ -376,7 +383,7 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
       queued.current = { sessionId, text, view: ids };
       dispatch({ type: "started", sessionId, id: localId() });
     },
-    [agent, session, dead, start, refused, localId],
+    [agent, session, dead, state.working, start, refused, localId],
   );
 
   // Nothing starts by itself: a dead session waits here, with its history above, until the
@@ -387,15 +394,21 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
   }, [start, localId]);
 
   const stop = useCallback(async () => {
-    if (!session) return;
-    const answer = await agent.cancel(session.id);
-    if (answer.ok) dispatch({ type: "stopped", id: localId() });
-    // Stopping is the person leaving the conversation: when the Runtime cannot even be told,
-    // it is over, and "your Runtime is offline" over a turn that stays running is the wedge.
-    else if (answer.failure.reason === "not_authorized") die(DEAD.notAuthorized);
-    else if (answer.failure.reason === "runtime_offline") die(DEAD.stopWhileOffline);
-    else notice("error", answer.failure.message);
-  }, [agent, session, notice, localId, die]);
+    if (!session || !state.working || stopPending.current === session.id) return;
+    const sessionId = session.id;
+    stopPending.current = sessionId;
+    try {
+      const answer = await agent.cancel(sessionId);
+      if (answer.ok) dispatch({ type: "stopped", id: localId() });
+      // If the Runtime cannot be told, the turn may still be running. End the local chat so it
+      // does not offer a message against a turn the person cannot stop.
+      else if (answer.failure.reason === "not_authorized") die(DEAD.notAuthorized);
+      else if (answer.failure.reason === "runtime_offline") die(DEAD.stopWhileOffline);
+      else notice("error", answer.failure.message);
+    } finally {
+      if (stopPending.current === sessionId) stopPending.current = null;
+    }
+  }, [agent, session, state.working, notice, localId, die]);
 
   const decide = useCallback(
     async (approvalId: string, decision: Decision) => {

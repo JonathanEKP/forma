@@ -35,6 +35,7 @@ export type FailureReason =
   | "ambiguous_device"
   | "not_authorized"
   | "not_authenticated"
+  | "message_too_large"
   | "not_delivered"
   | "unexpected";
 
@@ -52,6 +53,7 @@ const MESSAGES: Record<FailureReason, string> = {
   ambiguous_device: "More than one of your devices is online, and Forma can't tell which one to use. Leave one connected.",
   not_authorized: "This session isn't allowed to do that.",
   not_authenticated: "Your sign-in has expired. Sign in again.",
+  message_too_large: "That message is too long (max 64 KB).",
   not_delivered: "The Runtime didn't take that message.",
   unexpected: "The agent service answered something unexpected.",
 };
@@ -100,13 +102,17 @@ export function createAgentClient(options: AgentClientOptions): AgentClient {
     if (response.ok) return { ok: true, value: body };
     // The sidecar's refusals are `{ error: "<code>" }`. Anything that is not one
     // is a proxy answering for a sidecar that is not there.
-    const code = isRecord(body) && typeof body.error === "string" ? body.error : null;
+    const error = isRecord(body) ? body.error : undefined;
+    const code = typeof error === "string" ? error : isRecord(error) && typeof error.code === "string" ? error.code : null;
+    if (response.status === 401 && code === "unauthenticated") return failure("not_authenticated");
     if (code === null) return failure(response.status >= 500 ? "unreachable" : "unexpected");
     switch (code) {
       case "runtime_offline":
       case "ambiguous_device":
       case "not_authorized":
       case "not_authenticated":
+        return failure(code);
+      case "message_too_large":
         return failure(code);
       default:
         return failure("unexpected");
@@ -457,6 +463,12 @@ export interface ChatState {
   readonly unplaced: readonly Said[];
   /** A turn is open: `turn.started` seen, no terminal event yet. */
   readonly working: boolean;
+  /** Ignore deltas for a turn that was already in flight when this tab reloaded. */
+  readonly suppressDeltas: boolean;
+  /** The initial history replay has reached its head. */
+  readonly historyReady: boolean;
+  /** This window stopped the current turn; its delayed cancellation is expected. */
+  readonly stoppedLocally: boolean;
   /** What each invocation asked with, for rebuilding an approval card the request left bare. */
   readonly inputs: Readonly<Record<string, unknown>>;
   /**
@@ -487,6 +499,9 @@ export const emptyChat: ChatState = {
   said: [],
   unplaced: [],
   working: false,
+  suppressDeltas: false,
+  historyReady: false,
+  stoppedLocally: false,
   inputs: {},
   streaming: null,
   completed: [],
@@ -513,6 +528,8 @@ export type ChatAction =
   | { readonly type: "started"; readonly sessionId: string; readonly id: string }
   /** This tab had a session before the page was reloaded. */
   | { readonly type: "restore"; readonly remembered: Remembered }
+  /** The first successful history read establishes whether a restored turn was already running. */
+  | { readonly type: "historyLoaded" }
   | { readonly type: "notice"; readonly id: string; readonly tone: "info" | "error"; readonly text: string }
   | { readonly type: "approval"; readonly approvalId: string; readonly status: ApprovalStatus }
   /** The person pressed stop. The Runtime may take a moment to confirm, or never will (see `reduce`). */
@@ -576,6 +593,10 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
   switch (action.type) {
     case "events":
       return action.events.reduce(step, state);
+    case "historyLoaded":
+      return state.historyReady
+        ? state
+        : { ...state, historyReady: true, suppressDeltas: state.suppressDeltas && state.working };
     case "delta":
       return applyDelta(state, action.sessionId, action.turnId, action.text);
     case "person": {
@@ -620,6 +641,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         session: { id: remembered.sessionId, status: "starting" },
         owned: remembered.sessionId,
         deviceId: remembered.deviceId,
+        suppressDeltas: true,
         said: remembered.said,
         unplaced: remembered.said,
       };
@@ -630,15 +652,16 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case "approval":
       return { ...state, lines: setApproval(state.lines, action.approvalId, action.status) };
     case "stopped":
-      // Ended on the person's word, not the Runtime's. The Runtime does not
+      // The turn ends on the person's word, not the Runtime's. The Runtime does not
       // always write a terminal event for a cancelled turn (the Pontis finding
       // recorded in local-run.test.ts), so waiting for one would leave the box
-      // saying "working" over a session nobody is running.
+      // saying "working" over a turn the person stopped. The Runtime session remains open.
       return {
         ...state,
         working: false,
+        suppressDeltas: false,
+        stoppedLocally: true,
         streaming: null,
-        session: state.session ? { ...state.session, status: "ended" } : null,
         lines: [...state.lines, { kind: "notice", id: action.id, tone: "info", text: "You stopped the agent." }],
       };
     case "dead":
@@ -662,7 +685,7 @@ export function remember(state: ChatState): Remembered | null {
 const isUi = (capabilityId: string) => capabilityId.startsWith("ui.");
 
 function applyDelta(state: ChatState, sessionId: string, turnId: string, text: string): ChatState {
-  if (state.session?.id !== sessionId || state.session.status === "ended") return state;
+  if (state.session?.id !== sessionId || state.session.status === "ended" || state.suppressDeltas) return state;
   if (state.completed.includes(turnId)) return state;
   const streaming = state.streaming?.turnId === turnId ? { turnId, text: state.streaming.text + text } : { turnId, text };
   return { ...state, working: true, streaming };
@@ -694,22 +717,25 @@ function applyEvent(state: ChatState, event: DurableEvent): ChatState {
       return die(state, "The session ended. Start a new one to carry on.");
     case "session.cancelled":
       // Stopped by this window, which has already said so; from anywhere else it is news.
-      return state.session.status === "ended" ? state : die(state, "The session was stopped from another window. Start a new one to carry on.");
+      return state.session.status === "ended" || state.stoppedLocally
+        ? state
+        : die(state, "The session was stopped from another window. Start a new one to carry on.");
     case "session.failed":
       return die(state, `The session failed: ${errorText(payload.error)}. Start a new one to carry on.`);
     case "turn.started":
-      return { ...state, working: true };
+      return { ...state, working: true, stoppedLocally: false };
     case "turn.completed":
     case "turn.cancelled":
-      return { ...state, working: false, streaming: null };
+      return { ...state, working: false, suppressDeltas: false, streaming: null };
     case "turn.failed":
-      return { ...state, working: false, streaming: null, lines: [...state.lines, { kind: "notice", id, tone: "error", text: `The agent's turn failed: ${errorText(payload.error)}` }] };
+      return { ...state, working: false, suppressDeltas: false, streaming: null, lines: [...state.lines, { kind: "notice", id, tone: "error", text: `The agent's turn failed: ${errorText(payload.error)}` }] };
     case "agent.output.completed": {
       // Replaces whatever was streaming for the turn: the final text is the whole
       // of it, so appending would say everything twice.
       const turnId = typeof payload.turnId === "string" ? payload.turnId : null;
       const settled: ChatState = {
         ...state,
+        suppressDeltas: false,
         streaming: turnId === null || state.streaming?.turnId === turnId ? null : state.streaming,
         completed: turnId === null ? state.completed : [...state.completed, turnId],
       };
