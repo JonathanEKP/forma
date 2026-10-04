@@ -190,8 +190,9 @@ it, sign in, pick a provider and stop it, and what is not modelled, is in
 - **Elevation is exhaustive over `DesignOperation`.** A new operation fails the typecheck in
   `capabilities.ts` until someone decides whether it destroys work. Forma's own `required_risk`
   is the second boundary and refuses an unapproved removal regardless.
-- **Nothing is cached across requests.** A person is resolved once per request; Forma revalidates
-  membership on every Boundary F call (ADR-024).
+- **Ordinary requests resolve a person once per request.** The UI stream bypasses that request
+  memo and asks Forma again for each live event; Forma remains the authority that verifies the
+  bearer and the person's current account access (ADR-024).
 
 ## Findings about Pontis
 

@@ -50,6 +50,8 @@
 	# /pons/v1/devices/* is the revoke route and /pons/v1/jobs/* the cancel one;
 	# "devices" is spelled out with its slash so it cannot match "device/", the
 	# Runtime's.
+	# Caddy's `path` matcher URL-decodes and cleans dot segments before matching,
+	# so traversal paths resolve before they are checked against this allow-list.
 
 	# Server-Sent Events: the UI action channel. Buffering would hold an action
 	# until a buffer filled, which is the difference between the person's canvas

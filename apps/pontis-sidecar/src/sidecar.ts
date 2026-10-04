@@ -32,7 +32,7 @@ import { GUIDANCE } from './guidance.ts';
 import { createContextRoute, createIntentRoute } from './intents.ts';
 import type { Log } from './log.ts';
 import { createDevicesRoute, fanOutDurable, liveNotification } from './live.ts';
-import { personResolver, type Person } from './person.ts';
+import { personResolver, tokenExpiresAt, type Person } from './person.ts';
 import { claimedAgentSession, verifiedAgentSession, windowId } from './windows.ts';
 import { uiCapabilities } from './ui.ts';
 
@@ -93,7 +93,9 @@ export async function startSidecar(options: SidecarOptions): Promise<Sidecar> {
   const origin = options.origin ?? `http://${options.host}:${port}`;
 
   const boundary = new FormaBoundary(options.formaUrl, options.serviceCredential, options.log);
-  const resolvePerson = personResolver(boundary);
+  const people = personResolver(boundary);
+  const resolvePerson = people.memoized;
+  const resolvePersonFresh = people.fresh;
 
   const agentApp = defineAgentApp({
     id: APPLICATION_ID,
@@ -160,7 +162,7 @@ export async function startSidecar(options: SidecarOptions): Promise<Sidecar> {
     clients: agentApp.uiClients,
     router: agentApp.uiRouter,
     authenticatePrincipal: async (request) => {
-      const person = await resolvePerson(request);
+      const person = await resolvePersonFresh(request);
       if (!person) return undefined;
       // A request that does not name its window is refused: with no id there is
       // no telling this tab from the person's others, which is the confusion that
@@ -181,7 +183,7 @@ export async function startSidecar(options: SidecarOptions): Promise<Sidecar> {
       };
     },
     resolveApplicationContext: async (request, user) => {
-      const person = await resolvePerson(request);
+      const person = await resolvePersonFresh(request);
       return person && person.userId === user.userId ? person.applicationContextId : undefined;
     },
     ...(options.editorOrigins?.length ? { allowedOrigins: [...options.editorOrigins] } : {}),
@@ -215,6 +217,9 @@ export async function startSidecar(options: SidecarOptions): Promise<Sidecar> {
     respond(response, 404, { error: 'not_found' });
   };
   server.on('request', (request: IncomingMessage, response: ServerResponse) => {
+    if (request.method === 'GET' && (request.url ?? '').split('?')[0] === '/pons/v1/ui/stream') {
+      endUiStreamAtExpiration(request, response);
+    }
     dispatch(request, response).catch(() => {
       options.log('request_failed', { path: (request.url ?? '').split('?')[0] });
       respond(response, 500, { error: 'internal_error' });
@@ -249,6 +254,40 @@ export async function startSidecar(options: SidecarOptions): Promise<Sidecar> {
       }
     },
   };
+}
+
+/** End an otherwise quiet UI stream at the token's expiry, checking long TTLs in bounded chunks. */
+function endUiStreamAtExpiration(request: IncomingMessage, response: ServerResponse): void {
+  const expiresAt = tokenExpiresAt(request);
+  if (expiresAt === undefined) return;
+
+  let timer: ReturnType<typeof setTimeout>;
+  const check = () => {
+    if (response.writableEnded || response.destroyed) return;
+
+    const remaining = expiresAt - Date.now();
+    if (response.headersSent) {
+      // This request path only sends 200 after accepting an SSE stream. Headers
+      // written directly with writeHead() are not available through getHeader().
+      if (remaining <= 0 && response.statusCode === 200) {
+        response.end();
+      }
+      return;
+    }
+
+    const unansweredFor = Date.now() - expiresAt;
+    if (unansweredFor >= 60_000) {
+      response.end();
+      return;
+    }
+    const delay = remaining > 0 ? Math.min(remaining, 60_000) : Math.min(1_000, 60_000 - unansweredFor);
+    timer = setTimeout(check, Math.max(1, delay));
+    timer.unref();
+  };
+  timer = setTimeout(check, Math.min(Math.max(1, expiresAt - Date.now()), 60_000));
+  timer.unref();
+  response.once('close', () => clearTimeout(timer));
+  response.once('finish', () => clearTimeout(timer));
 }
 
 interface DurableState {

@@ -49,11 +49,24 @@ function viteMatches(path: string): boolean {
     .some((key) => new RegExp(key).test(path));
 }
 
-/** Caddy `path` matchers: `*` at the end is a prefix, anything else is exact. */
+/** Caddy `path` matchers normalize and clean the URI path before matching. */
 function caddyMatches(patterns: readonly string[], path: string): boolean {
+  const normalized = normalizeCaddyPath(path);
   return patterns.some((pattern) =>
-    pattern.endsWith("*") ? path.startsWith(pattern.slice(0, -1)) : path === pattern,
+    pattern.endsWith("*") ? normalized.startsWith(pattern.slice(0, -1)) : normalized === pattern,
   );
+}
+
+/** Mirrors Caddy's documented URL decoding, dot-segment cleaning and slash merging. */
+function normalizeCaddyPath(path: string): string {
+  const decoded = decodeURIComponent(path.split("?", 1)[0] ?? "");
+  const segments: string[] = [];
+  for (const segment of decoded.split("/")) {
+    if (segment === "" || segment === ".") continue;
+    if (segment === "..") segments.pop();
+    else segments.push(segment);
+  }
+  return `/${segments.join("/")}`;
 }
 
 const caddyfile = readFileSync(resolve(__dirname, "../../../../deploy/caddy/Caddyfile"), "utf8");
@@ -109,6 +122,23 @@ describe("the Pontis proxy routes", () => {
     ]) {
       expect(viteMatches(url), `Vite: ${url}`).toBe(false);
     }
+  });
+
+  it("keeps dot-segment paths off the Pontis proxy routes", () => {
+    for (const path of [
+      "/pons/v1/devices/../device/challenge",
+      "/pons/v1/devices/%2e%2e/device/challenge",
+      "/pons/v1/devices/..%2fdevice%2fchallenge",
+      "/pons/v1/ui/../device/challenge",
+      "/pons/v1/jobs/../pairing/claim",
+    ]) {
+      expect(viteMatches(path), `Vite: ${path}`).toBe(false);
+      expect(caddy(path), `Caddy after path normalization: ${path}`).toBe(false);
+    }
+  });
+
+  it("does not enable CORS in the Vite dev server", () => {
+    expect(config.server?.cors).toBe(false);
   });
 
   it("flushes the streams and only reaches the sidecar by loopback", () => {

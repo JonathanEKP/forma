@@ -217,7 +217,7 @@ re-tested 2026-10-04: fixed — instance 10, `curl` with the sidecar's own crede
 ## F-50-2 — An open UI stream is never re-authenticated: it keeps delivering after its token has expired
 
 - **Severity:** medium
-- **Status:** open
+- **Status:** fixed (76fcf88, d3ce6bd)
 - **Instance / provider:** instance 6, FakeProvider (no model involved; sidecar routes only)
 
 **Steps to reproduce**
@@ -250,6 +250,12 @@ the stream when the token's `exp` passes.
 
 **Evidence** — script output: `0s recv HTTP/1.1 200…`, `35s token now expired…`, `35s recv … event: pons.event …
 "sequence":13`, `…"sequence":14`, `45s recv keep-alive`, `50s … stream was open: true`. Not seen in a browser.
+
+**Fix (fix batch 2, Task F3)** — stream events now resolve the person and application context through a fresh
+authentication call, bypassing the per-request memo. A quiet accepted SSE connection ends when its token expires;
+an already expired token still reaches Forma and gets its normal unauthenticated refusal. Proved on browser instance 14:
+after installing a short-lived session and refreshing it through the fake identity provider, the UI channel reconnected
+after the short token expired and remained connected.
 
 ## F-50-3 — Two windows of the same person take the UI channel from each other forever
 
@@ -300,7 +306,7 @@ re-tested 2026-10-04: fixed — instance 10: see F-40-1; two tabs of one person 
 ## F-50-4 — The proxy forwards paths with `..` and `%2e%2e` to the sidecar unnormalised
 
 - **Severity:** low
-- **Status:** open (nothing exploitable found; a latent assumption)
+- **Status:** fixed (76fcf88)
 - **Instance / provider:** instance 6
 
 **Steps to reproduce** — via the editor origin, `POST /pons/v1/devices/../device/challenge` (and `/%2e%2e/`, `..%2f`,
@@ -323,10 +329,14 @@ cases to `proxy.test.ts` and the Caddyfile test.
 **Evidence** — probe output `ED POST /pons/v1/devices/../device/challenge → 404 {"error":"not_found"}` (the sidecar's own
 JSON, so it was forwarded), against `ED POST /pons/v1/device/challenge → 404` (Vite's bare 404, not forwarded).
 
+**Fix (fix batch 2, Task F3)** — the Vite proxy rejects literal and encoded dot-segment paths before forwarding,
+with traversal cases covered in `proxy.test.ts`. Caddy's `path` matcher URL-decodes and cleans dot segments before
+matching, as documented by Caddy; the Caddy binary was unavailable for a local config validation.
+
 ## F-50-5 — Vite's dev server grants CORS to every `localhost`/`127.0.0.1` origin, on the Pontis routes too
 
 - **Severity:** low
-- **Status:** open (dev server only; Caddy sets no CORS headers)
+- **Status:** fixed (76fcf88)
 - **Instance / provider:** instance 6
 
 **Steps to reproduce** — `GET /pons/v1/devices` (or `OPTIONS` with `Access-Control-Request-Headers: authorization`) via
@@ -349,10 +359,12 @@ same-origin through the proxy).
 **Evidence** — `OPTIONS /pons/v1/devices … 204 Access-Control-Allow-Origin: http://localhost:9999`; same for `evil.example`:
 no header.
 
+**Fix (fix batch 2, Task F3)** — Vite's `server.cors` is disabled; the editor reaches Pontis through the same-origin proxy.
+
 ## F-50-6 — Vite's `/__open-in-editor` runs on the owner's machine for any web page
 
 - **Severity:** low (info for a dev-only surface)
-- **Status:** open — wontfix candidate; recorded because it is reachable through the editor origin
+- **Status:** wontfix (E-6) — Vite-internal launch-editor, dev-only, loopback-only; the built app and Caddy do not expose it
 - **Instance / provider:** instance 6
 
 **Steps to reproduce** — `GET http://127.0.0.1:4862/__open-in-editor?file=/etc/passwd` (one request, run once).

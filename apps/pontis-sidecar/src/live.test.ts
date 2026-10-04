@@ -19,6 +19,8 @@ import { envelope, fakeForma } from './fake-forma.ts';
 import { fanOutDurable, liveNotification } from './live.ts';
 import { silentLog, type LogFields } from './log.ts';
 import { APPLICATION_ID, startSidecar, type Sidecar } from './sidecar.ts';
+import { mintSession } from './stack.ts';
+import { drain, send } from './ui-window.ts';
 
 const USER = '11111111-1111-4111-8111-111111111111';
 const OTHER_USER = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -33,11 +35,16 @@ const TOKENS: Record<string, { subject: string; account_id: string }> = {
   'session-other': { subject: OTHER_USER, account_id: OTHER_CONTEXT },
 };
 
-async function withSidecar(body: (sidecar: Sidecar) => Promise<void>) {
+type SessionResolution = { subject: string; account_id: string } | undefined;
+
+async function withSidecar(
+  body: (sidecar: Sidecar) => Promise<void>,
+  resolveToken: (token: string) => SessionResolution = (token) => TOKENS[token],
+) {
   const server = await fakeForma((request) => {
     if (request.path !== '/api/v1/service/resolve') return { status: 404, body: envelope('NO_SUCH_OPERATION', 'not_found') };
     const presented = request.headers[SUBJECT_TOKEN_HEADER];
-    const resolved = typeof presented === 'string' ? TOKENS[presented] : undefined;
+    const resolved = typeof presented === 'string' ? resolveToken(presented) : undefined;
     return resolved ? { status: 200, body: { ...resolved, role: 'owner' } } : { status: 401, body: envelope('UNAUTHORIZED', undefined) };
   });
   const sidecar = await startSidecar({
@@ -59,6 +66,8 @@ async function withSidecar(body: (sidecar: Sidecar) => Promise<void>) {
 /** One browser window on the UI stream, collecting the `pons.event` frames it is sent. */
 interface Window {
   readonly events: Record<string, unknown>[];
+  /** Resolves when the server ends this stream. */
+  readonly ended: Promise<void>;
   /** Resolves once an event matching `match` has arrived. */
   next(match: (event: Record<string, unknown>) => boolean): Promise<Record<string, unknown>>;
   close(): void;
@@ -110,9 +119,15 @@ async function openWindow(sidecar: Sidecar, token: string): Promise<Window> {
   });
   response.on('error', () => undefined);
   await ready;
+  const ended = new Promise<void>((resolve) => {
+    response.once('close', resolve);
+    response.once('end', resolve);
+    response.once('error', resolve);
+  });
 
   return {
     events,
+    ended,
     next: (match) =>
       new Promise((resolve, reject) => {
         const seen = events.find(match);
@@ -216,6 +231,93 @@ async function get(sidecar: Sidecar, path: string, token?: string): Promise<{ st
 }
 
 const isType = (type: string) => (event: Record<string, unknown>) => event.type === type;
+
+describe('a UI stream keeps the session token current', () => {
+  it('re-resolves the person for each notification instead of reusing the connection-time answer', async () => {
+    const token = mintSession(USER, { ttlSeconds: 25 });
+    let accepting = true;
+    let resolutions = 0;
+
+    await withSidecar(
+      async (sidecar) => {
+        const device = await pairDevice(sidecar, USER);
+        const window = await openWindow(sidecar, token);
+        try {
+          const connectedResolutions = resolutions;
+          accepting = false;
+          const noDelivery = window.next(isType('device.status'));
+          device.publish('device.status', { status: 'ready' });
+
+          await assert.rejects(noDelivery, /no matching event arrived/u);
+          assert.ok(resolutions > connectedResolutions, 'Forma resolved the session again for the live notification');
+        } finally {
+          window.close();
+          await device.close();
+        }
+      },
+      (presented) => {
+        if (presented !== token) return undefined;
+        resolutions += 1;
+        return accepting ? TOKENS['session-user'] : undefined;
+      },
+    );
+  });
+
+  it('ends an idle stream shortly after a short-lived fixture token expires', async () => {
+    const token = mintSession(USER, { ttlSeconds: 3 });
+    const rawClaims: unknown = JSON.parse(Buffer.from(token.split('.')[1] ?? '', 'base64url').toString('utf8'));
+    assert.ok(isRecord(rawClaims));
+    assert.equal(typeof rawClaims.exp, 'number');
+    const expiresAt = Number(rawClaims.exp) * 1_000;
+
+    await withSidecar(
+      async (sidecar) => {
+        const window = await openWindow(sidecar, token);
+        try {
+          // The implementation closes at exp; the product contract allows up to 60 seconds.
+          const allowance = Math.max(0, expiresAt - Date.now()) + 5_000;
+          const ended = await new Promise<boolean>((resolve) => {
+            const timer = setTimeout(() => resolve(false), allowance);
+            void window.ended.then(() => {
+              clearTimeout(timer);
+              resolve(true);
+            });
+          });
+          assert.equal(ended, true, 'the idle stream ended by the token expiry deadline');
+          assert.ok(Date.now() <= expiresAt + 5_000, 'the stream ended shortly after exp');
+        } finally {
+          window.close();
+        }
+      },
+      (presented) => (presented === token ? TOKENS['session-user'] : undefined),
+    );
+  });
+
+  it('still returns Forma’s unauthenticated refusal when the token expired before the stream opened', async () => {
+    const token = mintSession(USER, { ttlSeconds: -5 });
+
+    await withSidecar(
+      async (sidecar) => {
+        const response = await send(`${sidecar.origin}/pons/v1/ui/stream`, {
+          headers: {
+            authorization: `Bearer ${token}`,
+            origin: ORIGIN,
+            host: HOST,
+            accept: 'text/event-stream',
+            'x-forma-window': randomUUID(),
+          },
+        });
+        assert.equal(response.statusCode, 403);
+        await drain(response);
+      },
+      (presented) => {
+        if (presented !== token) return undefined;
+        const claims: unknown = JSON.parse(Buffer.from(token.split('.')[1] ?? '', 'base64url').toString('utf8'));
+        return isRecord(claims) && typeof claims.exp === 'number' && claims.exp > Date.now() / 1_000 ? TOKENS['session-user'] : undefined;
+      },
+    );
+  });
+});
 
 describe('a Device notification reaches its owner\'s windows', () => {
   it('delivers an output delta, unsequenced, to the session\'s own context and no other account\'s window', async () => {

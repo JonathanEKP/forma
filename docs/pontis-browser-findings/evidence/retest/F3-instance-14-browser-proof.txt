@@ -1,0 +1,8 @@
+Instance 14, FakeProvider, 2026-10-04; editor open in the task's Orca tab.
+
+Opened the ALPHA Launch cover and the Agent panel. Installed a 60-second fixture session from the local fake
+identity provider, refreshed the UI stream to use it, then refreshed the session after the fixture token expired.
+The stream's client id changed after expiry and the Agent panel remained `Connected · live` on the new stream.
+
+Only status and expiry timing were recorded; no token, authorization header, or credential was captured.
+Browser-stack instance 14 and the temporary local fixture-token helper were stopped after the check.

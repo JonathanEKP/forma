@@ -11,6 +11,9 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     port: 5173,
+    // The editor and its Pontis routes are same-origin; the browser never needs
+    // the dev server to grant cross-origin access to loopback sites.
+    cors: false,
     // In development the SPA runs on Vite and talks to forma-server; in
     // production forma-server serves the built app from the same origin.
     proxy: {
@@ -34,7 +37,9 @@ export default defineConfig({
       // lets the polled event page, "/pons/v1/events?scope=...&after=0", reach
       // the sidecar. Without it Vite answers that request with index.html and
       // the chat reads "can't reach the agent service" forever.
-      "^/(pons/v1/(pairing/codes|devices(/.*)?|events|jobs(/.*)?|ui/.*)|agent/(intent|context))(\\?.*)?$": pontis,
+      // Reject path traversal before the wildcard route allow-list is applied.
+      // Encoded dots can appear in mixed or upper-case form, so match both cases.
+      "^/(?![^?]*(?:\\.\\.|%2[eE]))(pons/v1/(pairing/codes|devices(/.*)?|events|jobs(/.*)?|ui/.*)|agent/(intent|context))(\\?.*)?$": pontis,
     },
   },
   build: {
