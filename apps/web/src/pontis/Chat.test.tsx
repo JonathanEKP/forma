@@ -38,6 +38,7 @@ class Backend {
   down = false;
   unauthenticatedPaths = new Set<string>();
   cancelGate: Promise<Response> | null = null;
+  startGate: Promise<Response> | null = null;
   /** What `session.input` and `session.cancel` are answered with instead of delivery, as the sidecar's refusal code. */
   refuse: string | null = null;
   devices: unknown = {
@@ -96,6 +97,7 @@ class Backend {
       }
       case "/agent/intent": {
         const type = isRecord(body) ? body.type : undefined;
+        if (type === "session.start" && this.startGate !== null) return this.startGate;
         if (type === "session.cancel" && this.cancelGate !== null) return this.cancelGate;
         if (this.refuse !== null && (type === "session.input" || type === "session.cancel")) {
           return json({ error: this.refuse }, this.refuse === "not_authorized" ? 403 : 409);
@@ -249,6 +251,35 @@ describe("a conversation", () => {
     await screen.findByText("On it.");
     const kinds = () => screen.getAllByRole("listitem").map((item) => item.getAttribute("data-kind"));
     await waitFor(() => expect(kinds()).toEqual(expect.arrayContaining(["person", "agent", "capability", "result", "navigation", "approval", "working"])));
+  });
+
+  it("restores a draft after reload while its first send is pending, without resending it", async () => {
+    const text = "Read the manual first.";
+    backend.startGate = new Promise<Response>(() => undefined);
+    const first = render(<Harness enabled />);
+    await screen.findByText(/Studio laptop/);
+    fireEvent.change(screen.getByLabelText("Message the agent"), { target: { value: text } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(backend.intents()).toEqual([{ type: "session.start", payload: { providerId: "codex" } }]));
+    expect(sessionStorage.getItem("forma.chat.draft")).toBe(text);
+
+    first.unmount();
+    backend.startGate = null;
+    render(<Harness enabled />);
+    const draft = await screen.findByLabelText("Message the agent") as HTMLTextAreaElement;
+    expect(draft.value).toBe(text);
+    expect(backend.intents()).toEqual([{ type: "session.start", payload: { providerId: "codex" } }]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(backend.intents()).toEqual([{ type: "session.start", payload: { providerId: "codex" } }, { type: "session.start", payload: { providerId: "codex" } }]));
+    backend.push(1, "session.created");
+    backend.push(2, "session.started");
+    await waitFor(() => expect(backend.intents()).toEqual([
+      { type: "session.start", payload: { providerId: "codex" } },
+      { type: "session.start", payload: { providerId: "codex" } },
+      { type: "session.input", payload: { sessionId: SESSION, text } },
+    ]));
+    await waitFor(() => expect(sessionStorage.getItem("forma.chat.draft")).toBeNull());
   });
 
   it("tells the window's channel which session this chat started, and lets go when the chat goes", async () => {
