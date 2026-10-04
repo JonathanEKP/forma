@@ -97,7 +97,7 @@ Orca browser tab per page, 2026-10-04.
 ## F-40-1 — Two windows of the same person fight over the registration: actions land on a random one and are reported `handled`
 
 - **Severity:** high
-- **Status:** open
+- **Status:** fixed (493ab33, 391c059, db12aed)
 - **Instance / provider:** instance 5; real Codex for W1, deterministic door for W2/W3
 
 **Steps to reproduce**
@@ -132,6 +132,29 @@ person.
 
 **Evidence** — the sample above, and the zoom tally in the case table (W2); `logs/sidecar.log`
 shows the paired `service.resolve` bursts every 2 s while two tabs are open.
+
+**Fix (fix batch 1, Task B)** — the registration is per window. The editor keeps one id per tab
+(`sessionStorage`, so a reload keeps it and *replaces* its own registration; a Web Lock named for the id
+makes a duplicated tab, which copies the storage, mint its own) and sends it as `x-forma-window` on the
+stream, the registration and every ack. The sidecar sets
+`appSessionId = userId:applicationContextId:windowId` and refuses a UI request whose window id is not a
+UUID (`apps/pontis-sidecar/src/windows.ts`, `sidecar.ts`). Two windows of one person are now two
+registrations; Pontis's rule 3 applies (`ui_unavailable` when several are connected and none is bound to
+the session), which D-2 asks for. A window whose chat holds a session names it (`x-forma-agent-session`) and
+the sidecar binds it only after the Control Plane confirms the session is this person's in this account.
+
+*Proof.* `apps/pontis-sidecar/src/ui.test.ts` (real routes, editor-shaped client): two windows stay
+connected, a reload replaces its own registration, a missing or malformed id is refused, an action goes to
+the bound window and the other never sees it, two unbound windows get `ui_unavailable`, a forged session of
+another person or account binds nothing. Browser, instance 8, two tabs of A (real Codex): both streams stayed
+open for more than 2½ minutes with no stream ended and no reconnect (before: one end every ~2 s per tab);
+the chat in tab 1 asked `ui.openDesign` and only tab 1 moved (`ALPHA Square post`), tab 2 stayed on the
+project list. Reloading a tab kept its id.
+
+*Not browser-proved:* "close tab 1 and the agent reports it cannot reach a window". With one window left
+Pontis routes to it (rule 2: the only client), and a session cannot be driven once its chat is gone, so the
+refusal is proved in `ui.test.ts` instead (after the bound window closes, two others give `ui_unavailable`
+and one other is the only target).
 
 ## F-40-2 — The sidecar cannot be stopped gracefully while any editor window is open
 
@@ -403,7 +426,7 @@ message that blames the origin.
 ## F-40-15 — A second tab signing in as someone else leaves the first tab registered as the old person, and every action times out
 
 - **Severity:** medium
-- **Status:** open
+- **Status:** fixed (391c059)
 - **Instance / provider:** instance 5, deterministic door
 
 **Steps to reproduce**
@@ -422,6 +445,19 @@ so it shows "design b74d4678-… does not exist". Nothing leaked: A's action nev
 and B's agent reached only tab 2. But A's agent gets a 5 s timeout per call from a window that is
 dead, and tab 1 is left on an error until reloaded. (The refusal of the cross-identity ack is inferred from
 F2/F3, the sidecar does not log it.)
+
+**Fix (fix batch 1, Task B)** — the channel remembers who it opened the stream for. A `storage` event or the
+provider's own session callback makes it re-read who is signed in; if that is no longer the same person it
+drops the old person's stream at once and registers as the new one (`Channel.recheck`, wired in
+`useUiChannel`). The ack and registration of a window whose person changed are refused by the sidecar as
+before, so nothing crosses accounts; what changed is that A's agent no longer waits 5 s on a window that is
+dead — tab 1 is no longer registered as A.
+
+*Proof.* `channel.test.ts` (a changed subject aborts the old stream and registers with the new token; a
+refreshed token for the same person does nothing). Browser, instance 8: tab 1 as A with a stream open, tab 2
+ran B's sign-in snippet; within 6 s tab 1's A stream had ended and it had registered again. Not checked: what
+tab 1 *shows* after the switch (the old design id against B's account), which is the
+page's own business and is not part of this finding.
 
 ## F-40-16 — The window's `detail` text goes to the agent unfiltered, and an oversized one is dropped as a reset connection
 
