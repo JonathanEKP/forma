@@ -426,6 +426,14 @@ works. The chat shows what the person typed with a chip (design · page · layer
 the driver received the line for the open design and a different one after switching designs.
 Tests: `intents.test.ts`, `local-run.test.ts`, `App.chat.test.tsx`.
 
+**Checked with real Codex (instance 7, `gpt-6-luna`, three turns).** "What layers are on this page? Answer in one
+short sentence." with `ALPHA Launch cover` open: Codex called `design.get` directly — no `project.list`, no guessed
+id — and answered with the four layers. "Open my ALPHA Square post design in the editor.": `design.list` then
+`ui.openDesign`, the editor moved (F-40-6). "Change the text of the Title layer in this design to: Edited by Codex.
+Then validate it." with `ALPHA Square post` open: `applyOperations` then `validate`, and the open editor went to
+`v2` with "The agent updated the design (v2)" and no conflict
+([screenshot](evidence/chat/F-chat-11-fixed-codex-edit-followed.png)).
+
 ## F-chat-12 — A right-to-left override in a message is kept and rendered as typed
 
 - **Severity:** low

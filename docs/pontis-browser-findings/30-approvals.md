@@ -133,6 +133,13 @@ new session to carry on; what you have said so far stays above it." and a **New 
 death is legible and recoverable instead of a wedge. Until Pontis fixes it, a session is good for about five
 minutes after its first call.
 
+Browser proof of Forma's side (instance 7, FakeProvider): a session's second call five minutes after its first
+failed "the remote application delegation has expired"; the chat showed the expiry notice and **New session**
+([screenshot](evidence/approvals/F-30-5-fixed-expired-session-recoverable.png)), and after a reload re-attached
+to the same tab's session with what the person had said, and the notice. **New session** started a working
+session with the old history above a divider. A session that lives past five minutes could not be shown, because
+the cause is upstream.
+
 ## F-30-6 — A resolve that the Runtime refuses is answered 200 `delivered:true`, with a misleading code
 
 - **Severity:** low

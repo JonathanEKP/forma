@@ -303,6 +303,10 @@ editor does not show design ids either.
 by name with it and show it with `ui.openDesign`. MCP's `tools/list` is unchanged (the operation is
 `PontisOnly`). Tests: `apps/server/tests/pontis.rs`, `capabilities.test.ts`, `local-run.test.ts`.
 
+**Checked with real Codex (instance 7).** "Open my ALPHA Square post design in the editor." → `design.list`,
+then `ui.openDesign` with the id it found; the editor opened the design and the agent said so. The session's
+`design.list` call is the only way it learned the id.
+
 ## F-40-7 — An action that lands mid-drag changes the drag's arithmetic, or drops it without a word
 
 - **Severity:** low
