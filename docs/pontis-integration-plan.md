@@ -805,8 +805,28 @@ Read this before the list below; the list is the plan, this is what happened to 
 | 10a Device panel and proxy routes | done, merged into `main` | `70dae4e`, `d6b000c`, `ad74373`, `f37b358`, `bd4cd8b`, `6edc1b6` (branch `JonathanEKP/pontis-10a-devices`) |
 | 10b In-app chat and `/agent/context` | done, merged into `main` | `93dde1a`, `58b754f`, `f081782`, `0a34a10`, `005d9d0` (branch `JonathanEKP/pontis-10b-chat`) |
 | 10c Live delivery and device presence | done, merged into `main` | `f501cc9`, `ce96b88`, `93731c2`, `821e33d` (branch `JonathanEKP/pontis-10c-live`) |
-| 11 Real Codex local run | not started; needs the owner (a real provider credential on their machine) | |
+| 11 Real Codex local run | **in progress** — owner authorized it on 2026-10-03; see *Step 11, as dispatched* | |
 | 12 PV-1 evidence | not started; follows 11 | |
+
+**Step 11, as dispatched (2026-10-03).** The owner authorized a real run on their Codex account
+and asked for the cheapest test model, `gpt-6-luna`. Two facts shaped it:
+
+- **The installed Codex is `0.160.0`, which Pontis refuses.** `pontis/docs/07-provider-system.md`
+  accepts `capability_only` only on exact rows — `0.154.0`, `0.156.1`, `0.158.0` on linux/x86_64 —
+  and fails closed with `unsupported_feature` before spawning anything else. So the run uses
+  **`0.158.0`**, the newest accepted row, installed into a gitignored folder under the repo for
+  this run only; the owner's global `codex` is not touched. Adding `0.160.0` to the matrix is
+  Pontis's process (deterministic contract plus a real run, then accepted), not Forma's.
+- **The Codex driver has no model option.** The model comes from Codex's own config, so the run
+  gets a dedicated `CODEX_HOME` holding `model = "gpt-6-luna"`, low reasoning effort and a symlink
+  to the owner's `~/.codex/auth.json`: same account, and the owner's own config (`gpt-6.1-sol`)
+  is never edited. The driver's `with_executable`, `with_environment` and
+  `with_reasoning_effort` are the seams.
+
+The run is opt-in — gated on an environment variable, never part of `pnpm test` or CI — because it
+spends the owner's tokens. Budget: one real turn per scenario, at most one retry, and the worker
+stops and asks rather than looping. Transcripts are kept as evidence for step 12, with no token,
+header or credential in them.
 
 **Where it stands after step 10 (2026-10-03).** Everything up to step 10 is on `main` and green:
 161 web tests, 62 sidecar tests including the FakeProvider local run, and S11. What no test has
