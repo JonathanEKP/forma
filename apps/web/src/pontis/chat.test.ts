@@ -104,6 +104,14 @@ describe("failures are said in words", () => {
     }
   });
 
+  it("maps a typed 401 from each Forma chat route to the expired sign-in wording", async () => {
+    for (const action of ["intent", "context", "devices"] as const) {
+      const { agent } = client(() => json({ error: { code: "unauthenticated" } }, 401));
+      const answer = action === "intent" ? await agent.input(SESSION, "hi") : action === "context" ? await agent.context() : await agent.devices();
+      expect(answer).toMatchObject({ ok: false, failure: { reason: "not_authenticated", message: "Your sign-in has expired. Sign in again." } });
+    }
+  });
+
   it("an intent the Runtime did not take is not a success", async () => {
     const { agent } = client(() => json({ delivered: false }));
     expect(await agent.input(SESSION, "hi")).toMatchObject({ ok: false, failure: { reason: "not_delivered" } });
@@ -379,11 +387,11 @@ describe("the transcript keeps the five kinds of line apart", () => {
     expect(state.lines).toEqual([{ kind: "person", id: "l1", text: "hello" }]);
   });
 
-  it("stopping ends the session on the person's word without waiting for a terminal event", () => {
+  it("stopping ends the turn on the person's word without ending the session", () => {
     let state = fold(mine(), ev(1, "session.created"), ev(2, "session.started"), ev(3, "turn.started"));
     state = chatReducer(state, { type: "stopped", id: "l2" });
     expect(state.working).toBe(false);
-    expect(state.session?.status).toBe("ended");
+    expect(state.session).toEqual({ id: SESSION, status: "live" });
   });
 });
 
@@ -426,6 +434,20 @@ describe("the reply as it streams", () => {
     expect(live(open(), "x", "t1", "another").streaming).toBeNull();
     expect(live(emptyChat, "x").streaming).toBeNull();
     expect(live(fold(open(), ev(4, "session.completed")), "late").streaming).toBeNull();
+  });
+
+  it("does not show a partial delta after reload until the completed answer arrives", () => {
+    let state = chatReducer(emptyChat, {
+      type: "restore",
+      remembered: { sessionId: SESSION, deviceId: null, dead: null, said: [] },
+    });
+    state = fold(state, ev(1, "session.created"), ev(2, "session.started"), ev(3, "turn.started", { turnId: "t1" }));
+    expect(state.working).toBe(true);
+    expect(live(state, "middle of the answer").streaming).toBeNull();
+
+    state = fold(state, ev(4, "agent.output.completed", { turnId: "t1", text: "The complete answer." }));
+    expect(state.streaming).toBeNull();
+    expect(state.lines).toContainEqual({ kind: "agent", id: "e4", text: "The complete answer." });
   });
 });
 
