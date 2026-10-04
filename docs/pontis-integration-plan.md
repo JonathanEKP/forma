@@ -503,8 +503,9 @@ Forma's existing layers carry most of this without new infrastructure: `cargo te
 the Playwright walkthrough in `e2e/` for the browser half, and `apps/mcp/tests/agent_flow.rs` for
 the agent half. The new layers are the sidecar's own tests and the Boundary F suite.
 
-Evidence lives in this repository per ADR-023 Decision 4. Pontis receives sanitized
-reusable-platform outcomes only, and no Forma URL, credential or user data enters its documents.
+Evidence lives in this repository per ADR-023 Decision 4; the [PV-1 evidence matrix](pontis-pv1-evidence.md)
+maps S1–S13 to its assertions. Pontis receives sanitized reusable-platform outcomes only, and no Forma URL,
+credential or user data enters its documents; see [sanitized platform outcomes](pontis-pv1-platform-outcomes.md).
 
 ---
 
