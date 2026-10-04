@@ -38,6 +38,9 @@ versions, operating systems, models or effort levels.
 - Long sessions are not validated. A session delegation expires after about five minutes and the Runtime
   refuses it before its refresh path can run; this blocks the long-session acceptance until the Runtime is
   fixed.
+- Pontis has no per-session stop intent. Switching accounts ends the old session for that browser
+  window and prevents the new account from reusing it, but the old Runtime session remains until its
+  Device shuts down.
 - Step 12 has not yet recorded real-Codex denial, approval expiry and replay, in-flight MCP-request
   cancellation, or account-switch results. This draft must be updated from those records before it is carried
   to the platform team.
