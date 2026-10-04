@@ -20,6 +20,7 @@ import { fanOutDurable, liveNotification } from './live.ts';
 import { silentLog, type LogFields } from './log.ts';
 import { APPLICATION_ID, startSidecar, type Sidecar } from './sidecar.ts';
 import { mintSession } from './stack.ts';
+import { drain, send } from './ui-window.ts';
 
 const USER = '11111111-1111-4111-8111-111111111111';
 const OTHER_USER = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -289,6 +290,31 @@ describe('a UI stream keeps the session token current', () => {
         }
       },
       (presented) => (presented === token ? TOKENS['session-user'] : undefined),
+    );
+  });
+
+  it('still returns Forma’s unauthenticated refusal when the token expired before the stream opened', async () => {
+    const token = mintSession(USER, { ttlSeconds: -5 });
+
+    await withSidecar(
+      async (sidecar) => {
+        const response = await send(`${sidecar.origin}/pons/v1/ui/stream`, {
+          headers: {
+            authorization: `Bearer ${token}`,
+            origin: ORIGIN,
+            host: HOST,
+            accept: 'text/event-stream',
+            'x-forma-window': randomUUID(),
+          },
+        });
+        assert.equal(response.statusCode, 403);
+        await drain(response);
+      },
+      (presented) => {
+        if (presented !== token) return undefined;
+        const claims: unknown = JSON.parse(Buffer.from(token.split('.')[1] ?? '', 'base64url').toString('utf8'));
+        return isRecord(claims) && typeof claims.exp === 'number' && claims.exp > Date.now() / 1_000 ? TOKENS['session-user'] : undefined;
+      },
     );
   });
 });
