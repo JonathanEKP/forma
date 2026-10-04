@@ -157,7 +157,7 @@ tagline now reads "Edited by Codex" next to a canvas that still shows the old ta
 ## F-chat-3 — Stopping from one tab leaves another tab saying "The agent is working…"
 
 - **Severity:** medium
-- **Status:** open
+- **Status:** open (not closed by Task B; see below)
 - **Instance / provider:** instance 3, FakeProvider
 
 **Steps to reproduce**
@@ -175,6 +175,17 @@ session — see F-chat-7).
 
 **Evidence** — [screenshot of tab 1](evidence/chat/F-chat-3-other-tab-stuck-working.png) after the stop;
 the durable page showed `turn.started, capability.requested, capability.failed` and no `turn.cancelled`.
+
+**Task B, 2026-10-04 — why this stays open.** It was listed under the window group but nothing in the
+window work touches it, and the owner's coordinator confirmed it stays open. (a) The root cause is upstream:
+the Runtime writes no terminal event after `session.cancel` (README, *Cancelling mid-capability loses the
+turn's end*), so a window that did not press Stop has nothing to end its "working…" on; the sidecar does
+not fabricate Runtime events. (b) Under D-1 the chat is one per window and its session id is kept per tab,
+so two windows showing one session should become rare; the one way left is a *duplicated tab*, which copies
+`sessionStorage`. Task B makes sure a duplicate does **not** inherit the *window* id (a Web Lock held by the
+original tab makes the copy mint its own, `window.ts`, tested), so the two are separate registrations; both
+claiming one chat session would make Pontis answer `ui_unavailable` rather than guess, which fails closed.
+(c) A stale "working" is cleared by Task A's recovery (D-6).
 
 ## F-chat-4 — Killing the Runtime mid-turn leaves "working…" forever, even after a reload
 
@@ -309,7 +320,7 @@ agent.output.completed turn.completed`.
 ## F-chat-9 — The UI stream ends about two seconds after it opens, so "live" flaps constantly (Codex instance)
 
 - **Severity:** low
-- **Status:** open (cause not found; not measured on the Fake instance, where the status never flipped
+- **Status:** open (probably the same eviction as F-40-1, fixed in 493ab33, 391c059; Task E re-tests)
   in ~20 looks)
 - **Instance / provider:** instance 3, Codex instance (the stream belongs to the sidecar, not to the provider)
 
@@ -328,6 +339,12 @@ final text is never lost: the polled page carries it.
 
 **Evidence** — resource timings `[[0,1],[3,2],[7,2],[12,2],[16,2],…]` (start s, duration s) and the node
 client's `ended after 0.862` / `2.026`, from the terminal.
+
+**Task B, 2026-10-04.** Not reproduced after the window fix: on the Codex instance (instance 8) both tabs'
+streams stayed open for more than 2½ minutes and the status line stayed "Connected · live". The cause is not
+established: the original note says no other tab was open for A during the Node measurement, so a second
+registration of the same person is a hypothesis (any other stream of A with the same app session closes the
+older one, which is the shape seen), not something measured. Left open for Task E to re-run exactly as above.
 
 ## F-chat-10 — A message over 64 KiB gets "The agent service answered something unexpected."
 

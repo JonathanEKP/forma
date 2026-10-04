@@ -9,11 +9,16 @@
  * test is the one that fails.
  */
 import { strict as assert } from 'node:assert';
+import { randomUUID } from 'node:crypto';
 import { request as httpRequest, type IncomingMessage } from 'node:http';
 
 /** One connected window, speaking the wire the editor's channel speaks. */
 export interface Window {
   readonly clientId: string;
+  /** The window id it presented, as the editor keeps one per tab. */
+  readonly windowId: string;
+  /** Settles when the server ends the stream (a replaced registration, a close) or `close` is called. */
+  readonly ended: Promise<void>;
   /** Resolves with the next action delivered, or rejects after `ms`. */
   next(ms?: number): Promise<{ invocationId: string; capabilityId: string; input: unknown }>;
   ack(invocationId: string, outcome: string, detail?: string): Promise<number>;
@@ -21,11 +26,35 @@ export interface Window {
   close(): void;
 }
 
-export async function connect(sidecarOrigin: string, token: string, origin: string, actions: readonly string[]): Promise<Window> {
+export interface WindowOptions {
+  /** The tab's id. Omitted, each connection is a new tab; the same id again is a reload. */
+  readonly windowId?: string;
+  /** The chat's agent session, sent when the stream opens (the editor's binding). */
+  readonly agentSession?: string;
+}
+
+export const WINDOW_HEADER = 'x-forma-window';
+export const AGENT_SESSION_HEADER = 'x-forma-agent-session';
+
+export async function connect(
+  sidecarOrigin: string,
+  token: string,
+  origin: string,
+  actions: readonly string[],
+  options: WindowOptions = {},
+): Promise<Window> {
   const host = new URL(origin).host;
+  const windowId = options.windowId ?? randomUUID();
   const abort = new AbortController();
   const response = await send(`${sidecarOrigin}/pons/v1/ui/stream`, {
-    headers: { authorization: `Bearer ${token}`, origin, host, accept: 'text/event-stream' },
+    headers: {
+      authorization: `Bearer ${token}`,
+      origin,
+      host,
+      accept: 'text/event-stream',
+      [WINDOW_HEADER]: windowId,
+      ...(options.agentSession ? { [AGENT_SESSION_HEADER]: options.agentSession } : {}),
+    },
     signal: abort.signal,
   });
   assert.equal(response.statusCode, 200, 'the stream opened');
@@ -51,11 +80,15 @@ export async function connect(sidecarOrigin: string, token: string, origin: stri
     }
   })().catch(() => undefined);
 
+  const ended = new Promise<void>((resolve) => {
+    response.once('close', resolve);
+    response.once('error', () => resolve());
+  });
   const clientId = await connected;
   const post = async (path: string, body: unknown): Promise<number> => {
     const answer = await send(`${sidecarOrigin}${path}`, {
       method: 'POST',
-      headers: { authorization: `Bearer ${token}`, origin, host, 'content-type': 'application/json' },
+      headers: { authorization: `Bearer ${token}`, origin, host, 'content-type': 'application/json', [WINDOW_HEADER]: windowId },
       body: JSON.stringify(body),
     });
     await drain(answer);
@@ -64,15 +97,22 @@ export async function connect(sidecarOrigin: string, token: string, origin: stri
 
   const window: Window = {
     clientId,
+    windowId,
+    ended,
     next: (ms = 1_000) =>
       new Promise((resolve, reject) => {
         const ready = delivered.shift();
         if (ready) return resolve(ready);
-        const timer = setTimeout(() => reject(new Error('no action arrived')), ms);
-        waiting.push((action) => {
+        const wake = (action: { invocationId: string; capabilityId: string; input: unknown }) => {
           clearTimeout(timer);
           resolve(action);
-        });
+        };
+        const timer = setTimeout(() => {
+          // A waiter that gave up must leave the queue, or it swallows the next action.
+          waiting.splice(waiting.indexOf(wake), 1);
+          reject(new Error('no action arrived'));
+        }, ms);
+        waiting.push(wake);
       }),
     ack: (invocationId, outcome, detail) =>
       post('/pons/v1/ui/ack', { clientId, invocationId, outcome, ...(detail ? { detail } : {}) }),

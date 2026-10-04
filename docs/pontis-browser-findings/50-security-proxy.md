@@ -252,7 +252,7 @@ the stream when the token's `exp` passes.
 ## F-50-3 — Two windows of the same person take the UI channel from each other forever
 
 - **Severity:** medium
-- **Status:** open
+- **Status:** fixed (493ab33, 391c059, db12aed)
 - **Instance / provider:** instance 6, FakeProvider; reproduced with a script that runs the editor's own reconnect logic
   against the real routes (the two-tab case could not be held steady in the browser, see F-50-8)
 
@@ -286,6 +286,12 @@ have the sidecar refuse the second stream (`409`) so the client can stop retryin
 
 **Evidence** — script output: `windows=1 … opens:1 … resolve calls: 2`; `windows=2 … opens:6 / 5 … resolve calls: 22`.
 (`MAX_CLIENTS_PER_USER = 8` in Pontis is therefore unreachable: 12 streams from one person left one registered.)
+
+**Fix (fix batch 1, Task B)** — see [F-40-1](40-ui-channel.md): the suggested direction was taken (a window id
+in `sessionStorage`, sent with the stream and used in the app session). The "reconnects every 2 s with no
+backoff" half is gone because nothing is evicted any more; a refresh opens the new stream before releasing the
+old one and the channel does not reconnect a stream the server replaced (`channel.ts`, tested in
+`channel.test.ts`). Measured again on instance 8 with two tabs: no stream ended in 2½ minutes.
 
 ## F-50-4 — The proxy forwards paths with `..` and `%2e%2e` to the sidecar unnormalised
 

@@ -10,12 +10,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("../identity", () => ({
   supabase: null,
   accessToken: () => Promise.resolve("session-token"),
+  currentSubject: () => Promise.resolve(null),
+  onSessionChange: () => () => undefined,
   currentSession: () => Promise.resolve(null),
 }));
 
 import { Editor } from "../editor/Editor";
 import { liveFeed } from "./channel";
 import { ChatPanel, ChatToggle } from "./Chat";
+import { agentBinding } from "./window";
 import { useChat } from "./useChat";
 
 const CONTEXT = "22222222-2222-4222-8222-222222222222";
@@ -219,6 +222,21 @@ describe("a conversation", () => {
     await screen.findByText("On it.");
     const kinds = () => screen.getAllByRole("listitem").map((item) => item.getAttribute("data-kind"));
     await waitFor(() => expect(kinds()).toEqual(expect.arrayContaining(["person", "agent", "capability", "result", "navigation", "approval", "working"])));
+  });
+
+  it("tells the window's channel which session this chat started, and lets go when the chat goes", async () => {
+    agentBinding.set(null);
+    const { unmount } = render(<Harness enabled />);
+    await screen.findByText(/Studio laptop/);
+    expect(agentBinding.get()).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("Message the agent"), { target: { value: "Raise the headline" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    // The id the sidecar minted for this chat, which is what an action is routed by (D-2).
+    await waitFor(() => expect(agentBinding.get()).toBe(SESSION));
+
+    unmount();
+    expect(agentBinding.get()).toBeNull();
   });
 
   it("shows an approval with capability, action, parameters, risk and count, and sends the decision", async () => {

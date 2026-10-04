@@ -15,6 +15,8 @@ import { App } from "./App";
 vi.mock("./identity", () => ({
   supabase: null,
   accessToken: () => Promise.resolve(null),
+  currentSubject: () => Promise.resolve(null),
+  onSessionChange: () => () => undefined,
   currentSession: () => Promise.resolve(null),
   sendMagicLink: () => Promise.resolve(),
   signOut: () => Promise.resolve(),

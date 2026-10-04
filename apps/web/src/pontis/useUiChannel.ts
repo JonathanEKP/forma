@@ -14,8 +14,9 @@
  */
 import { useEffect, useRef } from "react";
 
-import { accessToken } from "../identity";
+import { accessToken, currentSubject, onSessionChange } from "../identity";
 import { liveFeed, openChannel, type ActionHandler, type ChannelState } from "./channel";
+import { agentBinding } from "./window";
 
 export interface UiChannelOptions {
   /** `false` where there is nothing to connect to: local mode has no sidecar. */
@@ -43,13 +44,32 @@ export function useUiChannel({ enabled, handlers, onState }: UiChannelOptions): 
     const channel = openChannel({
       handlers: stable,
       token: accessToken,
+      subject: currentSubject,
       onState: (state) => {
         liveFeed.setState(state);
         report.current?.(state);
       },
       onEvent: (frame) => liveFeed.publish(frame),
     });
+
+    // The chat started or re-attached to a session: say so on a fresh stream, so
+    // an agent's actions go to this window and not to whichever is ambiguous.
+    const unbind = agentBinding.subscribe(() => channel.refresh());
+
+    // The stored session may now be somebody else's — another tab signed in as
+    // them. The provider announces that to its own listeners, and a plain
+    // `storage` event covers a session written some other way; either way the
+    // channel compares who is signed in with who the stream was opened for.
+    // Deferred a turn: the provider's callback runs inside its own lock, and
+    // asking it for the session from there would wait on itself.
+    const recheck = () => void setTimeout(() => void channel.recheck(), 0);
+    const stopListening = onSessionChange(recheck);
+    window.addEventListener("storage", recheck);
+
     return () => {
+      unbind();
+      stopListening();
+      window.removeEventListener("storage", recheck);
       channel.close();
       liveFeed.setState({ at: "offline" });
     };

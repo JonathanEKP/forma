@@ -25,7 +25,17 @@
  * a live credential into access logs and `Referer`, against an invariant Forma
  * states outright. So the stream is read as a `ReadableStream` and the framing —
  * about a dozen lines — is here.
+ *
+ * # One registration per window
+ *
+ * Every UI request names its window (`x-forma-window`, see `window.ts`) and the
+ * stream also names the agent session this window's chat is attached to
+ * (`x-forma-agent-session`). The sidecar keys the registration by the window and
+ * binds the stream to the session once it has checked the session is this
+ * person's, which is what lets an agent's action reach the window that is
+ * talking to it rather than whichever is newest.
  */
+import { agentBinding, windowId as thisWindow } from "./window";
 
 /** What the sidecar sends. Carries an id and its input; never code, never a selector. */
 export interface DeliveredAction {
@@ -63,6 +73,16 @@ export interface ChannelOptions {
    * the frames mean is the subscriber's to decide, and none of them is an action.
    */
   readonly onEvent?: (frame: unknown) => void;
+  /** This window's id. Defaults to the tab's own (`window.ts`); tests pass one. */
+  readonly windowId?: () => Promise<string>;
+  /** The agent session the chat is attached to, if any. Defaults to `agentBinding`. */
+  readonly agentSession?: () => string | null;
+  /**
+   * Who is signed in, for noticing that the stored session now belongs to someone
+   * else. The token alone cannot say: it is refreshed under the page and changes
+   * for the same person.
+   */
+  readonly subject?: () => Promise<string | null>;
   /** How long a stream may say nothing, not even a heartbeat, before it is treated as dead. Tests only. */
   readonly silenceMs?: number;
   /** How long to wait before reconnecting. Tests only. */
@@ -103,6 +123,19 @@ export const SILENCE_MS = 35_000;
 
 export interface Channel {
   close(): void;
+  /**
+   * Open a fresh stream — because the chat's session changed — and let go of the
+   * old one only once the new one is registered, so there is no gap in which an
+   * action finds no window.
+   */
+  refresh(): void;
+  /**
+   * Re-read who is signed in. If it is no longer the person the stream was opened
+   * for, drop that stream at once and open one as the new person: the old one is
+   * registered as someone whose requests this window can no longer make, and
+   * their agent's actions would time out against it (F-40-15).
+   */
+  recheck(): Promise<void>;
 }
 
 /**
@@ -117,8 +150,13 @@ export function openChannel(options: ChannelOptions): Channel {
   const base = options.baseUrl ?? "";
   const actions = Object.keys(options.handlers);
   let closed = false;
-  let abort: AbortController | undefined;
   let retry: ReturnType<typeof setTimeout> | undefined;
+  /** Every attempt still in flight, so `close` can end them all. */
+  const attempts = new Set<AbortController>();
+  /** Bumped by `refresh`: an attempt from an earlier one does not reconnect itself. */
+  let current = 0;
+  /** The stream that is registered right now, and who it was opened for. */
+  let live: { readonly abort: AbortController; readonly person: string | null } | undefined;
   const silenceMs = options.silenceMs ?? SILENCE_MS;
   const reconnectMs = options.reconnectMs ?? RECONNECT_MS;
 
@@ -126,9 +164,12 @@ export function openChannel(options: ChannelOptions): Channel {
     if (!closed) options.onState?.(next);
   };
 
+  const window = options.windowId ?? thisWindow;
+  const agentSession = options.agentSession ?? (() => agentBinding.get());
+
   const headers = async (): Promise<Record<string, string>> => {
     const token = await options.token();
-    return token ? { authorization: `Bearer ${token}` } : {};
+    return { "x-forma-window": await window(), ...(token ? { authorization: `Bearer ${token}` } : {}) };
   };
 
   /**
@@ -160,10 +201,11 @@ export function openChannel(options: ChannelOptions): Channel {
     });
   };
 
-  const run = async (): Promise<void> => {
-    state({ at: "connecting" });
-    const controller = new AbortController();
-    abort = controller;
+  const run = async (controller: AbortController, generation: number): Promise<void> => {
+    // Nothing is said about connecting while a stream is still registered: a
+    // refresh opens the next one beside it, and the status line should not
+    // flicker for what the person cannot see.
+    if (live === undefined) state({ at: "connecting" });
     // Armed before the request, so a connect that never answers is abandoned too, and re-armed on
     // every chunk, heartbeat comments included: they are what `frames` otherwise swallows.
     let silence: ReturnType<typeof setTimeout> | undefined;
@@ -173,15 +215,21 @@ export function openChannel(options: ChannelOptions): Channel {
     };
     listen();
     try {
-      await stream(controller, listen);
+      await stream(controller, listen, generation);
     } finally {
       clearTimeout(silence);
     }
   };
 
-  const stream = async (controller: AbortController, heard: () => void): Promise<void> => {
+  const stream = async (controller: AbortController, heard: () => void, generation: number): Promise<void> => {
+    const person = (await options.subject?.()) ?? null;
+    const session = agentSession();
     const response = await fetchImpl(`${base}${STREAM_PATH}`, {
-      headers: { accept: "text/event-stream", ...(await headers()) },
+      headers: {
+        accept: "text/event-stream",
+        ...(await headers()),
+        ...(session ? { "x-forma-agent-session": session } : {}),
+      },
       signal: controller.signal,
     });
     if (!response.ok || !response.body) throw new Error(`the UI stream answered ${response.status}`);
@@ -201,6 +249,15 @@ export function openChannel(options: ChannelOptions): Channel {
           headers: { "content-type": "application/json", ...(await headers()) },
           body: JSON.stringify({ clientId, actions }),
         });
+        // A refresh asked for while this one was connecting has already
+        // replaced it; registering would only make a neighbour of the newer one.
+        if (generation !== current) {
+          controller.abort();
+          return;
+        }
+        const previous = live;
+        live = { abort: controller, person };
+        if (previous && previous.abort !== controller) previous.abort.abort();
         state({ at: "connected", clientId });
         continue;
       }
@@ -224,22 +281,52 @@ export function openChannel(options: ChannelOptions): Channel {
     }
   };
 
-  const loop = () => {
-    run()
+  /**
+   * One attempt, and the retry that follows it if it ends on its own.
+   *
+   * An attempt that ends because a newer one has taken over — `refresh`, or the
+   * server closing a window's older stream when its replacement connects — is not
+   * a drop. Retrying it would evict the newer stream, which would retry in turn:
+   * the two-second ping-pong this whole module exists to stop. Only the current
+   * generation reconnects.
+   */
+  const start = () => {
+    const mine = new AbortController();
+    attempts.add(mine);
+    const generation = current;
+    run(mine, generation)
       .catch(() => undefined)
       .finally(() => {
-        if (closed) return;
+        attempts.delete(mine);
+        if (live?.abort === mine) live = undefined;
+        if (closed || generation !== current) return;
         state({ at: "offline" });
-        retry = setTimeout(loop, reconnectMs);
+        retry = setTimeout(start, reconnectMs);
       });
   };
-  loop();
+  start();
+
+  const refresh = () => {
+    if (closed) return;
+    if (retry !== undefined) clearTimeout(retry);
+    current += 1;
+    start();
+  };
 
   return {
     close: () => {
       closed = true;
       if (retry !== undefined) clearTimeout(retry);
-      abort?.abort();
+      for (const attempt of attempts) attempt.abort();
+    },
+    refresh,
+    recheck: async () => {
+      if (closed || !options.subject) return;
+      const person = (await options.subject()) ?? null;
+      if (live === undefined || live.person === person) return;
+      live.abort.abort();
+      live = undefined;
+      refresh();
     },
   };
 }

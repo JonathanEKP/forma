@@ -162,6 +162,10 @@ from Signal and unrelated to it; do not unify them.
   selection a click moves — the no-private-path rule, in the other direction. Delivery is
   not success: an action is `handled` only once the window acknowledges it, and
   `ui_unavailable` or a typed `rejected` is always better than a success nobody saw.
+  A window is one registration: the editor sends a per-tab id (`x-forma-window`) that the
+  sidecar puts in the app session, and names its chat's agent session on the stream, which
+  binds only once the Control Plane confirms the session is that person's. Without the id
+  every window of one person shared a registration and evicted the others every two seconds.
 - **A client never mints server-owned identity.** `PUT /projects/{id}/brand` takes a
   `BrandKitDraft` — what the brand *is* — while the `BrandId` and the kit's version are
   decided server-side, with the id kept stable across edits so the project's `brand_id`

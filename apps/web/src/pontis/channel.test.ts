@@ -8,7 +8,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
-import { createLiveFeed, frames, openChannel, type ChannelState } from "./channel";
+import { RECONNECT_MS, createLiveFeed, frames, openChannel, type ChannelState } from "./channel";
 
 const CLIENT = "uic_1";
 
@@ -336,6 +336,199 @@ describe("the channel", () => {
         sidecar.push(": keep-alive\n\n");
       }
       expect(sidecar.streams()).toBe(1);
+    } finally {
+      channel.close();
+    }
+  });
+});
+
+/**
+ * A sidecar that keeps count of its streams, for the cases about *which* stream
+ * the channel holds: each open gets its own client id, an abort ends it the way
+ * a closed connection does, and `end` plays the server closing one.
+ */
+function countingSidecar() {
+  const encoder = new TextEncoder();
+  const streams: { headers: Record<string, string>; signal: AbortSignal | undefined; end: () => void; clientId: string }[] = [];
+  const posts: { path: string; headers: Record<string, string> }[] = [];
+  const fetchImpl = vi.fn((input: string, init?: RequestInit) => {
+    const headers = (init?.headers ?? {}) as Record<string, string>;
+    if (input.endsWith("/stream")) {
+      const clientId = `uic_${streams.length + 1}`;
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          const end = () => {
+            try {
+              controller.close();
+            } catch {
+              // already closed
+            }
+          };
+          init?.signal?.addEventListener("abort", end);
+          streams.push({ headers, signal: init?.signal ?? undefined, end, clientId });
+          controller.enqueue(encoder.encode(`event: ui.connected\ndata: ${JSON.stringify({ clientId })}\n\n`));
+        },
+      });
+      return Promise.resolve(new Response(body, { status: 200 }));
+    }
+    posts.push({ path: input, headers });
+    return Promise.resolve(new Response('{"ok":true}', { status: 200 }));
+  });
+  return { fetchImpl: fetchImpl as unknown as typeof fetch, streams, posts };
+}
+
+const WINDOW = "7d0f3f2a-6c0e-4c53-9f0b-0a6f9f3b1c11";
+
+describe("one registration per window", () => {
+  it("names its window on the stream, the registration and every acknowledgement", async () => {
+    const sidecar = countingSidecar();
+    const channel = openChannel({
+      handlers: { "ui.setZoom": () => ({ outcome: "handled" }) },
+      token: () => Promise.resolve("t"),
+      windowId: () => Promise.resolve(WINDOW),
+      baseUrl: "http://sidecar.test",
+      fetchImpl: sidecar.fetchImpl,
+    });
+    try {
+      await until(() => sidecar.posts.length > 0);
+      expect(sidecar.streams[0]?.headers["x-forma-window"]).toBe(WINDOW);
+      expect(sidecar.posts[0]?.headers["x-forma-window"]).toBe(WINDOW);
+    } finally {
+      channel.close();
+    }
+  });
+
+  it("says which agent session its chat is attached to, only when it is attached to one", async () => {
+    const sidecar = countingSidecar();
+    let session: string | null = null;
+    const channel = openChannel({
+      handlers: {},
+      token: () => Promise.resolve("t"),
+      windowId: () => Promise.resolve(WINDOW),
+      agentSession: () => session,
+      baseUrl: "http://sidecar.test",
+      fetchImpl: sidecar.fetchImpl,
+    });
+    try {
+      await until(() => sidecar.streams.length === 1);
+      expect(sidecar.streams[0]?.headers).not.toHaveProperty("x-forma-agent-session");
+
+      session = "ses_0123456789abcdef0123456789abcdef";
+      channel.refresh();
+      await until(() => sidecar.streams.length === 2);
+      expect(sidecar.streams[1]?.headers["x-forma-agent-session"]).toBe(session);
+    } finally {
+      channel.close();
+    }
+  });
+
+  it("opens the new stream before it lets go of the old, and does not fight the server's replacement of it", async () => {
+    const sidecar = countingSidecar();
+    const states: ChannelState[] = [];
+    const timers = vi.spyOn(globalThis, "setTimeout");
+    const channel = openChannel({
+      handlers: {},
+      token: () => Promise.resolve("t"),
+      windowId: () => Promise.resolve(WINDOW),
+      baseUrl: "http://sidecar.test",
+      fetchImpl: sidecar.fetchImpl,
+      onState: (state) => states.push(state),
+    });
+    try {
+      await until(() => states.some((state) => state.at === "connected"));
+      states.length = 0;
+      timers.mockClear();
+
+      channel.refresh();
+      await until(() => sidecar.streams.length === 2);
+      // The registry closes the older stream of a window when its replacement
+      // connects. That is not a drop to recover from: reconnecting here would
+      // evict the new stream, which would then do the same.
+      sidecar.streams[0]?.end();
+      await until(() => states.some((state) => state.at === "connected"));
+      for (let i = 0; i < 10; i += 1) await settled();
+
+      expect(sidecar.streams).toHaveLength(2);
+      expect(states.map((state) => state.at)).not.toContain("offline");
+      expect(timers.mock.calls.some(([, delay]) => delay === RECONNECT_MS)).toBe(false);
+    } finally {
+      timers.mockRestore();
+      channel.close();
+    }
+  });
+
+  it("still schedules a reconnect for a stream that ended on its own", async () => {
+    const sidecar = countingSidecar();
+    const timers = vi.spyOn(globalThis, "setTimeout");
+    const channel = openChannel({
+      handlers: {},
+      token: () => Promise.resolve("t"),
+      windowId: () => Promise.resolve(WINDOW),
+      baseUrl: "http://sidecar.test",
+      fetchImpl: sidecar.fetchImpl,
+    });
+    try {
+      await until(() => sidecar.streams.length === 1);
+      await until(() => sidecar.posts.length === 1);
+      timers.mockClear();
+      sidecar.streams[0]?.end();
+      // The timer is the reconnect; its being set, not its firing, is what a
+      // test of the policy needs.
+      await until(() => timers.mock.calls.some(([, delay]) => delay === RECONNECT_MS));
+    } finally {
+      timers.mockRestore();
+      channel.close();
+    }
+  });
+});
+
+describe("a window whose person changed (F-40-15)", () => {
+  it("lets go of the old person's stream and registers as the new one", async () => {
+    const sidecar = countingSidecar();
+    let person: string | null = "person-a";
+    let token = "token-a";
+    const channel = openChannel({
+      handlers: {},
+      token: () => Promise.resolve(token),
+      subject: () => Promise.resolve(person),
+      windowId: () => Promise.resolve(WINDOW),
+      baseUrl: "http://sidecar.test",
+      fetchImpl: sidecar.fetchImpl,
+    });
+    try {
+      await until(() => sidecar.streams.length === 1);
+      await until(() => sidecar.posts.length === 1);
+
+      // Another tab of this browser signed in as someone else: the one stored
+      // session is now theirs, and every request this tab makes carries it.
+      person = "person-b";
+      token = "token-b";
+      await channel.recheck();
+      await until(() => sidecar.streams.length === 2);
+
+      expect(sidecar.streams[0]?.signal?.aborted).toBe(true);
+      expect(sidecar.streams[1]?.headers.authorization).toBe("Bearer token-b");
+    } finally {
+      channel.close();
+    }
+  });
+
+  it("leaves the stream alone when the session was only refreshed", async () => {
+    const sidecar = countingSidecar();
+    const channel = openChannel({
+      handlers: {},
+      token: () => Promise.resolve("t"),
+      subject: () => Promise.resolve("person-a"),
+      windowId: () => Promise.resolve(WINDOW),
+      baseUrl: "http://sidecar.test",
+      fetchImpl: sidecar.fetchImpl,
+    });
+    try {
+      await until(() => sidecar.posts.length === 1);
+      await channel.recheck();
+      for (let i = 0; i < 5; i += 1) await settled();
+      expect(sidecar.streams).toHaveLength(1);
+      expect(sidecar.streams[0]?.signal?.aborted).toBe(false);
     } finally {
       channel.close();
     }

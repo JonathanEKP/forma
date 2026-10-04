@@ -22,6 +22,7 @@ the evidence (step 12).
 | `src/person.ts` | who is behind a browser request, asked of `GET /api/v1/service/resolve` |
 | `src/intents.ts` | the browser's route to its Runtime: start, input, cancel, approve — and `GET /agent/context`, the application context the event stream has to be asked for by name |
 | `src/live.ts` | what the person's open windows hear while the agent works (durable events from the store with their `sequence`, deltas and presence from the Device's own notification), and `GET /pons/v1/devices` with `online` merged from the live sockets |
+| `src/windows.ts` | which window is asking and which agent session its chat belongs to: the fixed-format window id, and the check that a claimed session is this person's before it binds anything |
 | `src/sidecar.ts` | the composition |
 | `src/guidance.ts` | the `ApplicationAgentGuidance`: the opening context only; the manual is `forma.guide` |
 | `src/stack.ts`, `src/ui-window.ts` | test support: the processes of a local run and the person who drives them, and a stand-in for the editor's window. Shared by `local-run.test.ts`, `real-codex.test.ts` and `ui.test.ts`; nothing else may import them, except `browser-stack.ts` |
@@ -159,6 +160,16 @@ it, sign in, pick a provider and stop it, and what is not modelled, is in
   routes through the proxy in front of both — `FORMA_PONTIS_EDITOR_ORIGIN` is that one name, and
   unset means no channel rather than an open one. The stream is read with `fetch` rather than
   `EventSource` so the session bearer travels in a header and never in a URL.
+- **One registration per window, bound to the window whose chat started the session** (fix batch 1,
+  D-2). Pontis replaces a UI client with the same `(user, context, appSessionId)`, and the app session
+  used to be `user:context`, so two tabs of one person evicted each other every two seconds. The editor
+  sends a per-tab id (`x-forma-window`, a UUID; anything else is refused) and the app session is now
+  `user:context:window`; a reload keeps its id and replaces its own registration. The chat's agent
+  session travels on the stream (`x-forma-agent-session`) and becomes the client's `agentSessionId` only
+  once `ControlPlane.authoritativeSessionContext` — the binding made at `session.start`, recovered from the
+  durable events after a restart — says it is this person's, in this person's account. With several
+  windows and none bound Pontis answers `ui_unavailable` rather than guess; with exactly one it is the
+  target. Nothing is remembered here: an id nobody can verify binds nothing.
 - **Forma classifies, the sidecar trusts it.** Boundary F's envelope carries `capability_error`
   from `routes/pontis.rs::classify`; the sidecar maps nothing by Forma code, so there is one
   classification. The Forma code and hint travel in `details`.
