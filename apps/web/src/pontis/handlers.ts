@@ -121,6 +121,7 @@ export function uiHandlers(reach: EditorReach): Record<string, ActionHandler> {
       // rather than the first; it exists because the editor is the thing that
       // would otherwise render an unknown panel as a blank column.
       if (!panel) return rejected(`${input.panel} is not one of ${PANELS.join(", ")}`);
+      if (reach.openDesignId() === null) return rejected("open a design first");
       useEditor.getState().setPanel(panel);
       return handled(panel);
     },
@@ -136,6 +137,7 @@ export function uiHandlers(reach: EditorReach): Record<string, ActionHandler> {
       if (input.zoom < MIN_ZOOM || input.zoom > MAX_ZOOM) {
         return rejected(`zoom ${input.zoom} is outside ${MIN_ZOOM} to ${MAX_ZOOM}`);
       }
+      if (reach.openDesignId() === null) return rejected("open a design first");
       useEditor.getState().setZoom(input.zoom);
       return handled(`zoom ${input.zoom}`);
     },

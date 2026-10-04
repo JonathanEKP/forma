@@ -131,6 +131,21 @@ describe("ui.selectLayer", () => {
 });
 
 describe("ui.setPanel and ui.setZoom", () => {
+  it("refuses view changes when no design is open", async () => {
+    const { handlers } = harness(null);
+
+    expect(await handlers["ui.setPanel"]?.({ panel: "validation" })).toEqual({
+      outcome: "rejected",
+      detail: "open a design first",
+    });
+    expect(await handlers["ui.setZoom"]?.({ zoom: 2 })).toEqual({
+      outcome: "rejected",
+      detail: "open a design first",
+    });
+    expect(useEditor.getState().panel).toBe("properties");
+    expect(useEditor.getState().zoom).toBe(1);
+  });
+
   it("switches the panel", async () => {
     const { handlers } = harness();
     expect(await handlers["ui.setPanel"]?.({ panel: "validation" })).toEqual({
