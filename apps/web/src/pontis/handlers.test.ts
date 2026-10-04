@@ -130,6 +130,29 @@ describe("ui.selectLayer", () => {
   });
 });
 
+describe("actions during a drag", () => {
+  it("rejects every UI action and leaves the person's draft untouched", async () => {
+    const { handlers, opened } = harness();
+    const draft = { layerId: "layer-1", x: 10, y: 20, width: 30, height: 40 };
+    useEditor.setState({ draft });
+
+    for (const [id, input] of [
+      ["ui.openDesign", { design_id: OTHER }],
+      ["ui.selectLayer", { design_id: DESIGN, layer_id: "layer-1" }],
+      ["ui.setPanel", { panel: "validation" }],
+      ["ui.setZoom", { zoom: 2 }],
+    ] as const) {
+      expect(await handlers[id]?.(input)).toEqual({ outcome: "rejected", detail: "the person is dragging" });
+    }
+
+    expect(useEditor.getState().draft).toBe(draft);
+    expect(useEditor.getState().selectedLayerId).toBe(null);
+    expect(useEditor.getState().panel).toBe("properties");
+    expect(useEditor.getState().zoom).toBe(1);
+    expect(opened).toEqual([]);
+  });
+});
+
 describe("ui.setPanel and ui.setZoom", () => {
   it("refuses view changes when no design is open", async () => {
     const { handlers } = harness(null);

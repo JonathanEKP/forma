@@ -63,7 +63,7 @@ async function record(reach: EditorReach, designId: string): Promise<DesignRecor
 }
 
 export function uiHandlers(reach: EditorReach): Record<string, ActionHandler> {
-  return {
+  const handlers: Record<string, ActionHandler> = {
     "ui.openDesign": async (input) => {
       if (!isRecord(input) || typeof input.design_id !== "string") return rejected("design_id is required");
       const designId = input.design_id;
@@ -142,4 +142,15 @@ export function uiHandlers(reach: EditorReach): Record<string, ActionHandler> {
       return handled(`zoom ${input.zoom}`);
     },
   };
+
+  for (const id of Object.keys(handlers)) {
+    const handler = handlers[id];
+    if (!handler) continue;
+    handlers[id] = (input) =>
+      useEditor.getState().draft !== null
+        ? rejected("the person is dragging")
+        : handler(input);
+  }
+
+  return handlers;
 }
