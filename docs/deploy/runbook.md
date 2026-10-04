@@ -250,6 +250,33 @@ Whatever it turns out to be, it should pull rather than be pushed to — a machi
 that can delete its own off-site copies has not got off-site copies — and it
 should copy only finished backups, which `manifest.json` identifies.
 
+## The Pontis sidecar's state, for when it is deployed
+
+Nothing here deploys the Pontis sidecar yet (PV-2 is not authorized), and this section changes
+nothing on the machine. It is written down now so that when the sidecar does arrive its state
+is not an afterthought, which is how it was lost on every restart in the browser testing
+([F-10-1](../pontis-browser-findings/10-pairing-devices.md)).
+
+**Set `FORMA_PONTIS_DATA_DIR`** in the sidecar's environment, to a directory the sidecar's user owns
+(for example `/var/lib/forma/pontis`, next to `DATA_DIR`). It holds two append-only journals,
+`control-plane.jsonl` (paired devices, unclaimed pairing codes, revocations) and `events.jsonl` (the
+chat's durable history). The sidecar creates the directory `0700` and the files `0600`, and no
+secret is in them: devices hold a public key, and credentials and pairing codes are stored as hashes.
+
+Left unset, the sidecar keeps all of it **in memory** and logs `pontis_state_in_memory` at warn
+level at start. Every restart — a release, a crash, a reboot — then unpairs every machine and
+empties every conversation, with nothing telling the person why.
+
+**`forma-server backup` does not include this directory yet**, so the daily backup of §3 does not
+cover paired devices or chat history. Losing it costs a re-pair and the transcripts, not a
+person's designs, which are in `forma.db`. Until a backup path exists, copy the two files while the
+sidecar is stopped (a journal is appended to and fsync'd, so a hot copy can end in a torn last line,
+which Pontis drops on open but which is a poor thing to rely on).
+
+Stopping it is clean: `systemctl stop` ends every open editor stream and device socket and returns
+within a second, rather than waiting out the unit's kill timeout for the person to close a tab
+([F-40-2](../pontis-browser-findings/40-ui-channel.md)).
+
 ## What will not work, and is not a bug
 
 **The browser editor is not usable remotely.** Every path except

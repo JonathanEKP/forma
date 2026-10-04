@@ -94,7 +94,9 @@ servers on 4765/4766/4767/5173 are never touched. A start fails with a clear mes
 nothing, if any of the four ports is taken.
 
 State lives in `/tmp/forma-browser-stack/N/` and is **wiped on the next start of that number**:
-`forma/` (database and assets), `logs/`, `state.json` (ports, ids, pids — no credential),
+`forma/` (database and assets), `pontis/` (the sidecar's `FORMA_PONTIS_DATA_DIR`: devices, pairing
+codes and the event history, so a restart of the *sidecar alone* with the same variable keeps them),
+`logs/`, `state.json` (ports, ids, pids — no credential),
 `signin-a.js`, `signin-b.js`.
 
 ### What is seeded
@@ -192,7 +194,11 @@ that number: `forma-server`, `sidecar`, `vite`, `identity`, `driver-a`, `driver-
 - FakeProvider writes are one-shot (`base_version` is fixed in the script).
 - Concurrent Codex sessions share one `CODEX_HOME` and one `~/.codex/auth.json`; heavy parallel use
   could surface contention that production (one device per person) would not.
-- A restart wipes the instance's data. Keep a note of ids from `state.json` if a finding needs them.
+- A restart of the *instance* (`start N` again) wipes its data, the sidecar's `pontis/` included. A restart
+  of the sidecar process alone does not: start it by hand with the same `FORMA_PONTIS_DATA_DIR`
+  (`/tmp/forma-browser-stack/N/pontis`) and a service credential from `forma-server service-credential`,
+  and devices, pairing codes and the transcript are still there. Keep a note of ids from `state.json`
+  if a finding needs them.
 - It only runs where `target/debug` binaries and the Pontis checkout exist; CI never runs it.
 
 Findings go in [`pontis-browser-findings/`](pontis-browser-findings/README.md).

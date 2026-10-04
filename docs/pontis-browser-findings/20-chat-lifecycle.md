@@ -229,8 +229,7 @@ error under the person's line, Runtime online); log excerpt from `logs/sidecar.l
 ## F-chat-6 — Restarting the sidecar forgets every paired device and the whole history
 
 - **Severity:** medium (high for a deployment: a sidecar restart = every person re-pairs)
-- **Status:** open (a property of the sidecar's composition, not of the chat; recorded here because
-  the chat is where it is felt)
+- **Status:** fixed (2a5bd52) — with F-10-1
 - **Instance / provider:** instance 3, FakeProvider
 
 **Steps to reproduce**
@@ -254,6 +253,11 @@ said "Forma's agent service can't be reached."
 
 **Evidence** — [screenshot while the sidecar was down](evidence/chat/F-chat-6-sidecar-down.png); the
 two `curl` answers above (read in the terminal, not in the browser).
+
+**Fixed** with [F-10-1](10-pairing-devices.md): the history is the durable event store, now on disk.
+After a restart on the same data directory the chat's transcript came back on reload (instance 9).
+What is still not recovered: the *person's own* typed message, which is not a durable event, and the
+open tab's dead session id (F-chat-5, Task A).
 
 ## F-chat-7 — Stop abandons the session instead of ending it: a Codex App Server per Stop stays alive
 
