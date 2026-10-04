@@ -6,7 +6,7 @@
  * compete with Figma.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 
 import { ApiError, conflictDetails, type Asset, type DesignOperation } from "../api";
 import {
@@ -19,8 +19,8 @@ import {
   useValidation,
 } from "../queries";
 import { useEditor, type DraftFrame } from "../store";
-import { ChatPanel, ChatToggle } from "../pontis/Chat";
-import { useChat } from "../pontis/useChat";
+import { ChatToggle } from "../pontis/Chat";
+import type { Chat } from "../pontis/useChat";
 import { findPage } from "../types";
 import { Assets } from "./Assets";
 import { Brand } from "./Brand";
@@ -30,15 +30,26 @@ import { addImageOperation } from "./insert";
 import { PagesAndLayers, Panel, Properties } from "./Panels";
 import { Validation } from "./Validation";
 
+/** How long the agent-updated notice stays. */
+const NOTICE_MS = 6_000;
+
 export function Editor({
   designId,
   onBack,
-  agent = false,
+  chat,
+  chatOpen = false,
+  onToggleChat = () => undefined,
 }: {
   designId: string;
   onBack: () => void;
-  /** Whether there is an agent to talk to: a hosted Forma, signed in, with an account. */
-  agent?: boolean;
+  /**
+   * The agent chat, which belongs to the app and not to this design: it is held above the
+   * editor so a conversation survives opening another design or going back to the projects
+   * (D-1). Absent where there is no agent to talk to — a local Forma, or nobody signed in.
+   */
+  chat?: Chat;
+  chatOpen?: boolean;
+  onToggleChat?: () => void;
 }) {
   const { data: record, isLoading, error, refetch } = useDesign(designId);
   const { selectedPageId, selectPage, panel, setPanel, zoom, setZoom } = useEditor();
@@ -46,11 +57,15 @@ export function Editor({
   const apply = useApplyOperations(designId);
   const undo = useUndo(designId);
 
-  // Held here, above the panel, so an approval that arrives with the chat closed
-  // still reaches the toggle. Closed by default: it is never in the canvas's way
-  // unless it was asked for.
-  const chat = useChat({ enabled: agent });
-  const [chatOpen, setChatOpen] = useState(false);
+  const notice = useEditor((state) => state.notice);
+  const dismissNotice = useEditor((state) => state.dismissNotice);
+  // Said for a few seconds and gone: it tells the person something happened that they did not do,
+  // and is not a state to be left in.
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(dismissNotice, NOTICE_MS);
+    return () => clearTimeout(timer);
+  }, [notice, dismissNotice]);
 
   const page = useMemo(() => (record ? findPage(record, selectedPageId) : null), [record, selectedPageId]);
 
@@ -156,7 +171,7 @@ export function Editor({
           Undo
         </button>
 
-        <ChatToggle chat={chat} open={chatOpen} onToggle={() => setChatOpen((open) => !open)} />
+        {chat && <ChatToggle chat={chat} open={chatOpen} onToggle={onToggleChat} />}
 
         {(["properties", "validation", "assets", "brand"] as const).map((name) => (
           <button
@@ -173,6 +188,16 @@ export function Editor({
           </button>
         ))}
       </header>
+
+      {notice && (
+        <div role="status" className="flex items-center gap-3 border-b border-edge bg-surface-2 px-4 py-2">
+          <span className="h-[7px] w-[7px] rounded-full bg-signal" />
+          <span className="flex-1 text-xs">{notice.text}</span>
+          <button type="button" onClick={dismissNotice} className="text-xs text-muted hover:text-paper">
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* The conflict is not a toast: the edit did not happen, and the user has
           to know that before they carry on typing (plan section 27). */}
@@ -240,7 +265,6 @@ export function Editor({
           />
         )}
 
-        {chatOpen && <ChatPanel chat={chat} onClose={() => setChatOpen(false)} />}
       </div>
     </div>
   );

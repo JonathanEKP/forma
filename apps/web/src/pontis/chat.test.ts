@@ -7,12 +7,16 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  agentWrites,
   approvalView,
   chatReducer,
   createAgentClient,
+  DEAD,
   emptyChat,
   pendingApprovals,
+  remember,
   runtimeView,
+  splitViewLine,
   type ChatState,
 } from "./chat";
 import type { DurableEvent } from "./events";
@@ -144,6 +148,7 @@ describe("runtime status", () => {
   it("names the device, the provider, its auth mode and the registry tokens of its profile", () => {
     expect(runtimeView({ devices: [device()] })).toEqual({
       at: "online",
+      deviceId: "dev_1",
       name: "Studio laptop",
       runtimeVersion: "0.1.0",
       provider: {
@@ -176,11 +181,18 @@ describe("runtime status", () => {
     expect(provider({ authMode: "not_authenticated" })).toMatchObject({ provider: { usable: false, unusableBecause: "not signed in on this device" } });
   });
 
-  it("distinguishes offline, ambiguous and none, and ignores a revoked device", () => {
+  it("distinguishes offline, ambiguous, revoked and none", () => {
     expect(runtimeView({ devices: [device({ online: false })] })).toEqual({ at: "offline", name: "Studio laptop" });
     expect(runtimeView({ devices: [device(), device({ id: "dev_2" })] })).toEqual({ at: "ambiguous" });
-    expect(runtimeView({ devices: [device({ revokedAt: "2026-10-01T00:00:00Z" })] })).toEqual({ at: "none" });
+    // Revoked is not offline (F-10-4): it never comes back, so the advice differs.
+    expect(runtimeView({ devices: [device({ revokedAt: "2026-10-01T00:00:00Z" })] })).toEqual({ at: "revoked", name: "Studio laptop" });
     expect(runtimeView({ devices: [] })).toEqual({ at: "none" });
+  });
+
+  it("does not let a revoked device speak for a live one", () => {
+    const revoked = device({ id: "dev_old", revokedAt: "2026-10-01T00:00:00Z" });
+    expect(runtimeView({ devices: [revoked, device({ online: false })] })).toEqual({ at: "offline", name: "Studio laptop" });
+    expect(runtimeView({ devices: [revoked, device()] })).toMatchObject({ at: "online", deviceId: "dev_1" });
   });
 });
 
@@ -320,7 +332,7 @@ describe("the transcript keeps the five kinds of line apart", () => {
 
   it("does not let a replay of earlier sessions displace the one this window started", () => {
     let state = chatReducer(emptyChat, { type: "person", id: "l1", text: "hello" });
-    state = chatReducer(state, { type: "started", sessionId: "mine" });
+    state = chatReducer(state, { type: "started", sessionId: "mine", id: "l2" });
     state = fold(state, ev(1, "session.created", {}, "old"), ev(2, "agent.output.completed", { text: "stale" }, "old"), ev(3, "session.created", {}, "mine"), ev(4, "session.started", {}, "mine"));
     expect(state.session).toEqual({ id: "mine", status: "live" });
     expect(state.lines).toEqual([{ kind: "person", id: "l1", text: "hello" }]);
@@ -373,5 +385,148 @@ describe("the reply as it streams", () => {
     expect(live(open(), "x", "t1", "another").streaming).toBeNull();
     expect(live(emptyChat, "x").streaming).toBeNull();
     expect(live(fold(open(), ev(4, "session.completed")), "late").streaming).toBeNull();
+  });
+});
+
+const REPLY = (sequence: number, text: string, sessionId = SESSION) => ev(sequence, "agent.output.completed", { text }, sessionId);
+
+describe("what the person said", () => {
+  it("is shown as typed, with the chip of where they were", () => {
+    const chip = { design: "ALPHA Launch cover", page: "Page 1", layer: "Headline" };
+    const state = chatReducer(emptyChat, { type: "person", id: "l1", text: "make this bigger", chip });
+    expect(state.lines).toEqual([{ kind: "person", id: "l1", text: "make this bigger", chip }]);
+  });
+
+  it("is placed back among the events it came after when the history is replayed after a reload", () => {
+    let live = chatReducer(emptyChat, { type: "started", sessionId: SESSION, id: "l0" });
+    live = fold(live, ev(1, "session.created"), ev(2, "session.started"));
+    live = chatReducer(live, { type: "person", id: "l1", text: "first", chip: { design: "Cover" } });
+    live = fold(live, ev(3, "turn.started"), REPLY(4, "one"), ev(5, "turn.completed"));
+    live = chatReducer(live, { type: "person", id: "l2", text: "second" });
+    live = fold(live, ev(6, "turn.started"), REPLY(7, "two"), ev(8, "turn.completed"));
+
+    // What the tab keeps, and the page that replays after the reload.
+    const kept = remember(live);
+    expect(kept?.said.map(({ text, afterSeq }) => [text, afterSeq])).toEqual([["first", 2], ["second", 5]]);
+    let reloaded = chatReducer(emptyChat, { type: "restore", remembered: kept! });
+    reloaded = fold(reloaded, ev(1, "session.created"), ev(2, "session.started"), ev(3, "turn.started"), REPLY(4, "one"), ev(5, "turn.completed"), ev(6, "turn.started"), REPLY(7, "two"), ev(8, "turn.completed"));
+    expect(reloaded.lines.map((line) => (line.kind === "person" || line.kind === "agent" ? `${line.kind}:${line.text}` : line.kind))).toEqual([
+      "person:first",
+      "agent:one",
+      "person:second",
+      "agent:two",
+    ]);
+    expect(reloaded.lines[0]).toMatchObject({ chip: { design: "Cover" } });
+  });
+
+  it("keeps a message sent while the session was still starting with that session", () => {
+    let state = chatReducer(emptyChat, { type: "person", id: "l1", text: "hello" });
+    state = chatReducer(state, { type: "started", sessionId: "mine", id: "l2" });
+    expect(remember(state)?.said).toEqual([{ id: "l1", text: "hello", afterSeq: 0, sessionId: "mine" }]);
+    expect(state.lines).toEqual([{ kind: "person", id: "l1", text: "hello" }]);
+  });
+
+  it("takes the sidecar's line off text that carries it, and shows it as the chip", () => {
+    expect(splitViewLine('[forma-view] project=p design=d name="ALPHA \\"cover\\"" page=pg layer=ly\nmake it bigger')).toEqual({
+      text: "make it bigger",
+      chip: { design: 'ALPHA "cover"', page: "page", layer: "layer" },
+    });
+    expect(splitViewLine("[forma-view] none\nhello")).toEqual({ text: "hello" });
+    expect(splitViewLine("hello\n[forma-view] design=x")).toEqual({ text: "hello\n[forma-view] design=x" });
+  });
+});
+
+describe("a session that cannot be carried on", () => {
+  const waiting = () =>
+    fold(
+      chatReducer(emptyChat, { type: "started", sessionId: SESSION, id: "l0" }),
+      ev(1, "session.created"),
+      ev(2, "session.started"),
+      ev(3, "turn.started"),
+      ev(4, "capability.requested", { invocationId: "i", capabilityId: "design.validate", input: {} }),
+      ev(5, "approval.requested", { approvalId: "a1", invocationId: "j", capabilityId: "design.applyOperations", risk: "destructive", humanSummary: "Remove" }),
+    );
+
+  it("leaves the working state, and turns a pending approval into an expired one with no way to answer it", () => {
+    const state = chatReducer(waiting(), { type: "dead", reason: DEAD.revoked });
+    expect(state.dead).toEqual({ reason: DEAD.revoked });
+    expect(state.working).toBe(false);
+    expect(state.session?.status).toBe("ended");
+    expect(pendingApprovals(state)).toHaveLength(0);
+    expect(state.lines.filter((line) => line.kind === "approval")).toMatchObject([{ status: "expired" }]);
+  });
+
+  it("is not brought back by what the session says afterwards", () => {
+    const state = fold(chatReducer(waiting(), { type: "dead", reason: DEAD.offline }), ev(6, "session.started"), ev(7, "turn.started"), ev(8, "approval.requested", { approvalId: "a2", invocationId: "k", capabilityId: "design.applyOperations", risk: "write", humanSummary: "Edit" }));
+    expect(state.working).toBe(false);
+    expect(state.session?.status).toBe("ended");
+    expect(pendingApprovals(state)).toHaveLength(0);
+  });
+
+  it("is what a failed, completed or remotely stopped session becomes, each with what to do next", () => {
+    const base = fold(emptyChat, ev(1, "session.created"), ev(2, "session.started"));
+    expect(fold(base, ev(3, "session.failed", { error: { message: "the provider exited" } })).dead?.reason).toMatch(/failed: the provider exited.*new one/);
+    expect(fold(base, ev(3, "session.completed")).dead?.reason).toMatch(/ended.*new one/);
+    expect(fold(base, ev(3, "session.cancelled")).dead?.reason).toMatch(/another window/);
+    // This window's own Stop already said so.
+    expect(fold(chatReducer(base, { type: "stopped", id: "l1" }), ev(3, "session.cancelled")).dead).toBeNull();
+  });
+
+  it("is remembered, so a reload does not forget that the session is over", () => {
+    const kept = remember(chatReducer(waiting(), { type: "dead", reason: DEAD.notAuthorized }));
+    expect(kept?.dead).toBe(DEAD.notAuthorized);
+    const reloaded = chatReducer(emptyChat, { type: "restore", remembered: kept! });
+    expect(reloaded.dead).toEqual({ reason: DEAD.notAuthorized });
+    expect(reloaded.session?.id).toBe(SESSION);
+  });
+
+  it("keeps the old history above a divider when a new session starts, and expires what was waiting", () => {
+    const dead = chatReducer(fold(waiting(), REPLY(6, "Working on it.")), { type: "dead", reason: DEAD.replaced });
+    const next = chatReducer(dead, { type: "started", sessionId: "ses_2", id: "l9" });
+    expect(next.dead).toBeNull();
+    expect(next.session).toEqual({ id: "ses_2", status: "starting" });
+    const kinds = next.lines.map((line) => line.kind);
+    expect(kinds.at(-1)).toBe("divider");
+    expect(kinds.slice(0, -1)).toEqual(expect.arrayContaining(["capability", "approval", "agent"]));
+    expect(next.lines.filter((line) => line.kind === "approval")).toMatchObject([{ status: "expired" }]);
+    // And no divider where there is nothing above it.
+    expect(chatReducer(emptyChat, { type: "started", sessionId: "ses_2", id: "l9" }).lines).toEqual([]);
+  });
+
+  it("is what an expired delegation becomes: said as an expiry, with the way on (F-30-5)", () => {
+    const base = fold(emptyChat, ev(1, "session.created"), ev(2, "session.started"), ev(3, "turn.started"), ev(4, "capability.requested", { invocationId: "i", capabilityId: "project.list", input: {} }));
+    const state = fold(base, ev(5, "capability.failed", { invocationId: "i", capabilityId: "project.list", error: { category: "auth", code: "delegation_expired", message: "the remote application delegation has expired" } }));
+    expect(state.dead).toEqual({ reason: DEAD.expired });
+    expect(state.working).toBe(false);
+    expect(DEAD.expired).toMatch(/expired.*Start a new session/);
+    // Any other failure is just a failure: the session carries on.
+    const other = fold(base, ev(5, "capability.failed", { invocationId: "i", capabilityId: "project.list", error: { code: "timeout", message: "slow" } }));
+    expect(other.dead).toBeNull();
+  });
+
+  it("learns which Device runs the session from the session's own events", () => {
+    const mine = chatReducer(emptyChat, { type: "started", sessionId: SESSION, id: "l0" });
+    const state = fold(mine, { ...ev(1, "session.created"), deviceId: "dev_1" }, { ...ev(2, "session.started"), deviceId: "dev_1" });
+    expect(state.deviceId).toBe("dev_1");
+    // Another session's events name another Device and say nothing about this one.
+    expect(fold(state, { ...ev(3, "session.created", {}, "other"), deviceId: "dev_9" }).deviceId).toBe("dev_1");
+  });
+});
+
+describe("the agent's writes, as the history reports them", () => {
+  const done = (capabilityId: string, result: unknown, sequence = 1) => ev(sequence, "capability.completed", { invocationId: `i${sequence}`, capabilityId, result });
+
+  it("names the design and version of each completed batch, and nothing else", () => {
+    const writes = agentWrites([
+      done("design.applyOperations", { design_id: "d1", project_id: "p1", version: 12, updated_at: "now" }),
+      done("design.get", { id: "d1", version: 12 }, 2),
+      done("design.applyOperations", { design_id: "d2", version: 3 }, 3),
+      ev(4, "capability.failed", { invocationId: "i4", capabilityId: "design.applyOperations" }),
+      done("design.applyOperations", "not an object", 5),
+    ]);
+    expect(writes).toEqual([
+      { designId: "d1", projectId: "p1", version: 12 },
+      { designId: "d2", projectId: null, version: 3 },
+    ]);
   });
 });

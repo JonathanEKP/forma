@@ -41,12 +41,20 @@ interface EditorState {
    * per frame.
    */
   draft: DraftFrame | null;
+  /**
+   * Something the person should know happened that they did not do: today, the
+   * agent changing the design. Transient — the editor clears it after a few
+   * seconds — and numbered, so the same words said twice are two notices.
+   */
+  notice: { id: number; text: string } | null;
 
   selectPage: (id: string | null) => void;
   selectLayer: (id: string | null) => void;
   setZoom: (zoom: number) => void;
   setPanel: (panel: Panel) => void;
   setDraft: (draft: DraftFrame | null) => void;
+  announce: (text: string) => void;
+  dismissNotice: () => void;
 }
 
 /** Zoom is clamped so a stray wheel event cannot make the canvas unusable. */
@@ -59,6 +67,7 @@ export const useEditor = create<EditorState>((set) => ({
   zoom: 1,
   panel: "properties",
   draft: null,
+  notice: null,
 
   selectPage: (selectedPageId) =>
     // A layer belongs to one page, so it cannot stay selected across a change.
@@ -71,4 +80,8 @@ export const useEditor = create<EditorState>((set) => ({
   setPanel: (panel) => set({ panel }),
 
   setDraft: (draft) => set({ draft }),
+
+  announce: (text) => set((state) => ({ notice: { id: (state.notice?.id ?? 0) + 1, text } })),
+
+  dismissNotice: () => set({ notice: null }),
 }));

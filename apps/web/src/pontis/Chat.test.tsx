@@ -3,7 +3,6 @@
  * three browser routes and the event page are the things it shares with the real
  * thing, so those are what is faked.
  */
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -15,9 +14,10 @@ vi.mock("../identity", () => ({
   currentSession: () => Promise.resolve(null),
 }));
 
-import { Editor } from "../editor/Editor";
 import { liveFeed } from "./channel";
+import { DEAD } from "./chat";
 import { ChatPanel, ChatToggle } from "./Chat";
+import { forgetChat } from "./session-store";
 import { agentBinding } from "./window";
 import { useChat } from "./useChat";
 
@@ -36,6 +36,8 @@ class Backend {
   calls: Call[] = [];
   events: Record<string, unknown>[] = [];
   down = false;
+  /** What `session.input` and `session.cancel` are answered with instead of delivery, as the sidecar's refusal code. */
+  refuse: string | null = null;
   devices: unknown = {
     devices: [
       {
@@ -63,8 +65,8 @@ class Backend {
     ],
   };
 
-  push(sequence: number, type: string, payload: Record<string, unknown> = {}) {
-    this.events.push({ sequence, type, sessionId: SESSION, payload });
+  push(sequence: number, type: string, payload: Record<string, unknown> = {}, deviceId = "dev_1") {
+    this.events.push({ sequence, type, sessionId: SESSION, deviceId, payload });
   }
 
   readonly fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
@@ -91,6 +93,9 @@ class Backend {
       }
       case "/agent/intent": {
         const type = isRecord(body) ? body.type : undefined;
+        if (this.refuse !== null && (type === "session.input" || type === "session.cancel")) {
+          return json({ error: this.refuse }, this.refuse === "not_authorized" ? 403 : 409);
+        }
         return json(type === "session.start" ? { delivered: true, sessionId: SESSION } : { delivered: true });
       }
       default:
@@ -107,8 +112,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function Harness({ enabled }: { enabled: boolean }) {
-  const chat = useChat({ enabled, pollMs: 20 });
+function Harness({ enabled, offlineGraceMs }: { enabled: boolean; offlineGraceMs?: number }) {
+  const chat = useChat({ enabled, pollMs: 20, ...(offlineGraceMs === undefined ? {} : { offlineGraceMs }) });
   return (
     <>
       <ChatToggle chat={chat} open onToggle={() => undefined} />
@@ -120,6 +125,8 @@ function Harness({ enabled }: { enabled: boolean }) {
 let backend: Backend;
 
 beforeEach(() => {
+  // A tab remembers its chat across a reload; a test is not a reload of the one before it.
+  sessionStorage.clear();
   backend = new Backend();
   vi.stubGlobal("fetch", backend.fetch);
 });
@@ -386,55 +393,174 @@ describe("the live path", () => {
   });
 });
 
-describe("in the editor", () => {
-  const record = {
-    id: "d1",
-    project_id: "p1",
-    name: "Cover",
-    version: 1,
-    created_at: "2026-10-03T00:00:00Z",
-    updated_at: "2026-10-03T00:00:00Z",
-    document: { schema_version: 1, format: { preset: "square", width: 1080, height: 1080 }, pages: [{ id: "pg1", name: "Page 1", layers: [] }] },
+/** A tab's chat that has a session, started here, with a turn open. */
+async function inSession(render_: () => void = () => render(<Harness enabled offlineGraceMs={150} />)) {
+  render_();
+  await screen.findByText(/Studio laptop/);
+  fireEvent.change(screen.getByLabelText("Message the agent"), { target: { value: "work on it" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await waitFor(() => expect(backend.intents()).toHaveLength(1));
+  backend.push(1, "session.created");
+  backend.push(2, "session.started");
+  await waitFor(() => expect(backend.intents()).toHaveLength(2));
+}
+
+const oneDevice = (overrides: Record<string, unknown> = {}) => ({
+  devices: [
+    {
+      id: "dev_1",
+      name: "Studio laptop",
+      online: true,
+      revokedAt: null,
+      runtimeVersion: "0.1.0",
+      capabilities: [{ providerId: "codex", installed: true, compatible: true, authenticated: true, authMode: "subscription" }],
+      ...overrides,
+    },
+  ],
+});
+
+describe("a session that cannot be carried on", () => {
+  it("says why in plain words, offers a new session and keeps the history above it — instead of answering every message with the same refusal (F-chat-5)", async () => {
+    await inSession();
+    backend.push(3, "turn.started");
+    backend.push(4, "agent.output.completed", { turnId: "t", text: "Working." });
+    backend.push(5, "turn.completed");
+    await screen.findByText("Working.");
+
+    backend.refuse = "not_authorized";
+    fireEvent.change(screen.getByLabelText("Message the agent"), { target: { value: "and again" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    const ended = await screen.findByRole("region", { name: "Session ended" });
+    expect(within(ended).getByText(DEAD.notAuthorized)).toBeTruthy();
+    // Not wedged: no "working", the box does not take a message, and nothing started by itself.
+    expect(screen.queryByText("The agent is working…")).toBeNull();
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Send" }).disabled).toBe(true);
+    expect(backend.intents().filter((intent) => (intent as { type: string }).type === "session.start")).toHaveLength(1);
+
+    backend.refuse = null;
+    fireEvent.click(within(ended).getByRole("button", { name: "New session" }));
+    await waitFor(() => expect(backend.intents().filter((intent) => (intent as { type: string }).type === "session.start")).toHaveLength(2));
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Session ended" })).toBeNull());
+    // The old conversation is still there, above a divider.
+    const kinds = screen.getAllByRole("listitem").map((item) => item.getAttribute("data-kind"));
+    expect(kinds).toEqual(expect.arrayContaining(["person", "agent"]));
+    expect(screen.getByRole("separator").textContent).toContain("New session");
+    expect(kinds.indexOf("divider")).toBeGreaterThan(kinds.lastIndexOf("agent"));
+  });
+
+  it("turns a card that was waiting into an expired one with no buttons", async () => {
+    await inSession();
+    backend.push(3, "approval.requested", { approvalId: "apr_1", invocationId: "i", capabilityId: "design.applyOperations", risk: "destructive", humanSummary: "Remove", importantArguments: [], affectedResourceCount: 1 });
+    await screen.findByRole("button", { name: "Approve once" });
+
+    backend.push(4, "session.failed", { error: { message: "the provider exited" } });
+    await screen.findByText(/The session failed: the provider exited/);
+    expect(screen.queryByRole("button", { name: "Approve once" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Deny" })).toBeNull();
+    expect(screen.getByText("Expired before you answered")).toBeTruthy();
+  });
+
+  it("is what a revoked device leaves behind, and the status says revoked rather than offline (F-10-2, F-10-4)", async () => {
+    await inSession();
+    backend.push(3, "turn.started");
+    await screen.findByText("The agent is working…");
+    backend.devices = oneDevice({ online: false, revokedAt: "2026-10-04T00:00:00Z" });
+    // The device list is read on presence frames and every ten seconds; a presence frame is the quick way.
+    act(() => liveFeed.publish({ type: "device.revoked", payload: {} }));
+    expect(await screen.findByText(DEAD.revoked)).toBeTruthy();
+    // Said by the status line (and again by the button's hint): revoked, not offline.
+    expect(screen.getAllByText(/Studio laptop was revoked/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/is offline/)).toBeNull();
+    expect(screen.queryByText("The agent is working…")).toBeNull();
+  });
+
+  it("is what a Runtime that has been replaced by another device leaves behind (F-chat-5)", async () => {
+    await inSession();
+    backend.devices = oneDevice({ id: "dev_2" });
+    act(() => liveFeed.publish({ type: "device.online", payload: {} }));
+    expect(await screen.findByText(DEAD.replaced)).toBeTruthy();
+  });
+
+  it("is a turn whose Runtime stayed offline past the grace, and not one that came back in time", async () => {
+    await inSession(() => render(<Harness enabled offlineGraceMs={600} />));
+    backend.push(3, "turn.started");
+    await screen.findByText("The agent is working…");
+    backend.devices = oneDevice({ online: false });
+    act(() => liveFeed.publish({ type: "device.offline", payload: {} }));
+    await screen.findByText(/is offline/);
+    backend.devices = oneDevice();
+    act(() => liveFeed.publish({ type: "device.online", payload: {} }));
+    await screen.findByText(/· online · Runtime/);
+    // Longer than the grace: had the offline spell not been cleared by coming back, it would have ended the turn by now.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 800)));
+    expect(screen.queryByText(DEAD.offline)).toBeNull();
+
+    backend.devices = oneDevice({ online: false });
+    act(() => liveFeed.publish({ type: "device.offline", payload: {} }));
+    expect(await screen.findByText(DEAD.offline)).toBeTruthy();
+  });
+
+  it("is what Stop becomes when the Runtime cannot even be told: the turn ends rather than staying 'working' (F-10-2)", async () => {
+    await inSession();
+    backend.push(3, "turn.started");
+    backend.refuse = "runtime_offline";
+    fireEvent.click(await screen.findByRole("button", { name: "Stop" }));
+    expect(await screen.findByText(DEAD.stopWhileOffline)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+  });
+
+  it("is remembered across a reload, with the history and without starting anything", async () => {
+    await inSession();
+    backend.refuse = "not_authorized";
+    fireEvent.change(screen.getByLabelText("Message the agent"), { target: { value: "again" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByText(DEAD.notAuthorized);
+    cleanup();
+
+    backend.refuse = null;
+    render(<Harness enabled />);
+    expect(await screen.findByText(DEAD.notAuthorized)).toBeTruthy();
+    expect(screen.getByText("work on it")).toBeTruthy();
+    expect(backend.intents().filter((intent) => (intent as { type: string }).type === "session.start")).toHaveLength(1);
+  });
+
+  it("is not a stopped session: after the person's own Stop the next message simply starts one", async () => {
+    await inSession();
+    backend.push(3, "turn.started");
+    fireEvent.click(await screen.findByRole("button", { name: "Stop" }));
+    await screen.findByText("You stopped the agent.");
+    expect(screen.queryByRole("region", { name: "Session ended" })).toBeNull();
+  });
+});
+
+describe("a window's session", () => {
+  const Probe = () => {
+    const chat = useChat({ enabled: true, pollMs: 20 });
+    return <output aria-label="session">{chat.sessionId ?? "none"}</output>;
   };
 
-  function renderEditor(agent: boolean) {
-    const base = backend.fetch.getMockImplementation();
-    backend.fetch.mockImplementation((input, init) => {
-      const raw = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-      if (raw.endsWith("/api/v1/designs/d1")) return Promise.resolve(new Response(JSON.stringify(record), { status: 200 }));
-      return base ? base(input, init) : Promise.reject(new Error("no backend"));
-    });
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    return render(
-      <QueryClientProvider client={client}>
-        <Editor designId="d1" onBack={() => undefined} agent={agent} />
-      </QueryClientProvider>,
+  it("is exposed once this window has started one, so the window can be bound to it, and not before", async () => {
+    render(<Probe />);
+    await act(() => Promise.resolve());
+    expect(screen.getByLabelText("session").textContent).toBe("none");
+  });
+
+  it("is forgotten by a tab that signs out", async () => {
+    await inSession();
+    expect(sessionStorage.getItem("forma.chat")).toContain(SESSION);
+    forgetChat();
+    expect(sessionStorage.getItem("forma.chat")).toBeNull();
+  });
+
+  it("is not given to a different person who signs in to the same tab", async () => {
+    sessionStorage.setItem(
+      "forma.chat",
+      JSON.stringify({ context: "someone-else", remembered: { sessionId: "ses_theirs", deviceId: null, dead: null, said: [{ id: "l1", text: "their secret", afterSeq: 0, sessionId: "ses_theirs" }] } }),
     );
-  }
-
-  it("has no chat, no toggle and no request for one when access is not ready", async () => {
-    renderEditor(false);
-    await screen.findByText("Cover");
-    expect(screen.queryByRole("button", { name: /Agent/ })).toBeNull();
-    expect(screen.queryByLabelText("Agent chat")).toBeNull();
-    expect(backend.calls.some((call) => call.path === "/agent/context" || call.path === "/pons/v1/events")).toBe(false);
-  });
-
-  it("is closed until asked for, then opens beside the canvas", async () => {
-    renderEditor(true);
-    const toggle = await screen.findByRole("button", { name: /Agent/ });
-    expect(screen.queryByLabelText("Agent chat")).toBeNull();
-    fireEvent.click(toggle);
-    expect(screen.getByLabelText("Agent chat")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
-    expect(screen.queryByLabelText("Agent chat")).toBeNull();
-  });
-
-  it("badges the toggle with an approval that arrives while the panel is shut", async () => {
-    renderEditor(true);
-    await screen.findByRole("button", { name: /Agent/ });
-    backend.push(1, "session.created");
-    backend.push(2, "approval.requested", { approvalId: "apr_1", invocationId: "i", capabilityId: "design.applyOperations", risk: "write", humanSummary: "Edit", importantArguments: [], affectedResourceCount: 1 });
-    expect(await screen.findByLabelText("1 waiting for your approval", {}, { timeout: 4_000 })).toBeTruthy();
+    render(<Harness enabled />);
+    await screen.findByText(/Studio laptop/);
+    expect(screen.queryByText("their secret")).toBeNull();
+    expect(screen.getByRole("log").querySelectorAll("li")).toHaveLength(1); // only the empty-state text
   });
 });

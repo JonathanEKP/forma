@@ -1,13 +1,17 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Agents } from "./Agents";
 import { ApiError, getIdentity, listProjects } from "./api";
 import { Consent } from "./Consent";
 import { Editor } from "./editor/Editor";
 import { currentSession } from "./identity";
+import { ChatPanel, ChatToggle } from "./pontis/Chat";
+import { followAgentWrite } from "./pontis/follow";
 import { uiHandlers } from "./pontis/handlers";
+import { useChat } from "./pontis/useChat";
 import { useUiChannel } from "./pontis/useUiChannel";
+import { currentView } from "./pontis/view";
 import { Onboard, SignIn } from "./SignIn";
 import { Projects } from "./Projects";
 import { useEditor } from "./store";
@@ -95,6 +99,22 @@ export function App() {
   );
   useUiChannel({ enabled: access.at === "ready", handlers });
 
+  // The agent chat belongs to the window, not to a design: held here, above whichever page
+  // is showing, so a conversation survives opening another design or going back to the
+  // projects (D-1). It reads what the person has open when a message is sent, and tells the
+  // editor when the agent has written to a design so the screen follows (D-7).
+  const openDesignId = useRef(designId);
+  openDesignId.current = designId;
+  const chat = useChat({
+    enabled: access.at === "ready" && window.location.pathname === "/",
+    view: () => currentView(queries, openDesignId.current),
+    onWrite: (write) => void followAgentWrite({ queries, openDesignId: () => openDesignId.current }, write),
+  });
+  // Closed by default, so it is never in the canvas's way unless it was asked for; an approval
+  // that arrives with it shut still reaches the toggle's badge.
+  const [chatOpen, setChatOpen] = useState(false);
+  const toggleChat = useCallback(() => setChatOpen((open) => !open), []);
+
   // These entry points are part of authentication hand-offs and setup
   // instructions, not an in-app navigation graph. Reading the browser path
   // directly keeps four stable URLs from bringing in a routing dependency.
@@ -117,10 +137,21 @@ export function App() {
   if (access.at === "anonymous") return <SignIn />;
   if (access.at === "accountless") return <Onboard onReady={recheck} />;
 
-  return designId === null ? (
-    <Projects onOpen={openDesign} />
-  ) : (
-    <Editor designId={designId} onBack={() => setDesignId(null)} agent={access.at === "ready"} />
+  return (
+    <div className="flex h-full">
+      <div className="h-full min-w-0 flex-1 overflow-y-auto">
+        {designId === null ? (
+          <Projects onOpen={openDesign} chat={chat.enabled ? <ChatToggle chat={chat} open={chatOpen} onToggle={toggleChat} /> : null} />
+        ) : (
+          <Editor
+            designId={designId}
+            onBack={() => setDesignId(null)}
+            {...(chat.enabled ? { chat, chatOpen, onToggleChat: toggleChat } : {})}
+          />
+        )}
+      </div>
+      {chat.enabled && chatOpen && <ChatPanel chat={chat} onClose={() => setChatOpen(false)} />}
+    </div>
   );
 }
 

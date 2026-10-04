@@ -2,12 +2,12 @@
  * The project view: pick a project, then a design (plan section 77, Phase 6).
  */
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import { Brand } from "./editor/Brand";
 import { useBrand, useCreateDesign, useCreateProject, useDesigns, useProjects, useStatus } from "./queries";
 
-export function Projects({ onOpen }: { onOpen: (designId: string) => void }) {
+export function Projects({ onOpen, chat = null }: { onOpen: (designId: string) => void; chat?: ReactNode }) {
   const status = useStatus();
   const projects = useProjects();
   const [projectId, setProjectId] = useState<string | null>(null);
@@ -40,12 +40,16 @@ export function Projects({ onOpen }: { onOpen: (designId: string) => void }) {
             a page most people do not have — the same failure as a skill no host
             scans for.
           */}
-          <a
-            href="/agents"
-            className="text-xs text-faint underline underline-offset-4 hover:text-muted"
-          >
-            Connect an agent
-          </a>
+          <div className="flex items-center gap-4">
+            <a
+              href="/agents"
+              className="text-xs text-faint underline underline-offset-4 hover:text-muted"
+            >
+              Connect an agent
+            </a>
+            {/* The chat is the window's, not the editor's: it opens here too. */}
+            {chat}
+          </div>
         </div>
         <h1 className="text-4xl font-medium tracking-tight">Give visual ideas a form.</h1>
         {status.data && (

@@ -10,6 +10,8 @@
 
 import { createClient, type Session, type SupabaseClient } from "@supabase/supabase-js";
 
+import { forgetChat } from "./pontis/session-store";
+
 const url = import.meta.env.VITE_SUPABASE_URL;
 const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
@@ -79,6 +81,8 @@ export async function sendMagicLink(email: string, returnTo?: string): Promise<v
 }
 
 export async function signOut(): Promise<void> {
+  // The conversation was the signed-in person's: signing out ends it (D-1).
+  forgetChat();
   await supabase?.auth.signOut();
 }
 

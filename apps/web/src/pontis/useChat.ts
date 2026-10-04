@@ -16,18 +16,27 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 
 import { accessToken } from "../identity";
 import {
+  agentWrites,
   chatReducer,
   createAgentClient,
+  DEAD,
   emptyChat,
+  OFFLINE_GRACE_MS,
   pendingApprovals,
+  remember,
   type AgentClient,
+  type AgentWrite,
   type ChatState,
   type Decision,
+  type Failure,
   type RuntimeView,
+  type ViewChip,
+  type ViewIds,
 } from "./chat";
 import { liveFeed } from "./channel";
 import { useWindowBinding } from "./useWindowBinding";
 import { asDurable, openEventStream, parseLiveFrame, RETRY_MS, type EventStream, type StreamState } from "./events";
+import { recall, remembering, type Store } from "./session-store";
 
 /** How often the device list is re-read: presence changes slowly, and a turn does not need it. */
 export const DEVICES_MS = 10_000;
@@ -57,16 +66,34 @@ export interface Chat {
   readonly answering: ReadonlySet<string>;
   /** Why a message cannot be sent right now, or `null` when it can. */
   readonly blocked: string | null;
+  /**
+   * The session this window's chat started, or `null`: what the window's UI
+   * connection is bound to, so the agent's actions reach the window it is
+   * talking to (D-2). Never an adopted or ended one.
+   */
+  readonly sessionId: string | null;
+  /** Why the session cannot be carried on, or `null`. Sending waits for `newSession` while it is set. */
+  readonly dead: string | null;
   readonly send: (text: string) => Promise<void>;
+  readonly newSession: () => Promise<void>;
   readonly stop: () => Promise<void>;
   readonly decide: (approvalId: string, decision: Decision) => Promise<void>;
 }
 
 export interface ChatOptions {
   readonly enabled: boolean;
+  /**
+   * What the person has open, read when a message is sent: the ids the sidecar
+   * turns into the line in front of it, and the names the chip shows them.
+   */
+  readonly view?: () => { readonly ids: ViewIds; readonly chip?: ViewChip };
+  /** The agent completed a write on a design: the editor's cue to follow it. */
+  readonly onWrite?: (write: AgentWrite) => void;
   /** Only tests pass these. */
   readonly client?: AgentClient;
   readonly pollMs?: number;
+  readonly offlineGraceMs?: number;
+  readonly storage?: Store | null;
 }
 
 /** Why the current runtime cannot take a message, in words, or `null` if it can. */
@@ -81,6 +108,8 @@ export function whyBlocked(connection: Connection, runtime: Runtime): string | n
       return "No device is paired yet.";
     case "offline":
       return `${runtime.name} is offline.`;
+    case "revoked":
+      return `${runtime.name} was revoked. Pair a new device from the Agents page.`;
     case "ambiguous":
       return "More than one device is online.";
     case "online":
@@ -90,8 +119,14 @@ export function whyBlocked(connection: Connection, runtime: Runtime): string | n
   }
 }
 
-export function useChat({ enabled, client, pollMs }: ChatOptions): Chat {
+export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRACE_MS, view, onWrite, storage }: ChatOptions): Chat {
   const [state, dispatch] = useReducer(chatReducer, emptyChat);
+  // The application context the tab's memory is keyed by, known once the sidecar has said.
+  const [context, setContext] = useState<string | null>(null);
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const writeRef = useRef(onWrite);
+  writeRef.current = onWrite;
   const [stream, setStream] = useState<Connection>("connecting");
   const [runtime, setRuntime] = useState<Runtime>({ at: "unknown" });
   const [answering, setAnswering] = useState<ReadonlySet<string>>(new Set());
@@ -99,7 +134,7 @@ export function useChat({ enabled, client, pollMs }: ChatOptions): Chat {
   const seq = useRef(0);
   // The reader and the context it reads, for the live path to hand frames to.
   const reader = useRef<{ stream: EventStream; context: string } | null>(null);
-  const queued = useRef<{ sessionId: string; text: string } | null>(null);
+  const queued = useRef<{ sessionId: string; text: string; view: ViewIds } | null>(null);
 
   const agent = useMemo(() => client ?? createAgentClient({ token: accessToken }), [client]);
   const localId = useCallback(() => {
@@ -127,10 +162,18 @@ export function useChat({ enabled, client, pollMs }: ChatOptions): Chat {
         timer = setTimeout(() => void connect(), RETRY_MS);
         return;
       }
+      // What this tab was saying before it was reloaded, before the history is read: the
+      // window re-attaches to its own session rather than to whichever is latest (D-1).
+      const remembered = recall(context.value, storage);
+      if (remembered) dispatch({ type: "restore", remembered });
+      setContext(context.value);
       const opened = openEventStream({
         applicationContextId: context.value,
         token: accessToken,
-        onEvents: (events) => dispatch({ type: "events", events }),
+        onEvents: (events) => {
+          dispatch({ type: "events", events });
+          for (const write of agentWrites(events)) writeRef.current?.(write);
+        },
         onState: (next) => setStream(next.at),
         ...(pollMs === undefined ? {} : { pollMs }),
       });
@@ -148,12 +191,36 @@ export function useChat({ enabled, client, pollMs }: ChatOptions): Chat {
       if (timer !== undefined) clearTimeout(timer);
       close?.();
     };
-  }, [enabled, agent, pollMs]);
+  }, [enabled, agent, pollMs, storage]);
 
-  const refreshRuntime = useCallback(async () => {
+  // Signed out, or no longer ready: what was said belonged to the person who is gone.
+  useEffect(() => {
+    if (enabled) return;
+    dispatch({ type: "reset" });
+    setContext(null);
+  }, [enabled]);
+
+  // Kept per tab so a reload finds its way back; written only after the first read of
+  // the tab's memory, or the empty chat of a fresh page would erase what it held.
+  const remembered = useMemo(() => remember(state), [state]);
+  useEffect(() => {
+    if (!enabled || context === null) return;
+    remembering(context, remembered, storage);
+  }, [enabled, context, remembered, storage]);
+
+  // Reads can overlap — a presence frame lands while the ten-second read is out — and the answer that
+  // was asked for last is the one that is true: a slower, older one must not overwrite it.
+  const reads = useRef(0);
+  const readDevices = useCallback(async (): Promise<RuntimeView | { readonly at: "unreachable" } | null> => {
+    reads.current += 1;
+    const mine = reads.current;
     const answer = await agent.devices();
-    setRuntime(answer.ok ? answer.value : { at: "unreachable" });
+    return mine === reads.current ? (answer.ok ? answer.value : { at: "unreachable" }) : null;
   }, [agent]);
+  const refreshRuntime = useCallback(async () => {
+    const read = await readDevices();
+    if (read) setRuntime(read);
+  }, [readDevices]);
 
   // The live path: what the sidecar fans out to this window while the agent
   // works. A frame with a sequence goes to the reader, which applies it only if
@@ -191,8 +258,8 @@ export function useChat({ enabled, client, pollMs }: ChatOptions): Chat {
     if (!enabled) return;
     let closed = false;
     const tick = () => {
-      void agent.devices().then((answer) => {
-        if (!closed) setRuntime(answer.ok ? answer.value : { at: "unreachable" });
+      void readDevices().then((read) => {
+        if (!closed && read) setRuntime(read);
       });
     };
     tick();
@@ -201,7 +268,21 @@ export function useChat({ enabled, client, pollMs }: ChatOptions): Chat {
       closed = true;
       clearInterval(timer);
     };
-  }, [enabled, agent]);
+  }, [enabled, readDevices]);
+
+  // A session that cannot be carried on is said so once, and the box waits for a new one.
+  const die = useCallback((reason: string) => dispatch({ type: "dead", reason }), []);
+
+  // What a refusal from the sidecar means for the conversation. "This session isn't allowed
+  // to do that" is the Runtime saying it does not know the session any more (F-chat-5), which
+  // no retry will change; anything else is said and the person tries again.
+  const refused = useCallback(
+    (failure: Failure) => {
+      if (failure.reason === "not_authorized") die(DEAD.notAuthorized);
+      else notice("error", failure.message);
+    },
+    [die, notice],
+  );
 
   // A message typed before the session is live waits for `session.started`: the
   // provider is not there to take input until then, and sending it early is a
@@ -218,52 +299,93 @@ export function useChat({ enabled, client, pollMs }: ChatOptions): Chat {
     }
     if (session.status !== "live") return;
     queued.current = null;
-    void agent.input(waiting.sessionId, waiting.text).then((answer) => {
-      if (!answer.ok) notice("error", answer.failure.message);
+    void agent.input(waiting.sessionId, waiting.text, waiting.view).then((answer) => {
+      if (!answer.ok) refused(answer.failure);
     });
-  }, [agent, session, notice]);
+  }, [agent, session, refused]);
+
+  // The Runtime a session runs on can go: revoked, unpaired, replaced by another, or off in the
+  // middle of a turn. Each leaves a conversation nobody is running, and none of them writes the
+  // terminal event the chat would otherwise wait for (F-10-2, F-chat-4), so the chat reads it off
+  // the device list it already polls. A Runtime that is merely offline between turns is left
+  // alone: it may come back, and a send says so if the session did not survive.
+  const deviceId = state.deviceId;
+  const working = state.working;
+  const sessionEnded = session === null || session.status === "ended" || state.dead !== null;
+  useEffect(() => {
+    if (!enabled || sessionEnded) return;
+    if (runtime.at === "revoked") return die(DEAD.revoked);
+    if (runtime.at === "none") return die(DEAD.none);
+    if (runtime.at === "online" && runtime.deviceId !== null && deviceId !== null && runtime.deviceId !== deviceId) {
+      return die(DEAD.replaced);
+    }
+    if ((runtime.at === "offline" || runtime.at === "ambiguous") && working) {
+      const timer = setTimeout(() => die(DEAD.offline), offlineGraceMs);
+      return () => clearTimeout(timer);
+    }
+  }, [enabled, sessionEnded, runtime, deviceId, working, die, offlineGraceMs]);
 
   const blocked = whyBlocked(stream, runtime);
+  const dead = state.dead?.reason ?? null;
+
+  const start = useCallback(async (): Promise<string | null> => {
+    if (runtime.at !== "online" || !runtime.provider?.usable) {
+      notice("error", blocked ?? "There is no device to send that to.");
+      return null;
+    }
+    const started = await agent.start(runtime.provider.id);
+    if (!started.ok) {
+      notice("error", started.failure.message);
+      // The likeliest reason is that presence changed since the last read.
+      if (started.failure.reason === "runtime_offline" || started.failure.reason === "ambiguous_device") void refreshRuntime();
+      return null;
+    }
+    return started.value.sessionId;
+  }, [agent, runtime, blocked, notice, refreshRuntime]);
 
   const send = useCallback(
     async (raw: string) => {
       const text = raw.trim();
-      if (text.length === 0) return;
-      dispatch({ type: "person", id: localId(), text });
+      if (text.length === 0 || dead !== null) return;
+      const seen = viewRef.current?.();
+      dispatch({ type: "person", id: localId(), text, ...(seen?.chip ? { chip: seen.chip } : {}) });
+      const ids = seen?.ids ?? {};
 
       if (session && session.status !== "ended") {
         if (session.status === "starting") {
-          queued.current = { sessionId: session.id, text };
+          queued.current = { sessionId: session.id, text, view: ids };
           return;
         }
-        const answer = await agent.input(session.id, text);
-        if (!answer.ok) notice("error", answer.failure.message);
+        const answer = await agent.input(session.id, text, ids);
+        if (!answer.ok) refused(answer.failure);
         return;
       }
 
-      if (runtime.at !== "online" || !runtime.provider?.usable) {
-        notice("error", blocked ?? "There is no device to send that to.");
-        return;
-      }
-      const started = await agent.start(runtime.provider.id);
-      if (!started.ok) {
-        notice("error", started.failure.message);
-        // The likeliest reason is that presence changed since the last read.
-        if (started.failure.reason === "runtime_offline" || started.failure.reason === "ambiguous_device") void refreshRuntime();
-        return;
-      }
-      queued.current = { sessionId: started.value.sessionId, text };
-      dispatch({ type: "started", sessionId: started.value.sessionId });
+      const sessionId = await start();
+      if (sessionId === null) return;
+      queued.current = { sessionId, text, view: ids };
+      dispatch({ type: "started", sessionId, id: localId() });
     },
-    [agent, session, runtime, blocked, notice, localId, refreshRuntime],
+    [agent, session, dead, start, refused, localId],
   );
+
+  // Nothing starts by itself: a dead session waits here, with its history above, until the
+  // person asks for another (D-6).
+  const newSession = useCallback(async () => {
+    const sessionId = await start();
+    if (sessionId !== null) dispatch({ type: "started", sessionId, id: localId() });
+  }, [start, localId]);
 
   const stop = useCallback(async () => {
     if (!session) return;
     const answer = await agent.cancel(session.id);
     if (answer.ok) dispatch({ type: "stopped", id: localId() });
+    // Stopping is the person leaving the conversation: when the Runtime cannot even be told,
+    // it is over, and "your Runtime is offline" over a turn that stays running is the wedge.
+    else if (answer.failure.reason === "not_authorized") die(DEAD.notAuthorized);
+    else if (answer.failure.reason === "runtime_offline") die(DEAD.stopWhileOffline);
     else notice("error", answer.failure.message);
-  }, [agent, session, notice, localId]);
+  }, [agent, session, notice, localId, die]);
 
   const decide = useCallback(
     async (approvalId: string, decision: Decision) => {
@@ -289,7 +411,10 @@ export function useChat({ enabled, client, pollMs }: ChatOptions): Chat {
     pending: pendingApprovals(state).length,
     answering,
     blocked,
+    sessionId: state.owned !== null && session?.id === state.owned && session.status !== "ended" ? state.owned : null,
+    dead,
     send,
+    newSession,
     stop,
     decide,
   };
