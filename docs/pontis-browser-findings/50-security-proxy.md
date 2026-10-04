@@ -159,3 +159,78 @@ non-Boundary-F route refuses a service credential.
 **Evidence** — probe output (credential redacted): `svc POST /api/v1/projects → 201`, `svc DELETE project → 204`,
 `svc POST /api/v1/api-keys → 201`, `minted PAT, no service credential, GET /projects → 200`. Not a browser case: the
 credential never reaches a browser, so this was seen with `curl`-level requests against forma-server.
+
+## F-50-2 — An open UI stream is never re-authenticated: it keeps delivering after its token has expired
+
+- **Severity:** medium
+- **Status:** open
+- **Instance / provider:** instance 6, FakeProvider (no model involved; sidecar routes only)
+
+**Steps to reproduce**
+1. Mint a session token for A that expires in 25 s (fixture key; `exp = now + 25`).
+2. Open `GET /pons/v1/ui/stream` (Host `127.0.0.1:4862`) with it — `200 text/event-stream`, `ui.connected`.
+3. Wait 35 s. The same token on any fresh request is now `403` (cases A-02).
+4. With a fresh token for A, start a session (`POST /agent/intent`, `session.start`) so durable events are produced.
+
+**Expected** — Pontis's `ui-transport.ts` documents "*Reauthenticate the principal for every live event. Context events
+additionally require current membership; losing it suppresses only that context's events*". A session that has expired,
+been signed out, or lost its membership should stop receiving the person's transcript.
+
+**Actual** — the expired stream received both `pons.event` frames (`sequence` 13 and 14, the new session's events)
+and kept receiving heartbeats. The stream stayed open for as long as I held it (50 s).
+
+**Cause (read, not patched)** — `notify` re-runs `options.authenticatePrincipal(request)` with the **stream's own
+request object**, and `personResolver` (`apps/pontis-sidecar/src/person.ts`) memoises the answer **per request object**
+in a `WeakMap`. For a stream that request lives as long as the connection, so the "re-authentication" returns the answer
+from connect time forever. The README's "Nothing is cached across requests. A person is resolved once per request" is true
+and is exactly the problem: a stream is one request that never ends. The same applies to the membership check
+(`resolveApplicationContext` goes through the same memo), so a person removed from an account would keep hearing it too
+(not exercised: this instance has no way to remove a member).
+
+**Impact** — bounded: the stream only carries the person's own account's events, and only until the connection drops
+(the editor reconnects every time the page reloads). But it is the defence the transport depends on for sign-out and
+revocation, and it silently does nothing. The editor's own refresh keeps tokens fresh, so a person never sees it.
+
+**Suggested direction** — resolve afresh in `notify` (a new object per call, or bypass the memo for streams), or close
+the stream when the token's `exp` passes.
+
+**Evidence** — script output: `0s recv HTTP/1.1 200…`, `35s token now expired…`, `35s recv … event: pons.event …
+"sequence":13`, `…"sequence":14`, `45s recv keep-alive`, `50s … stream was open: true`. Not seen in a browser.
+
+## F-50-3 — Two windows of the same person take the UI channel from each other forever
+
+- **Severity:** medium
+- **Status:** open
+- **Instance / provider:** instance 6, FakeProvider; reproduced with a script that runs the editor's own reconnect logic
+  against the real routes (the two-tab case could not be held steady in the browser, see F-50-8)
+
+**Steps to reproduce**
+1. Sign in as A. Open the editor in two windows (or one window and anything else that opens `/pons/v1/ui/stream` with
+   A's token — an `ui.*`-capable second device, a second browser profile).
+2. Watch `/pons/v1/ui/stream`.
+
+**Expected** — two windows both stay connected, or the second is told it is a duplicate; an agent's `ui.*` action goes to
+a live window.
+
+**Actual** — `UIClientRegistry.connect` replaces any existing client with the same `userId`, `applicationContextId` **and
+`appSessionId`**. The sidecar defines `appSessionId` as `<userId>:<applicationContextId>` (`sidecar.ts`), which is the same
+for every window of one person, so the newer stream always closes the older. `channel.ts` reconnects 2 s after its stream
+ends (`RECONNECT_MS`), which evicts the other window, which reconnects 2 s later, and so on. Measured over 20 s with two
+emulated windows against the real routes (via the editor origin):
+
+| | stream opens | actions registrations | Boundary F `service.resolve` calls |
+|---|---|---|---|
+| 1 window | 1 | 1 | 2 |
+| 2 windows | 6 and 5 | 6 and 5 | 22 |
+
+So each window is connected roughly half the time, the chat's "Connected · live" indicator would flip to "offline" and back
+every few seconds, an agent `ui.*` action arriving in a gap answers `ui_unavailable`/`ui_action_not_registered`, and the pair
+costs ~11× the forma-server calls of a single window, indefinitely, with no backoff. The code's comment on this
+(`useUiChannel.ts`: "the registry replaces a second connection from the same browser context rather than accumulating")
+assumes a reload, not a second tab.
+
+**Suggested direction** — make `appSessionId` per window (a random id kept in `sessionStorage`, sent with the stream), or
+have the sidecar refuse the second stream (`409`) so the client can stop retrying; add a backoff.
+
+**Evidence** — script output: `windows=1 … opens:1 … resolve calls: 2`; `windows=2 … opens:6 / 5 … resolve calls: 22`.
+(`MAX_CLIENTS_PER_USER = 8` in Pontis is therefore unreachable: 12 streams from one person left one registered.)
