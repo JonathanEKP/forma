@@ -22,7 +22,7 @@ other sections of the page through the DOM and screenshotting at scroll 0 gave c
 
 ## Summary
 
-34 cases, 13 findings. By severity: **0 blocker, 2 high, 4 medium, 5 low, 2 info** (the info items are
+35 cases, 13 findings. By severity: **0 blocker, 2 high, 4 medium, 5 low, 2 info** (the info items are
 limitations or observations, not defects). The two highs are the same hole seen from two sides: the
 sidecar keeps no state across a restart, and the chat has no way out of a turn whose Runtime disappeared.
 
@@ -82,6 +82,7 @@ sidecar keeps no state across a restart, and the chat has no way out of a turn w
 | P32 | Eight Runtimes claim one code at the same instant | pass — exactly one `200`, seven `401 pairing_code_consumed`, one device |
 | P33 | A person types the code: lowercase, without dashes, with spaces and padding | pass — all accepted (normalised); a wrong character is `pairing_code_invalid` |
 | P34 | Clone a paired Runtime's data dir to a second dir and run both real `pontis` daemons; then revoke | **FAIL (low)** → F-10-13; revoke stopped both (`the paired Device has been revoked`) |
+| P35 | Revoked driver cannot act: freeze the driver (`SIGSTOP`), `session.input`, revoke, `SIGCONT` | pass — the revoked driver never ran the buffered input (no `turn.started`, no Boundary F call in `sidecar.log`). Not exercised: replaying a delegation token captured before the revoke (by code `validateDelegation` refuses a revoked device, `control-plane.ts:679`) |
 
 ### P13 result
 
@@ -386,7 +387,9 @@ editor can say so (the chat already has `not_authenticated`: "Your sign-in has e
 `kill -9` is instant because the kernel resets the loopback socket. A Runtime that stops answering without
 closing the connection (laptop lid, dropped Wi-Fi, `SIGSTOP`) read `online: true` for **31.7 s** and
 **48.0 s** in two runs, then flipped, and recovered 0.55 s after `SIGCONT`. During that window the sidecar
-routes a chat message to it and the turn never completes (F-10-2). Combined with F-10-3 the *page* can show
+routes a chat message to it and the turn never completes (F-10-2): with the driver frozen, `session.input`
+answered `{"delivered":true}` (it means "written to the socket"), and after the revoke the driver, resumed,
+never ran the buffered input. Combined with F-10-3 the *page* can show
 "online" for a laptop that went to sleep minutes ago.
 
 ## F-10-13 — Two Runtimes holding one device identity displace each other every ~5 s, silently
