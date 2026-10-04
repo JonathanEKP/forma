@@ -56,6 +56,7 @@ const DENY: &str = "Remove the tagline. I will say no.";
 const APPROVE: &str = "Remove the headline.";
 const GUIDE: &str = "Read the manual first.";
 const BRAND: &str = "Read my brand, and ask me for a hero photo.";
+const LIST: &str = "List the designs of my project.";
 
 /// Prints what the Runtime refused, one line each, so the test can read it.
 ///
@@ -105,6 +106,14 @@ fn provider(
                 .call("design.get", json!({ "design_id": design }))
                 .expect_tool_result_status(ExpectedOutcome::Completed)
                 .emit("You have one project, and the design has a headline.")
+                .complete(),
+        )
+        .script(
+            LIST,
+            FakeScript::new()
+                .call("design.list", json!({ "project_id": project }))
+                .expect_tool_result_status(ExpectedOutcome::Completed)
+                .emit("Your project has a cover and a long design.")
                 .complete(),
         )
         .script(

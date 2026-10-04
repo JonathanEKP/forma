@@ -1543,6 +1543,62 @@ async fn the_guide_answers_the_pontis_manual_and_its_revision() {
     .await;
 }
 
+// --- design.list --------------------------------------------------------------
+
+/// `design.list` is what lets an agent turn "open my cover" into an id: the
+/// only way to learn one that is not pasted at it (F-40-6). It is scoped to the
+/// represented person's account exactly as `project.list` is.
+#[actix_web::test]
+async fn the_designs_of_a_project_are_listed_for_its_own_account_only() {
+    let (state, _dir) = hosted().await;
+    let them = person(&state, 2).await;
+    let other = person(&state, 1).await;
+    let token = sidecar_token(&state).await;
+    let app = serve!(state.clone());
+    let read = |project: ProjectId| {
+        as_sidecar(
+            TestRequest::get().uri(&format!("/api/v1/pontis/projects/{project}/designs")),
+            &token,
+            &them,
+        )
+        .to_request()
+    };
+
+    let response = test::call_service(&app, read(them.project)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: Value = test::read_body_json(response).await;
+    let designs = body.as_array().expect("a list of designs");
+    assert_eq!(designs.len(), 1);
+    assert_eq!(designs[0]["id"], json!(them.design));
+    assert_eq!(designs[0]["name"], "Cover");
+    assert_eq!(designs[0]["page_count"], 2);
+    assert!(
+        designs[0].get("document").is_none(),
+        "a listing carries no document"
+    );
+
+    // Another account's project is indistinguishable from none.
+    let response = test::call_service(&app, read(other.project)).await;
+    refused(
+        response,
+        StatusCode::NOT_FOUND,
+        "PROJECT_NOT_FOUND",
+        "not_found",
+    )
+    .await;
+
+    // The path is not a way around the service arm: a PAT-shaped caller with no
+    // represented person is refused like every other Boundary F route.
+    let response = test::call_service(
+        &app,
+        TestRequest::get()
+            .uri(&format!("/api/v1/pontis/projects/{}/designs", them.project))
+            .to_request(),
+    )
+    .await;
+    assert!(response.status().is_client_error());
+}
+
 // --- brand.get and assetRequest.create ----------------------------------------
 
 /// `brand.get` answers the kit **and** the font catalog, as forma-mcp's

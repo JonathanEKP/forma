@@ -37,6 +37,7 @@ const DENY = 'Remove the tagline. I will say no.';
 const APPROVE = 'Remove the headline.';
 const GUIDE = 'Read the manual first.';
 const BRAND = 'Read my brand, and ask me for a hero photo.';
+const LIST = 'List the designs of my project.';
 
 /** Pages in the design whose validation is cancelled: enough that it is still running when the cancel lands. */
 const LONG_PAGES = 120;
@@ -76,6 +77,17 @@ describe('the sidecar, run locally against FakeProvider', () => {
     const [projects, read] = completed.map((event) => JSON.stringify(event.payload.result));
     assert.ok(projects?.includes('Local run'), projects);
     assert.ok(read?.includes(layer), 'the design comes back with its headline');
+  });
+
+  it('lists the designs of a project, so the agent can learn an id it was not given (design.list)', async () => {
+    const events = await stack.turn(LIST, 'turn.completed');
+    const completed = events.filter((event) => event.type === 'capability.completed');
+    assert.deepEqual(completed.map((event) => event.payload.capabilityId), ['design.list']);
+    const { designs } = completed[0]?.payload.result as { designs: { id: string; name: string; page_count: number }[] };
+    assert.deepEqual(designs.map(({ name }) => name).sort(), ['Cover', 'Long']);
+    assert.equal(designs.find(({ id }) => id === design?.id)?.page_count, 1);
+    assert.ok(!JSON.stringify(designs).includes('"document"'), 'a listing carries no document');
+    assert.equal(stack.boundaryCalls('design.list').filter((line) => line.status === 200).length, 1);
   });
 
   it('reads the manual: forma.guide answers the Pontis rendering and its revision, through Boundary F', async () => {

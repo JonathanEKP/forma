@@ -16,6 +16,7 @@ import { CapabilityError, isCapabilityErrorCode } from '@pontis/core';
 import type { AgentManual } from '@forma/bindings/AgentManual';
 import type { AssetRequest } from '@forma/bindings/AssetRequest';
 import type { DesignRecord } from '@forma/bindings/DesignRecord';
+import type { DesignSummary } from '@forma/bindings/DesignSummary';
 import type { PontisApplyRequest } from '@forma/bindings/PontisApplyRequest';
 import type { PontisApplyResult } from '@forma/bindings/PontisApplyResult';
 import type { PontisAssetRequestBody } from '@forma/bindings/PontisAssetRequestBody';
@@ -84,6 +85,16 @@ export class FormaBoundary {
       signal,
     });
     return await this.#answer<Project[]>(response, maxBytes);
+  }
+
+  /** A project's designs, newest change first, with no documents: what turns a name into an id. */
+  async listDesigns(who: Represented, projectId: string, maxBytes: number, signal: AbortSignal): Promise<DesignSummary[]> {
+    const response = await this.#send('design.list', `/api/v1/pontis/projects/${encodeURIComponent(projectId)}/designs`, {
+      method: 'GET',
+      headers: representing(who),
+      signal,
+    });
+    return await this.#answer<DesignSummary[]>(response, maxBytes);
   }
 
   async getDesign(who: Represented, designId: string, maxBytes: number, signal: AbortSignal): Promise<DesignRecord> {

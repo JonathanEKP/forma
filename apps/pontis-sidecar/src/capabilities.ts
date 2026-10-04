@@ -35,6 +35,7 @@ import type { FormaBoundary, Represented } from './boundary.ts';
 /** The capabilities Boundary F serves (`SERVED` in `apps/server/src/routes/pontis.rs`). */
 export const SERVED = [
   'project.list',
+  'design.list',
   'design.get',
   'design.validate',
   'design.applyOperations',
@@ -207,6 +208,25 @@ export function formaCapabilities(boundary: FormaBoundary): Capability[] {
     }),
   });
 
+  const designList = defineCapability<ProjectInput, unknown, FormaUser>({
+    ...declared('design.list'),
+    output: {
+      type: 'object',
+      properties: { designs: { type: 'array', items: OBJECT } },
+      required: ['designs'],
+      additionalProperties: false,
+    },
+    authorize,
+    execute: async ({ user, applicationContextId, input, signal }) => ({
+      designs: await boundary.listDesigns(
+        representing(user, applicationContextId),
+        input.project_id,
+        spec('design.list').bounds.maxResultBytes,
+        signal,
+      ),
+    }),
+  });
+
   const designGet = defineCapability<DesignInput, unknown, FormaUser>({
     ...declared('design.get'),
     output: {
@@ -368,5 +388,5 @@ export function formaCapabilities(boundary: FormaBoundary): Capability[] {
       ),
   });
 
-  return [projectList, designGet, designValidate, applyOperations, guide, brandGet, assetRequestCreate];
+  return [projectList, designList, designGet, designValidate, applyOperations, guide, brandGet, assetRequestCreate];
 }
