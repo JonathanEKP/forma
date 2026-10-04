@@ -191,7 +191,7 @@ re-tested 2026-10-04: fixed — instance 10: `SIGTERM` with three editor windows
 ## F-40-3 — `ui_action_timeout` does not mean the action did not happen
 
 - **Severity:** medium
-- **Status:** open
+- **Status:** fixed (86bf948)
 - **Instance / provider:** instance 5, deterministic door (T2); the same with Codex would be the same message
 
 **Steps to reproduce (T2)**
@@ -214,6 +214,8 @@ window went away" and "the window is slow" — the agent cannot tell which, and 
 back on the project list in the first case.
 
 **Evidence** — door output: `{"ms":5006,…"code":"ui_action_timeout"}` then the tab text 5 s later.
+
+**Fix** — `src/guidance.ts` now tells the agent the outcome is unknown and to check the editor before repeating; `guidance.test.ts` asserts the sentence.
 
 ## F-40-4 — A restarted sidecar leaves every open editor deaf until the page is reloaded
 
@@ -320,7 +322,7 @@ re-tested 2026-10-04: fixed — instance 10, Codex: from `ALPHA Square post`, "O
 ## F-40-7 — An action that lands mid-drag changes the drag's arithmetic, or drops it without a word
 
 - **Severity:** low
-- **Status:** open
+- **Status:** fixed (d1c47bb)
 - **Instance / provider:** instance 5, door + real mouse events through `orca exec "mouse …"`
 
 **Steps** — Launch cover at zoom 0.5; mouse down on the Headline, move 50 px, fire the action, move 50 px
@@ -335,15 +337,19 @@ at 0.5).
 - `ui.openDesign` of another design mid-drag: the canvas unmounts, the drag is abandoned; version of
   neither design changed. The person's in-progress move vanishes with no explanation and the ack says `handled`.
 
+**Fix** — all editor UI actions are rejected with `the person is dragging` while a draft is active; the draft and view remain untouched (`handlers.test.ts`).
+
 ## F-40-8 — `selectLayer` fired in the same tick as the `openDesign` it follows is rejected
 
 - **Severity:** low
-- **Status:** open (an agent that waits for each call never sees it)
+- **Status:** fixed (7a0f507)
 
 `Promise.all([openDesign(A1), selectLayer(A1, layer)])` → `openDesign handled`, `selectLayer
 ui_action_rejected: the person does not have design … open; call ui.openDesign first`. The handler
 compares with `designId` from the last render, which does not exist until the open commits. A runtime
 that issues parallel tool calls will hit it; the message tells it to do what it just did.
+
+**Fix** — a layer selection now waits for the pending open of the same design and the current design id is updated synchronously (`handlers.test.ts`).
 
 ## F-40-9 — ux: what the person experiences when the agent moves their view
 
@@ -392,7 +398,7 @@ re-tested 2026-10-04: fixed — instance 10: the same restarts as F-10-1 and F-4
 ## F-40-12 — `setZoom` and `setPanel` are `handled` while nothing is showing them, and the change waits for the next design
 
 - **Severity:** medium
-- **Status:** open
+- **Status:** fixed (ec5edd2)
 - **Instance / provider:** instance 5, deterministic door
 
 **Steps** — editor on the project list (no design open). Fire `ui.setZoom {zoom: 3}` and
@@ -405,6 +411,8 @@ the intent.
 **Actual** — both answer `handled` (`detail: "zoom 3"`, `"validation"`), nothing on screen changes, and
 the person's next design opens at **300 %** with the Validation panel — a view change they did not
 see happen and no cue explains. The store is global, so it also carries across designs.
+
+**Fix** — `setZoom` and `setPanel` now reject with `open a design first`. In browser instance 13 on the project list, both handlers returned that refusal and the zoom/panel state stayed unchanged; the sidecar UI test confirms the agent receives `ui_action_rejected`.
 
 ## F-40-11 — info: unknown input fields are accepted
 
@@ -489,7 +497,7 @@ re-tested 2026-10-04: fixed (browser evidence is client-side only) — instance 
 ## F-40-16 — The window's `detail` text goes to the agent unfiltered, and an oversized one is dropped as a reset connection
 
 - **Severity:** info
-- **Status:** open
+- **Status:** fixed (fb77cf7)
 - **Instance / provider:** curl, standing in for a window
 
 - The ack `detail` is returned as the capability's result (`handled`) or error message (`rejected`/`failed`)
@@ -500,6 +508,8 @@ re-tested 2026-10-04: fixed (browser evidence is client-side only) — instance 
   named like an instruction would be fed to the agent through a trusted channel (a UI ack).
 - A 1 MiB `detail` resets the TCP connection (no 413); the pending action then times out in 5 s. A
   window whose handler produced a huge detail would look like a dead window.
+
+**Fix** — acknowledgements now cap `detail` at 256 UTF-16 code units, preserving the boundary without splitting a surrogate pair (`channel.test.ts`).
 
 ## Harness notes (for 00-harness.md's owner)
 
