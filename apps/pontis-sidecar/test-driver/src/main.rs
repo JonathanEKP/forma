@@ -469,7 +469,10 @@ async fn main() {
     for session_id in sessions.session_ids() {
         let workspace = sessions.session_workspace(&session_id);
         let stopped = sessions.stop_session(&session_id).await.is_ok();
-        let workspace_removed = workspace.as_ref().map_or(true, |path| !path.exists());
+        let workspace_removed = match workspace {
+            Some(path) => !path.exists(),
+            None => true,
+        };
         eprintln!("SHUTDOWN_CLEANUP stopped={stopped} workspace_removed={workspace_removed}");
     }
     drop(workspace_root);
