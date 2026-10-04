@@ -1,0 +1,93 @@
+{
+  "runDate": "2026-10-04",
+  "task": "PV-1 gaps · Task G1",
+  "sanitized": true,
+  "toolchain": {
+    "fakeProviderModelTurns": 0,
+    "realCodex": "0.158.0",
+    "model": "gpt-6-luna",
+    "reasoningEffort": "low",
+    "executionPolicy": "capability_only",
+    "readiness": "passed",
+    "verifiedPostureChecks": "7/7",
+    "realCodexModelTurns": 1
+  },
+  "scenarios": [
+    {
+      "id": "S4",
+      "status": "passed",
+      "provider": "FakeProvider",
+      "test": "apps/pontis-sidecar/src/local-run.test.ts: S4 validates the validator’s ordered issue list, repairs the same design, then renders it",
+      "observed": {
+        "sidecarReportExactlyMatchesFormaValidator": true,
+        "orderedIssues": ["OUTSIDE_CANVAS:error", "OUTSIDE_CANVAS:error"],
+        "issueLayerIdsAndOrderPreserved": true,
+        "generatedMaxResultBytesBoundRespected": true,
+        "repairedDesignVersionIncrementedOnce": true,
+        "cleanReportExactlyMatchesFormaValidator": true,
+        "cleanReportHasNoIssues": true,
+        "renderedRepairedVersionThroughAuthenticatedFormaRest": true,
+        "renderMimeType": "image/png",
+        "pontisRenderPreviewCapabilityClaimed": false,
+        "pontisRenderPreviewRemainsPartOfBlockedS5": true
+      }
+    },
+    {
+      "id": "S10",
+      "status": "passed",
+      "provider": "FakeProvider",
+      "test": "apps/pontis-sidecar/src/local-run.test.ts: S10 rechecks account authorization for a live session and gives the same refusal for a missing resource",
+      "observed": {
+        "accountAContextCannotReadAccountBDesign": true,
+        "foreignAndAbsentResourceResponsesEqual": true,
+        "foreignResourceErrorCode": "not_found",
+        "membershipRevokedDuringExistingRuntimeSession": true,
+        "sessionChangedOrRestarted": false,
+        "existingAndAbsentResourceResponsesAfterRevocationEqual": true,
+        "postRevocationErrorCode": "authorization_denied",
+        "boundaryFWritesAfterRevocation": 0,
+        "membershipRestoredInFinally": true
+      }
+    },
+    {
+      "id": "S6-expiry",
+      "status": "passed",
+      "provider": "FakeProvider",
+      "modelTurns": 0,
+      "test": "apps/pontis-sidecar/src/local-run.test.ts: S6 expiry leaves the design intact and a late approve executes nothing",
+      "observed": {
+        "eventSequence": ["approval.requested", "approval.resolved:expired", "capability.failed:approval_expired", "turn.completed", "late approval.resolve:approveOnce"],
+        "lateResolutionResponse": "delivered:true",
+        "runtimeRefusalDiagnostic": false,
+        "designRemainedReadableAndUnchanged": true,
+        "targetRemained": true,
+        "additionalBoundaryFWrites": 0
+      }
+    },
+    {
+      "id": "S6-expiry",
+      "status": "passed",
+      "provider": "Codex 0.158.0",
+      "model": "gpt-6-luna",
+      "reasoningEffort": "low",
+      "executionPolicy": "capability_only",
+      "modelTurns": 1,
+      "test": "apps/pontis-sidecar/src/real-codex.test.ts: S6 expiry refuses a late approval without applying the action",
+      "observed": {
+        "postureChecks": "7/7 verified",
+        "eventSequence": ["approval.requested", "approval.resolved:expired", "capability.failed:approval_expired", "turn.completed", "late approval.resolve:approveOnce"],
+        "lateResolutionResponse": "delivered:true",
+        "runtimeRefusalDiagnostic": false,
+        "designRemainedReadableAndUnchanged": true,
+        "targetRemained": true,
+        "additionalBoundaryFWrites": 0
+      }
+    }
+  ],
+  "classification": {
+    "s4": "Forma sidecar contract passed; Pontis render-preview limitation remains the separate S5 upstream gap",
+    "s10": "Forma authorization and live membership recheck passed",
+    "s6Expiry": "Expiry subcase terminal/no-mutation requirement passed; missing Runtime refusal diagnostic belongs to Pontis upstream report item 11; this run does not claim the full S6 composite"
+  },
+  "recordNote": "Assertions are manually collated from passing FakeProvider and pinned real-Codex runs. No account IDs, session IDs, tokens, auth headers, image bytes, or auth.json contents are recorded."
+}
