@@ -521,6 +521,9 @@ async function start(n: number, options: Options): Promise<void> {
       FORMA_SERVICE_CREDENTIAL: credential,
       FORMA_PONTIS_BIND: `127.0.0.1:${ports.sidecar}`,
       FORMA_PONTIS_EDITOR_ORIGIN: `${editor},${editorAlias}`,
+      // Inside the instance's directory, so it is wiped with the rest on the next start of this number
+      // and a restart of the sidecar alone (same variable) keeps devices and history.
+      FORMA_PONTIS_DATA_DIR: join(directory, 'pontis'),
     });
     procs.push(sidecar);
     const sidecarUrl = await sidecar.ready;
