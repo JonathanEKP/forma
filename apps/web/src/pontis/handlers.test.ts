@@ -99,6 +99,30 @@ describe("ui.openDesign", () => {
 });
 
 describe("ui.selectLayer", () => {
+  it("waits for an openDesign that is still loading", async () => {
+    const { handlers } = harness(null);
+    type Design = Awaited<ReturnType<typeof api.getDesign>>;
+    let finishRead: ((value: Design) => void) | undefined;
+    vi.mocked(api.getDesign).mockReturnValue(
+      new Promise<Design>((resolve) => {
+        finishRead = resolve;
+      }),
+    );
+
+    const opening = handlers["ui.openDesign"]?.({ design_id: DESIGN });
+    const selecting = handlers["ui.selectLayer"]?.({ design_id: DESIGN, layer_id: "layer-2" });
+    expect(finishRead).toBeDefined();
+    finishRead?.(record as unknown as Design);
+
+    const outcomes = await Promise.all([opening, selecting]);
+    expect(outcomes).toEqual([
+      { outcome: "handled", detail: "Cover, page page-1" },
+      { outcome: "handled", detail: "layer layer-2 on page page-2" },
+    ]);
+    expect(useEditor.getState().selectedPageId).toBe("page-2");
+    expect(useEditor.getState().selectedLayerId).toBe("layer-2");
+  });
+
   it("selects the layer, moving to its page first", async () => {
     const { handlers } = harness();
     useEditor.getState().selectPage("page-1");
