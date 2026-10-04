@@ -147,6 +147,8 @@ Collected from the `ux`-tagged findings, for the owner's UX review rather than a
 
 ## Pontis-side observations (not Forma's to change)
 
+Written up for the Pontis team, with causes and suggested fixes, in [pontis-upstream-report.md](../pontis-upstream-report.md).
+
 To raise with Pontis later; the Pontis repository was not touched.
 
 **The most important one: a session dies about five minutes after its first call, in production too.**
