@@ -461,7 +461,8 @@ daemons' logs contain only `runtime.started` until the revoke.
 ## F-10-14 — A revoked device is reported as offline when other, never-revoked devices sit beside it
 
 - **Severity:** low
-- **Status:** open
+- **Status:** fixed (d7d10a6)
+- **Cause:** The chat classified the account's list instead of its session device, so an older offline device masked the revoke.
 - **Instance / provider:** instance 10, FakeProvider (found while re-testing F-10-2 and F-10-4)
 
 **Steps to reproduce**
