@@ -98,7 +98,7 @@ another to F-10-1: a sidecar restart turned the code into `pairing_code_invalid`
 ## F-10-1 — A sidecar restart forgets every device, pairing code and conversation, and the Runtime never finds out
 
 - **Severity:** high
-- **Status:** fixed (2a5bd52)
+- **Status:** fixed (dff7168)
 - **Instance / provider:** instance 2, FakeProvider test-driver **and** the real `pontis` daemon
 
 **Steps to reproduce**

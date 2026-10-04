@@ -136,7 +136,7 @@ shows the paired `service.resolve` bursts every 2 s while two tabs are open.
 ## F-40-2 — The sidecar cannot be stopped gracefully while any editor window is open
 
 - **Severity:** high (deployment: every restart waits for the supervisor's kill timeout)
-- **Status:** fixed (2a5bd52)
+- **Status:** fixed (dff7168)
 - **Instance / provider:** instance 5, the stock `src/main.ts` (reproduced with it, not only with the tester's wrapper)
 
 **Steps to reproduce**
@@ -191,7 +191,7 @@ back on the project list in the first case.
 ## F-40-4 — A restarted sidecar leaves every open editor deaf until the page is reloaded
 
 - **Severity:** high (in this harness, i.e. behind Vite's dev proxy; unknown behind Caddy)
-- **Status:** fixed (8cdb4ed)
+- **Status:** fixed (bbfca95)
 - **Instance / provider:** instance 5, deterministic
 
 **Steps to reproduce**
@@ -329,7 +329,7 @@ Observed in the Orca tab (N1 screenshot):
 ## F-40-10 — A sidecar restart discards the paired Runtime; the driver does not come back
 
 - **Severity:** medium (not the UI channel, but it ends every agent action after a restart)
-- **Status:** fixed (2a5bd52) — with F-10-1
+- **Status:** fixed (dff7168) — with F-10-1
 - **Instance / provider:** instance 5, real Codex driver
 
 After `SIGTERM` + start of the stock sidecar (window not attached): `/agent/context` answered again within 1.7 s,

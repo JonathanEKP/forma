@@ -229,7 +229,7 @@ error under the person's line, Runtime online); log excerpt from `logs/sidecar.l
 ## F-chat-6 — Restarting the sidecar forgets every paired device and the whole history
 
 - **Severity:** medium (high for a deployment: a sidecar restart = every person re-pairs)
-- **Status:** fixed (2a5bd52) — with F-10-1
+- **Status:** fixed (dff7168) — with F-10-1
 - **Instance / provider:** instance 3, FakeProvider
 
 **Steps to reproduce**
