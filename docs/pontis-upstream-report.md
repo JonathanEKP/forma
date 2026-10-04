@@ -205,7 +205,17 @@ back through the protocol or durable event stream for the host to observe.
 and refusal code, so a caller can distinguish a resolve accepted by the Runtime from one that was
 merely written to the Device socket.
 
-**Evidence:** `forma:docs/pontis-browser-findings/30-approvals.md` (F-30-6), cases A06, A11 and A17.
+**Additional expiry sequence, reproduced on FakeProvider and Codex 0.158.0:** the host receives
+`approval.requested`; it waits for `approval.resolved` with `status=expired`; the Runtime emits
+`capability.failed` with `approval_expired`, then `turn.completed`; the host sends a late
+`approval.resolve(decision=approveOnce)` and receives HTTP 200 `{"delivered":true}`. No Runtime
+`REFUSED approval_expired` diagnostic follows, but the design remains readable at its original
+version and the late resolution causes zero Boundary F writes. S6 expiry therefore passes its
+terminal/no-mutation requirement; the Runtime refusal remains invisible to the host as described
+above. Sanitized evidence: [`pv1-gaps.json`](evidence/step12/pv1-gaps.json).
+
+**Evidence:** `forma:docs/pontis-browser-findings/30-approvals.md` (F-30-6), cases A06, A11 and A17;
+Task G1 expiry replay in [`pontis-pv1-evidence.md`](pontis-pv1-evidence.md#s6--approval--full-stack).
 
 ---
 
