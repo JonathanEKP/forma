@@ -9,14 +9,15 @@
  * sidecar's actual transport, and the editor's own tests reuse its framing.
  */
 import { strict as assert } from 'node:assert';
+import { generateKeyPairSync, randomUUID } from 'node:crypto';
 import { describe, it } from 'node:test';
 
 import { SUBJECT_TOKEN_HEADER } from './boundary.ts';
 import { envelope, fakeForma } from './fake-forma.ts';
 import { silentLog } from './log.ts';
-import { startSidecar, type Sidecar } from './sidecar.ts';
+import { APPLICATION_ID, startSidecar, type Sidecar } from './sidecar.ts';
 import { UI_ACTIONS } from './ui.ts';
-import { connect as connectWindow, drain, send, type Window } from './ui-window.ts';
+import { connect as connectWindow, drain, send, WINDOW_HEADER, type Window, type WindowOptions } from './ui-window.ts';
 
 const USER = '11111111-1111-4111-8111-111111111111';
 const OTHER_USER = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -69,8 +70,8 @@ async function forma() {
 }
 
 /** One connected window, registered for all four actions unless a test says otherwise. */
-function connect(sidecar: Sidecar, token: string, origin = ORIGIN): Promise<Window> {
-  return connectWindow(sidecar.origin, token, origin, UI_ACTIONS);
+function connect(sidecar: Sidecar, token: string, options: WindowOptions = {}, origin = ORIGIN): Promise<Window> {
+  return connectWindow(sidecar.origin, token, origin, UI_ACTIONS, options);
 }
 
 async function sidecarWith(editorOrigins: readonly string[] | undefined, body: (sidecar: Sidecar) => Promise<void>) {
@@ -252,6 +253,194 @@ describe('the UI routes themselves', () => {
         assert.equal(capability.risk, 'read', `${id} changes a view, never data`);
       }
       return Promise.resolve();
+    });
+  });
+});
+
+/** A paired Device record, with no socket: enough to hold a session's binding. */
+async function pair(sidecar: Sidecar, userId: string): Promise<string> {
+  const jwk = generateKeyPairSync('ed25519').publicKey.export({ format: 'jwk' });
+  assert.ok(typeof jwk.x === 'string');
+  const { code } = await sidecar.controlPlane.createPairingCode(userId);
+  const device = await sidecar.controlPlane.claimPairing({
+    code,
+    applicationId: APPLICATION_ID,
+    publicKey: jwk.x,
+    metadata: { name: 'Workstation', platform: 'linux', runtimeVersion: '0.1.0' },
+  });
+  return device.id;
+}
+
+/** `ses_` and 32 hex digits: the shape the intent route mints. */
+const session = (): string => `ses_${randomUUID().replaceAll('-', '')}`;
+
+describe('one registration per window (F-40-1, F-50-3)', () => {
+  it('keeps two windows of one person connected side by side instead of evicting each other', async () => {
+    await sidecarWith([ORIGIN], async (sidecar) => {
+      const first = await connect(sidecar, 'session-user');
+      const second = await connect(sidecar, 'session-user');
+      try {
+        assert.equal(sidecar.agentApp.uiClients.all().length, 2, 'both are registered');
+        const outcome = await Promise.race([first.ended.then(() => 'first ended'), new Promise((resolve) => setTimeout(() => resolve('both open'), 150))]);
+        assert.equal(outcome, 'both open', 'the newer window did not close the older one');
+        assert.notEqual(first.clientId, second.clientId);
+      } finally {
+        first.close();
+        second.close();
+      }
+    });
+  });
+
+  it('makes a reload — the same window id again — replace its own registration', async () => {
+    await sidecarWith([ORIGIN], async (sidecar) => {
+      const before = await connect(sidecar, 'session-user', { windowId: randomUUID() });
+      const after = await connect(sidecar, 'session-user', { windowId: before.windowId });
+      try {
+        await before.ended;
+        assert.deepEqual(
+          sidecar.agentApp.uiClients.all().map((client) => client.id),
+          [after.clientId],
+        );
+      } finally {
+        after.close();
+      }
+    });
+  });
+
+  it('scopes the app session to the window, so two tabs are two clients', async () => {
+    await sidecarWith([ORIGIN], async (sidecar) => {
+      const tab = await connect(sidecar, 'session-user');
+      try {
+        const [client] = sidecar.agentApp.uiClients.all();
+        assert.equal(client?.appSessionId, `${USER}:${CONTEXT}:${tab.windowId}`);
+      } finally {
+        tab.close();
+      }
+    });
+  });
+
+  it('refuses a stream with no window id, or one that is not the fixed format', async () => {
+    await sidecarWith([ORIGIN], async (sidecar) => {
+      for (const header of [undefined, '', 'tab 1', 'x'.repeat(200), `${randomUUID()}\r\nx-evil: 1`, '../../etc']) {
+        const response = await send(`${sidecar.origin}/pons/v1/ui/stream`, {
+          headers: { authorization: 'Bearer session-user', origin: ORIGIN, host: HOST, ...(header === undefined ? {} : { [WINDOW_HEADER]: header }) },
+        }).catch(() => undefined);
+        // A header node refuses to write never reaches the server at all.
+        if (!response) continue;
+        assert.equal(response.statusCode, 403, `window id ${JSON.stringify(header)}`);
+        await drain(response);
+      }
+      assert.equal(sidecar.agentApp.uiClients.all().length, 0);
+    });
+  });
+
+  it('does not let another person act through a window id it learned', async () => {
+    await sidecarWith([ORIGIN], async (sidecar) => {
+      const mine = await connect(sidecar, 'session-user');
+      try {
+        const answer = await send(`${sidecar.origin}/pons/v1/ui/ack`, {
+          method: 'POST',
+          headers: { authorization: 'Bearer session-other', origin: ORIGIN, host: HOST, 'content-type': 'application/json', [WINDOW_HEADER]: mine.windowId },
+          body: JSON.stringify({ clientId: mine.clientId, invocationId: 'inv_x', outcome: 'handled' }),
+        });
+        assert.equal(answer.statusCode, 403);
+        await drain(answer);
+      } finally {
+        mine.close();
+      }
+    });
+  });
+});
+
+describe('an action goes to the window whose chat started the session (D-2)', () => {
+  it('delivers to the bound window only, and the other window never handles it', async () => {
+    await sidecarWith([ORIGIN], async (sidecar) => {
+      const device = await pair(sidecar, USER);
+      const bound = session();
+      sidecar.controlPlane.bindSessionContext({ sessionId: bound, userId: USER, deviceId: device, applicationContextId: CONTEXT });
+      const chat = await connect(sidecar, 'session-user', { agentSession: bound });
+      const bystander = await connect(sidecar, 'session-user');
+      try {
+        const invocation = sidecar.agentApp.gateway.invoke({
+          userId: USER,
+          sessionId: bound,
+          applicationContextId: CONTEXT,
+          invocationId: 'inv_bound',
+          capabilityId: 'ui.setZoom',
+          input: { zoom: 2 },
+        });
+        const action = await chat.next();
+        assert.equal(action.capabilityId, 'ui.setZoom');
+        await chat.ack(action.invocationId, 'handled');
+        const outcome = await invocation;
+        assert.deepEqual(outcome.status === 'completed' ? outcome.result : null, { outcome: 'handled', clientId: chat.clientId });
+        await assert.rejects(bystander.next(200), 'the other window was never asked');
+      } finally {
+        chat.close();
+        bystander.close();
+      }
+    });
+  });
+
+  it('answers ui_unavailable with two windows and none bound, rather than guessing', async () => {
+    await sidecarWith([ORIGIN], async (sidecar) => {
+      const one = await connect(sidecar, 'session-user');
+      const two = await connect(sidecar, 'session-user');
+      try {
+        const outcome = await invoke(sidecar, 'ui.setZoom', { zoom: 2 }, 'inv_ambiguous');
+        assert.equal(outcome.status, 'failed');
+        assert.equal(outcome.status === 'failed' ? outcome.error.code : '', 'ui_unavailable');
+        await assert.rejects(one.next(200));
+        await assert.rejects(two.next(200));
+      } finally {
+        one.close();
+        two.close();
+      }
+    });
+  });
+
+  it('binds nothing for a session id of another person, and the forger is not an eligible target', async () => {
+    await sidecarWith([ORIGIN], async (sidecar) => {
+      const device = await pair(sidecar, USER);
+      const mine = session();
+      sidecar.controlPlane.bindSessionContext({ sessionId: mine, userId: USER, deviceId: device, applicationContextId: CONTEXT });
+      // The forger has a Device of their own, so the check really does ask about it.
+      await pair(sidecar, OTHER_USER);
+      const one = await connect(sidecar, 'session-user');
+      const two = await connect(sidecar, 'session-user');
+      const forger = await connect(sidecar, 'session-other', { agentSession: mine });
+      try {
+        const bound = sidecar.agentApp.uiClients.all().map((client) => client.agentSessionId);
+        assert.deepEqual(bound, [undefined, undefined, undefined], 'nobody is bound');
+        const outcome = await invoke(sidecar, 'ui.setZoom', { zoom: 2 }, 'inv_forged');
+        assert.equal(outcome.status === 'failed' ? outcome.error.code : '', 'ui_unavailable');
+        await assert.rejects(forger.next(200), 'the forger heard nothing');
+      } finally {
+        one.close();
+        two.close();
+        forger.close();
+      }
+    });
+  });
+
+  it('binds nothing for a session id the Control Plane has never seen, or one bound in another account', async () => {
+    await sidecarWith([ORIGIN], async (sidecar) => {
+      const device = await pair(sidecar, USER);
+      const elsewhere = session();
+      sidecar.controlPlane.bindSessionContext({ sessionId: elsewhere, userId: USER, deviceId: device, applicationContextId: OTHER_CONTEXT });
+      const unknown = await connect(sidecar, 'session-user', { agentSession: session() });
+      const wrongAccount = await connect(sidecar, 'session-user', { agentSession: elsewhere });
+      const malformed = await connect(sidecar, 'session-user', { agentSession: 'not a session' });
+      try {
+        assert.deepEqual(
+          sidecar.agentApp.uiClients.all().map((client) => client.agentSessionId),
+          [undefined, undefined, undefined],
+        );
+      } finally {
+        unknown.close();
+        wrongAccount.close();
+        malformed.close();
+      }
     });
   });
 });

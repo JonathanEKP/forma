@@ -32,7 +32,8 @@ import { GUIDANCE } from './guidance.ts';
 import { createContextRoute, createIntentRoute } from './intents.ts';
 import type { Log } from './log.ts';
 import { createDevicesRoute, fanOutDurable, liveNotification } from './live.ts';
-import { personResolver } from './person.ts';
+import { personResolver, type Person } from './person.ts';
+import { claimedAgentSession, verifiedAgentSession, windowId } from './windows.ts';
 import { uiCapabilities } from './ui.ts';
 
 /** The Pontis application id this deployment serves (one deployment, one application). */
@@ -135,6 +136,19 @@ export async function startSidecar(options: SidecarOptions): Promise<Sidecar> {
   const contextRoute = createContextRoute({ resolvePerson });
   const devicesRoute = createDevicesRoute({ controlPlane, devices, resolvePerson });
 
+  // The binding is looked at once per connection: only the stream carries it, and
+  // the transport authenticates the same request again for every live event it
+  // writes, which must not repeat a scan of the person's history each time.
+  const bindings = new WeakMap<IncomingMessage, Promise<string | undefined>>();
+  const boundSession = (request: IncomingMessage, person: Person): Promise<string | undefined> => {
+    let bound = bindings.get(request);
+    if (!bound) {
+      const claimed = claimedAgentSession(request);
+      bound = claimed ? verifiedAgentSession(controlPlane, person, claimed) : Promise.resolve(undefined);
+      bindings.set(request, bound);
+    }
+    return bound;
+  };
   // The frontend hop, and a genuinely different one from the gateway's: the
   // caller is a browser, so `Origin` is always present and is checked, where the
   // Runtime's hop refuses any request that carries one. The person behind it is
@@ -147,13 +161,24 @@ export async function startSidecar(options: SidecarOptions): Promise<Sidecar> {
     router: agentApp.uiRouter,
     authenticatePrincipal: async (request) => {
       const person = await resolvePerson(request);
-      // The app session is the person in their account: Forma issues no session
-      // id of its own to a browser, and the provider's JWT is not one to borrow
-      // — it is refreshed under the page, so a reload would look like a new
-      // client while the old one stayed registered.
-      return person
-        ? { userId: person.userId, appSessionId: `${person.userId}:${person.applicationContextId}` }
-        : undefined;
+      if (!person) return undefined;
+      // A request that does not name its window is refused: with no id there is
+      // no telling this tab from the person's others, which is the confusion that
+      // made two of them evict each other.
+      const window = windowId(request);
+      if (!window) return undefined;
+      const agentSessionId = await boundSession(request, person);
+      // The app session is the person in their account, in this window: Forma
+      // issues no session id of its own to a browser, and the provider's JWT is
+      // not one to borrow — it is refreshed under the page, so a reload would
+      // look like a new client while the old one stayed registered. The window id
+      // is what a reload keeps, so the reload replaces its own registration and a
+      // second tab does not.
+      return {
+        userId: person.userId,
+        appSessionId: `${person.userId}:${person.applicationContextId}:${window}`,
+        ...(agentSessionId ? { agentSessionId } : {}),
+      };
     },
     resolveApplicationContext: async (request, user) => {
       const person = await resolvePerson(request);

@@ -8,7 +8,7 @@
  * about who must not.
  */
 import { strict as assert } from 'node:assert';
-import { generateKeyPairSync, sign } from 'node:crypto';
+import { generateKeyPairSync, randomUUID, sign } from 'node:crypto';
 import { request as httpRequest, type IncomingMessage } from 'node:http';
 import { describe, it } from 'node:test';
 
@@ -69,7 +69,7 @@ async function openWindow(sidecar: Sidecar, token: string): Promise<Window> {
   const response = await new Promise<IncomingMessage>((resolve, reject) => {
     httpRequest(
       `${sidecar.origin}/pons/v1/ui/stream`,
-      { headers: { authorization: `Bearer ${token}`, origin: ORIGIN, host: HOST, accept: 'text/event-stream' }, signal: abort.signal },
+      { headers: { authorization: `Bearer ${token}`, origin: ORIGIN, host: HOST, accept: 'text/event-stream', 'x-forma-window': randomUUID() }, signal: abort.signal },
       resolve,
     )
       .on('error', reject)
