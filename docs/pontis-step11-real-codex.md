@@ -29,7 +29,7 @@ the passes.
 | Model | `gpt-6-luna` — set in the dedicated `CODEX_HOME`'s `config.toml`, **and confirmed afterwards** from the `turn_context` of the Codex rollout files the run left (`model` `gpt-6-luna`, `effort` `low` on every turn that reached the model) |
 | Reasoning effort | `low` — in the same config and passed by the driver through `with_reasoning_effort("low")` |
 | Execution policy | `capability_only` (`with_mcp_runtime`; the provider-native compatibility mode is not reachable from the driver) |
-| Pontis | checkout at `3b65ce9`, read-only; the sidecar and driver link it through the one `.pontis` seam |
+| Pontis | checkout at `3b65ce9`, read-only; the sidecar and driver link it through the sidecar's one Pontis seam |
 | Node | v24.18.0 |
 | Credential | `<CODEX_HOME>/auth.json` is a symlink to the owner's `~/.codex/auth.json`: never copied, read or printed by anything here. Redacted throughout |
 
@@ -72,11 +72,13 @@ free until a prompt is sent.
 Reproduce, from the repository root:
 
 ```bash
-pnpm install && ln -s /path/to/pontis apps/pontis-sidecar/.pontis      # the usual seam
+pnpm install            # and the Pontis seam of apps/pontis-sidecar/README.md
 cargo build -p forma-server
 cargo build --manifest-path apps/pontis-sidecar/test-driver/Cargo.toml
-cargo build --manifest-path apps/pontis-sidecar/.pontis/Cargo.toml -p pontis-runtime \
-  --bin pontis-mcp-bridge --target-dir apps/pontis-sidecar/test-driver/target
+# the bridge Codex launches, built from the Pontis checkout into the driver's own target directory
+# (nothing is written under the checkout)
+(cd /path/to/pontis && cargo build -p pontis-runtime --bin pontis-mcp-bridge \
+  --target-dir "$OLDPWD/apps/pontis-sidecar/test-driver/target")
 
 npm install --prefix .codex-pinned @openai/codex@0.158.0
 .codex-pinned/node_modules/.bin/codex --version        # must print exactly: codex-cli 0.158.0
@@ -91,7 +93,7 @@ FORMA_REAL_CODEX_OUT=/tmp/record.json pnpm --filter forma-pontis-sidecar test:re
 cd apps/pontis-sidecar && FORMA_REAL_CODEX=1 node --test --test-name-pattern=readiness src/real-codex.test.ts
 ```
 
-`.codex-pinned/` is gitignored, as is the `.pontis` seam. `pnpm test` and CI never run it: the suite
+`.codex-pinned/` is gitignored, as is the Pontis seam. `pnpm test` and CI never run it: the suite
 is skipped without `FORMA_REAL_CODEX=1`, and `scripts/pontis-skipped-checks.txt` lists it as
 uncovered by CI. `FORMA_REAL_CODEX_BIN`, `_HOME` and `_BRIDGE` override the three paths.
 
