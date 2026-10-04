@@ -39,7 +39,7 @@ const DRIVER = process.env.FORMA_PONTIS_DRIVER_BIN ?? join(PACKAGE, 'test-driver
 
 const ISSUER = 'https://project.supabase.co/auth/v1';
 const SIGNING_KEY = readFileSync(join(REPO, 'fixtures/identity/test-signing-key.pkcs8.der'));
-const JWKS = readFileSync(join(REPO, 'fixtures/identity/test-jwks.json'));
+export const JWKS = readFileSync(join(REPO, 'fixtures/identity/test-jwks.json'));
 
 export interface Child {
   readonly process: ChildProcess;
@@ -302,14 +302,22 @@ export class Stack {
 
 // --- the person's session ------------------------------------------------------------------
 
-function mintSession(subject: string): string {
+export interface SessionOptions {
+  readonly issuer?: string;
+  readonly email?: string;
+  /** How long the token lives. An hour is plenty for a test; a person at a browser needs longer. */
+  readonly ttlSeconds?: number;
+}
+
+/** A Supabase-shaped access token for `subject`, signed with the fixture key (`fixtures/identity`). */
+export function mintSession(subject: string, options: SessionOptions = {}): string {
   const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
   const body = `${encode({ alg: 'ES256', typ: 'JWT', kid: 'test-key-1' })}.${encode({
     sub: subject,
-    iss: ISSUER,
+    iss: options.issuer ?? ISSUER,
     aud: 'authenticated',
-    exp: Math.floor(Date.now() / 1000) + 3600,
-    email: 'person@example.com',
+    exp: Math.floor(Date.now() / 1000) + (options.ttlSeconds ?? 3600),
+    email: options.email ?? 'person@example.com',
     email_verified: true,
   })}`;
   const key = createPrivateKey({ key: SIGNING_KEY, format: 'der', type: 'pkcs8' });
@@ -340,7 +348,7 @@ async function freePort(): Promise<number> {
   return address.port;
 }
 
-function run(binary: string, args: string[], env: Record<string, string>): string {
+export function run(binary: string, args: string[], env: Record<string, string>): string {
   const result = spawnSync(binary, args, { env, encoding: 'utf8' });
   assert.equal(result.status, 0, `${binary} ${args[0] ?? ''} failed: ${result.stderr}`);
   return result.stdout;
