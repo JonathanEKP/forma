@@ -117,9 +117,9 @@ export function Projects({ onOpen, chat = null }: { onOpen: (designId: string) =
                     brand.data.colors.secondary,
                     brand.data.colors.accent,
                     brand.data.colors.text,
-                  ].map((colour) => (
+                  ].map((colour, index) => (
                     <span
-                      key={colour}
+                      key={`${index}:${colour}`}
                       className="h-4 w-4 rounded border border-edge"
                       style={{ background: colour }}
                     />

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
@@ -167,6 +167,49 @@ describe("the project view with a live server", () => {
     // The font catalog is on screen because an agent or a user must not name a
     // family the renderer does not have.
     await waitFor(() => expect(screen.getByText(/fonts: Geist/)).toBeTruthy());
+  });
+
+  it("keeps duplicate brand colors from creating duplicate React keys", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.stubGlobal(
+      "fetch",
+      mockFetch({
+        "/status": status,
+        "/projects/p1/brand": {
+          id: "b1",
+          project_id: "p1",
+          name: "Acme",
+          colors: {
+            primary: "#171717",
+            secondary: "#F59E0B",
+            accent: "#7C3AED",
+            background: "#0B0B0C",
+            surface: "#171717",
+            text: "#171717",
+            text_inverse: "#FFFFFF",
+            muted: "#A1A1AA",
+          },
+          typography: { display: "Geist", body: "Geist", mono: "Geist" },
+          logo_asset_id: null,
+          voice: "Direct and brief.",
+          rules: { safe_margin: 80, minimum_font_size: 24 },
+          version: 1,
+        },
+        "/projects/p1/designs": [],
+        "/projects": [
+          { id: "p1", name: "Launch campaign", created_at: "2026-08-28T00:00:00.000Z", updated_at: "2026-08-28T00:00:00.000Z" },
+        ],
+      }),
+    );
+
+    try {
+      renderApp();
+      fireEvent.click(await screen.findByText("Launch campaign"));
+      expect(await screen.findByText("Acme")).toBeTruthy();
+      expect(errors.mock.calls.some(([message]) => String(message).includes("same key"))).toBe(false);
+    } finally {
+      errors.mockRestore();
+    }
   });
 });
 
