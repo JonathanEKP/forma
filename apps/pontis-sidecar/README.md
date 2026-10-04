@@ -5,7 +5,9 @@ The application-owned sidecar of Pontis ADR-023, as
 one Node process holding the Pontis Capability Gateway, delegation issuer, Control Plane and
 Realtime Gateway, composed from public Pontis packages. It reaches Forma only through Boundary F
 (`/api/v1/pontis`, authenticated with a `forma_svc_` credential). forma-server stays the domain
-authority and does not depend on this process.
+authority and does not depend on this process. That credential is accepted **only** on
+`/api/v1/pontis/*` and `/api/v1/service/resolve`; on any other route forma-server answers
+`403 SERVICE_CREDENTIAL_OUT_OF_SCOPE`, so a leaked one is worth Boundary F and nothing more.
 
 This is plan §11 **steps 7 to 9**, plus the real Codex run of step 11. What is left before PV-1 is
 the evidence (step 12).

@@ -5103,11 +5103,15 @@ ACCOUNT_REQUIRED
 LEGACY_ACCOUNT_ALREADY_CLAIMED
 INVALID_BOOTSTRAP_TOKEN
 API_KEY_REVOKED
+SERVICE_CREDENTIAL_REVOKED
+SERVICE_CREDENTIAL_OUT_OF_SCOPE
 ```
 
 ```text
 missing or invalid credential       -> 401
 valid identity, no Forma account    -> 403 ACCOUNT_REQUIRED
+service credential, route outside
+  Boundary F and resolve            -> 403 SERVICE_CREDENTIAL_OUT_OF_SCOPE
 object outside the current account  -> the same not-found as an unknown id
 ```
 

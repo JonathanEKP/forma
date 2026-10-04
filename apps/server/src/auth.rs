@@ -102,6 +102,82 @@ pub const SUBJECT_TOKEN_HEADER: &str = "x-forma-subject-token";
 /// and an application context, because it is what discovers them.
 pub const RESOLVE_PATH: &str = "/api/v1/service/resolve";
 
+/// Where a request carrying a service credential is allowed to go.
+#[derive(Debug, PartialEq, Eq)]
+enum ServiceScope {
+    Resolve,
+    BoundaryF,
+    /// Every other path, and every path whose spelling cannot be read as one of
+    /// the two above with certainty.
+    Outside,
+}
+
+/// Classifies a request path for the service arm.
+///
+/// **On the normalised path, not the raw one.** The router decodes percent
+/// escapes before it matches, so `/api/v1/%70ontis/…` reaches Boundary F and
+/// `/api/v1/pontis/%2e%2e/…` is a `..` segment to anything that resolves one
+/// further along. Comparing the raw string would be comparing the one thing the
+/// router does not. So each segment is decoded first, and then it has to be an
+/// ordinary segment: no `.` or `..`, nothing empty, no `/` or `\` smuggled in
+/// through an escape, no NUL, valid UTF-8. A path that cannot be read that way
+/// is `Outside`, because the credential is worth exactly Boundary F and a doubt
+/// is not a reason to widen it. Case is compared exactly: the router is
+/// case-sensitive, so `PONTIS` is a different, unrouted, path.
+fn service_scope(raw_path: &str) -> ServiceScope {
+    // The resolve exception stays exact on the raw path, as it always was: an
+    // encoded or slashed spelling of it is simply outside, never a second way
+    // in to the one route that acts as nobody.
+    if raw_path == RESOLVE_PATH {
+        return ServiceScope::Resolve;
+    }
+    let Some(segments) = normalised_segments(raw_path) else {
+        return ServiceScope::Outside;
+    };
+    match segments
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .as_slice()
+    {
+        ["api", "v1", "pontis", _, ..] => ServiceScope::BoundaryF,
+        _ => ServiceScope::Outside,
+    }
+}
+
+/// The decoded segments of an absolute path, or `None` when any of them is not
+/// an ordinary one. See [`service_scope`].
+fn normalised_segments(raw_path: &str) -> Option<Vec<String>> {
+    let rest = raw_path.strip_prefix('/')?;
+    rest.split('/')
+        .map(|segment| {
+            let decoded = percent_decode(segment)?;
+            let ordinary = !decoded.is_empty()
+                && decoded != "."
+                && decoded != ".."
+                && !decoded.contains(['/', '\\', '\0']);
+            ordinary.then_some(decoded)
+        })
+        .collect()
+}
+
+fn percent_decode(segment: &str) -> Option<String> {
+    let bytes = segment.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut at = 0;
+    while at < bytes.len() {
+        if bytes[at] == b'%' {
+            let hex = segment.get(at + 1..at + 3)?;
+            out.push(u8::from_str_radix(hex, 16).ok()?);
+            at += 3;
+        } else {
+            out.push(bytes[at]);
+            at += 1;
+        }
+    }
+    String::from_utf8(out).ok()
+}
+
 /// A subject token the sidecar asked about, verified, on the resolve path only.
 ///
 /// Deliberately not an `AuthContext` and not a bare `VerifiedIdentity`: the
@@ -260,13 +336,45 @@ pub async fn require_bearer(
             return Ok(request.into_response(refusal()));
         }
 
+        let scope = service_scope(request.path());
+
+        // **The credential is worth Boundary F and nothing else** (F-50-1,
+        // D-9). Before it was, it authenticated on every path and acted as the
+        // represented user, so a leaked one could read and delete their
+        // projects and mint a personal access token that outlived it — none of
+        // which is a Boundary F operation, and the destructive ones skipped the
+        // approval the same effect needs through the agent.
+        //
+        // Refused before any represented-user handling, but *after* the
+        // credential itself is checked: a 403 here says "this credential is
+        // real", and that must not be learnable by guessing one.
+        if scope == ServiceScope::Outside {
+            let service = match state.service_credentials.authenticate(presented).await {
+                Ok(Some(service)) => service,
+                Ok(None) => return Ok(request.into_response(refusal())),
+                Err(_) => {
+                    return Ok(request.into_response(
+                        ApiError::internal(
+                            "AUTH_STORAGE_ERROR",
+                            "the service credential could not be verified",
+                        )
+                        .error_response(),
+                    ))
+                }
+            };
+            if service.is_revoked() {
+                return Ok(request.into_response(service_revoked_refusal()));
+            }
+            return Ok(request.into_response(out_of_scope_refusal()));
+        }
+
         // **The single exception to the rule below**, and bounded by the path
         // rather than by anything the caller says: resolving who a session
         // token belongs to and which account they may enter is what produces a
         // represented user and a context, so it cannot require them. It acts
         // as nobody — no `AuthContext` is set — and its handler reaches no
         // project, design, asset or template.
-        if request.path() == RESOLVE_PATH {
+        if scope == ServiceScope::Resolve {
             return resolve_subject(request, next, state, presented).await;
         }
 
@@ -629,6 +737,16 @@ fn service_revoked_refusal() -> actix_web::HttpResponse {
         "SERVICE_CREDENTIAL_REVOKED",
         "this service credential has been revoked",
         "Mint a new one with `forma-server service-credential <name>` and reconfigure the sidecar.",
+    )
+    .error_response()
+}
+
+/// The credential is genuine and the route is not Boundary F.
+fn out_of_scope_refusal() -> actix_web::HttpResponse {
+    ApiError::forbidden(
+        "SERVICE_CREDENTIAL_OUT_OF_SCOPE",
+        "a service credential is accepted only on Boundary F and the resolve route",
+        "Call /api/v1/pontis/* for a Pontis capability; everything else needs the person's own session or a personal access token.",
     )
     .error_response()
 }

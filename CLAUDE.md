@@ -476,6 +476,16 @@ where the process binds — because the old premise, *loopback means only this
 machine can reach it*, stopped being true the day Caddy was put in front of
 loopback. It was masked only because a token happened to be set.
 
+**The `forma_svc_` service credential is worth Boundary F and nothing else.**
+`require_bearer` accepts it only under `/api/v1/pontis/` and on
+`/api/v1/service/resolve`, judged on the percent-decoded, segment-checked path
+(`..`, encoded slashes, empty segments all fall outside), and answers any other
+route `403 SERVICE_CREDENTIAL_OUT_OF_SCOPE` before any represented-user handling.
+The credential is verified first, so the 403 is never an oracle for a guessed one.
+Without this a leaked credential could read and delete a person's projects and
+mint a PAT that outlived it (F-50-1). A new route the sidecar needs belongs under
+`/api/v1/pontis/` as a Boundary F operation, never as an exception here.
+
 **Reaching the network without a token is the one configuration that refuses to
 start.** `Config::binding_is_safe` rejects a non-loopback `FORMA_BIND` with no
 `FORMA_REMOTE_TOKEN`, and `forma-mcp --transport http` refuses outright — an HTTP
