@@ -41,3 +41,29 @@ test-driver and say so.
 
 Recorded by the worker in [pontis-pv1-evidence.md](pontis-pv1-evidence.md) (each row only on evidence), in
 `docs/evidence/step12/pv1-gaps.json`, and in §11 of the integration plan.
+
+---
+
+# Task G2: the rest of S6
+
+**2026-10-04.** G1 closed S6 expiry; the matrix row stays *partial* because three subcases of
+[§S6](pontis-pv1-e2e.md#s6--approval--full-stack) have no test of their own. One Codex worker
+(`gpt-6-luna`, xhigh) on branch `JonathanEKP/pontis-pv1-s6`.
+
+**S6 is written against `design.delete`, which is not a capability** (plan §10(b) D3, still undecided — do not
+add it). The only approval path on the Pontis door is `design.applyOperations` with a removal (`remove_layer`,
+`remove_page`), elevated to `destructive` in `apps/pontis-sidecar/src/capabilities.ts`. Each subcase is proven
+against that path, and the evidence row says so.
+
+| Subcase | Assert | Real Codex turns |
+|---|---|---|
+| Cancellation while pending | `session.cancel` while the approval is pending → `approval.cancelled` (or the Runtime's terminal equivalent), nothing removed, the design at its original version, zero Boundary F writes, and a late approve afterwards executes nothing. | 0 (FakeProvider); at most 1 to confirm if FakeProvider cannot reach the pending state |
+| Invocation scope | An approval granted for invocation X cannot authorize invocation Y: Y presented with X's approval is refused (by the gateway or by Forma's own check of the forwarded approval — record which), nothing removed. Test both layers if reachable: the sidecar gateway and Boundary F's `approval` field. | 0 |
+| Explicit set, no filter | The set consented to is the set executed: removals name explicit ids, and a filter-shaped removal (a selector, a wildcard, a missing id) is refused by schema or by Forma's operation parser (`INVALID_BODY` / `validation_error`), never interpreted. The card's affected count equals what is removed. | 0 |
+
+**Decisions.** G-6: FakeProvider first; real Codex only if a subcase cannot be reached otherwise (≤ 2 turns total).
+G-7: if a subcase fails, that is a finding: record it with the observed sequence, fix it only if the fix is
+Forma's and small, otherwise stop and escalate. G-8: S6 is marked *passed* only if every subcase in the
+specification, mapped onto `applyOperations`, has evidence; the `design.delete` wording is noted as the D3 gap.
+
+Constraints, setup and outcome recording are as for G1 above (CODEX_HOME is `.codex-pinned/home`).
