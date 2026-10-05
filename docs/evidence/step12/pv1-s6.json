@@ -1,0 +1,81 @@
+{
+  "runDate": "2026-10-04",
+  "branch": "JonathanEKP/pontis-pv1-s6",
+  "provider": "FakeProvider",
+  "testDriver": "prebuilt binary from /home/vertex/projects/forma/apps/pontis-sidecar/test-driver/target; Pontis checkout was not built",
+  "realCodexTurns": 0,
+  "scenarios": [
+    {
+      "id": "S6-cancellation-while-pending",
+      "status": "passed",
+      "capability": "design.applyOperations",
+      "observed": {
+        "approvalRequested": true,
+        "designReadableAndUnchangedWhilePending": true,
+        "boundaryFWritesWhilePending": 0,
+        "approvalCancelledEvent": true,
+        "terminalCapabilityError": "approval_cancelled",
+        "lateApprovalIntentDelivered": true,
+        "lateApprovalRuntimeRefusalDiagnostic": false,
+        "designReadableAndUnchangedAfterCancellation": true,
+        "boundaryFWritesAfterCancellation": 0
+      },
+      "test": "apps/pontis-sidecar/src/local-run.test.ts: S6 cancellation settles pending consent and a late approve executes nothing"
+    },
+    {
+      "id": "S6-invocation-scope",
+      "status": "passed",
+      "capability": "design.applyOperations",
+      "observed": {
+        "sidecarGatewayRefusal": "approval_scope_mismatch",
+        "gatewayRefusedBeforeBoundaryF": true,
+        "formaBoundaryFRefusal": "APPROVAL_SCOPE_MISMATCH / approval_scope_mismatch",
+        "boundaryFWritesForMismatchedApproval": 0,
+        "designUnchanged": true
+      },
+      "tests": [
+        "apps/pontis-sidecar/src/local-run.test.ts: S6 invocation scope: the gateway rejects invocation Y carrying invocation X consent",
+        "apps/server/tests/pontis.rs: a_removal_is_refused_without_consent_for_exactly_this_invocation"
+      ]
+    },
+    {
+      "id": "S6-explicit-set-and-no-filter",
+      "status": "passed",
+      "capability": "design.applyOperations",
+      "observed": {
+        "approvalCardAffectedResourceCount": 1,
+        "approvalCardOperationsContainExplicitId": true,
+        "executedRemovalCount": 1,
+        "executedIdsMatchConsentedIds": true,
+        "outsideLayerRemains": true,
+        "filterShapesRefused": {
+          "selector": "validation_error",
+          "wildcard": "validation_error",
+          "missingId": "validation_error"
+        },
+        "designUnchangedAfterFilterRefusals": true
+      },
+      "test": "apps/pontis-sidecar/src/local-run.test.ts: S6 explicit set: the approved ids are the ids removed, and filter shapes are refused"
+    }
+  ],
+  "priorSubcases": {
+    "expiry": "passed on FakeProvider and real Codex; docs/evidence/step12/pv1-gaps.json",
+    "consent": "passed in Step 11; docs/evidence/step11/run-1.json",
+    "denialAndReplay": "passed on real Codex; docs/evidence/step12/real-codex-gaps.json"
+  },
+  "s6Overall": {
+    "status": "passed",
+    "basis": "G-8: all S6 subcases have evidence when mapped to destructive design.applyOperations removals",
+    "designDeleteCapability": "not added; D3 remains undecided"
+  },
+  "verification": {
+    "pnpmLint": "passed",
+    "pnpmTypecheck": "passed",
+    "webTests": "254 passed",
+    "sidecarTests": "101 passed",
+    "sidecarLint": "passed",
+    "sidecarTypecheck": "passed",
+    "formaBoundaryFInvocationScopeTest": "passed",
+    "cargoTestWorkspace": "not run; no Rust source changed"
+  }
+}

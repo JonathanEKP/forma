@@ -81,6 +81,16 @@ no call in flight leaves nothing to go on.
 **Suggested fix:** always write a terminal event (`turn.cancelled`) for a cancelled turn, whether or
 not a capability call was in flight.
 
+**Task G2 approval-pending sequence (FakeProvider):** the host sees `approval.requested` for
+`design.applyOperations`; `session.cancel` returns `delivered: true`; the Runtime publishes
+`approval.cancelled`, then `capability.failed(approval_cancelled)`. No `turn.cancelled` or
+`turn.completed` is written for that turn, and the test Runtime reports `provider_exited`. The host
+then sends `approval.resolve(approveOnce)` and again receives `delivered: true`; no
+`REFUSED approval_expired` diagnostic follows. The design stays readable at its original version
+and Boundary F records zero `design.applyOperations` calls. This passes G2's no-mutation requirement
+and shows the same late-resolution response ambiguity described in item 11. Sanitized evidence:
+[`pv1-s6.json`](evidence/step12/pv1-s6.json).
+
 **Evidence:** `forma:docs/pontis-browser-findings/20-chat-lifecycle.md` (F-chat-3) and the sidecar
 README section *Cancelling mid-capability loses the turn's end*.
 
