@@ -27,6 +27,8 @@ import { strict as assert } from 'node:assert';
 import { randomUUID } from 'node:crypto';
 import { after, before, describe, it } from 'node:test';
 
+import type { ApprovalEvidence } from '@pontis/core';
+
 import { specOf } from './capabilities.ts';
 import { approvalId, documentOf, json, Stack, type Design } from './stack.ts';
 
@@ -353,6 +355,91 @@ describe('the sidecar, run locally against FakeProvider', () => {
     t.diagnostic(refusalDiagnostic ? 'Runtime emitted REFUSED approval_expired for the late resolution.' : 'No Runtime refusal diagnostic followed the late resolution.');
   });
 
+  it('S6 cancellation settles pending consent and a late approve executes nothing', async (t) => {
+    // A separate Runtime keeps this cancelled approval from consuming the same
+    // action the main session approves later in this suite.
+    const cancelledStack = new Stack(60_000);
+    const cancelledLayer = randomUUID();
+    const cancelledTagline = randomUUID();
+    try {
+      await cancelledStack.boot('S6 cancellation');
+      const cancellationDesign = await cancelledStack.createDesign(
+        'S6 cancellation',
+        documentOf(1, [cancelledLayer, cancelledTagline]),
+      );
+      await cancelledStack.attachDriver(
+        {
+          FORMA_DRIVER_PROJECT: cancelledStack.projectId,
+          FORMA_DRIVER_DESIGN: cancellationDesign.id,
+          FORMA_DRIVER_LONG_DESIGN: cancellationDesign.id,
+          FORMA_DRIVER_LAYER: cancelledLayer,
+          FORMA_DRIVER_TAGLINE: cancelledTagline,
+          // The scripted removal targets version + 1. Make that the live version
+          // so an incorrectly accepted late approval would mutate this design.
+          FORMA_DRIVER_BASE_VERSION: String(cancellationDesign.version - 1),
+        },
+        'fake',
+      );
+
+      const before = await cancelledStack.read(cancellationDesign.id);
+      const writesBefore = cancelledStack.boundaryCalls('design.applyOperations').length;
+      await cancelledStack.say(APPROVE);
+      const pending = await cancelledStack.nextEvent('approval.requested');
+      const id = approvalId(pending);
+      assert.equal(cancelledStack.boundaryCalls('design.applyOperations').length, writesBefore, 'no write reached Boundary F while consent was pending');
+      assert.deepEqual(await cancelledStack.read(cancellationDesign.id), before, 'the design remains readable and unchanged while pending');
+
+      const request = pending.at(-1)?.payload;
+      const invocationId = request?.invocationId;
+      assert.equal(typeof invocationId, 'string', 'the pending approval names its invocation');
+      await cancelledStack.intent('session.cancel', { sessionId: cancelledStack.sessionId });
+      const cancelled = await cancelledStack.nextEvent('approval.cancelled', (event) => event.payload.approvalId === id);
+      assert.equal(cancelled.at(-1)?.payload.invocationId, invocationId, 'cancellation settles the pending invocation');
+      const failed = await cancelledStack.nextEvent(
+        'capability.failed',
+        (event) => event.payload.invocationId === invocationId,
+      );
+      assert.match(JSON.stringify(failed.at(-1)?.payload), /approval_cancelled/u, 'the invocation reaches a terminal cancellation');
+
+      const late = await cancelledStack.intent('approval.resolve', { approvalId: id, decision: 'approveOnce' });
+      assert.equal(late.delivered, true, 'the sidecar reports the late resolution as delivered');
+      await cancelledStack.say(GUIDE);
+      const followUp = await cancelledStack.nextEvent('turn.completed');
+      assert.ok(followUp.some((event) => event.type === 'capability.completed' && event.payload.capabilityId === 'forma.guide'));
+      const driver = cancelledStack.children.find(({ name }) => name === 'test-driver');
+      assert.equal(cancelledStack.boundaryCalls('design.applyOperations').length, writesBefore, 'the late approve caused no Boundary F write');
+      assert.deepEqual(await cancelledStack.read(cancellationDesign.id), before, 'the design remains readable and unchanged after cancellation');
+      t.diagnostic(
+        driver?.stderr.includes('REFUSED approval_expired')
+          ? 'Runtime refused the late approval resolution.'
+          : 'No Runtime refusal diagnostic followed the late resolution.',
+      );
+    } finally {
+      await cancelledStack.close();
+    }
+  });
+
+  it('S6 invocation scope: the gateway rejects invocation Y carrying invocation X consent', async () => {
+    const before = await stack.read(design!.id);
+    const boundaryCalls = stack.boundaryCalls('design.applyOperations').length;
+    const invocationX = `inv_${randomUUID().replaceAll('-', '')}`;
+    const invocationY = `inv_${randomUUID().replaceAll('-', '')}`;
+    const outcome = await stack.invokeCapabilityForTest(
+      'design.applyOperations',
+      {
+        design_id: design!.id,
+        base_version: before.version,
+        operations: [{ op: 'remove_layer', layer_id: layer }],
+      },
+      { invocationId: invocationY, approval: approvalFor(invocationX) },
+    );
+
+    assert.equal(outcome.status, 'failed');
+    if (outcome.status === 'failed') assert.equal(outcome.error.code, 'approval_scope_mismatch');
+    assert.equal(stack.boundaryCalls('design.applyOperations').length, boundaryCalls, 'the gateway refuses before Boundary F');
+    assert.deepEqual(await stack.read(design!.id), before, 'the mismatched approval removed nothing');
+  });
+
   it('asks before removing anything, and a refusal writes nothing', async () => {
     const before = await stack.read(design!.id);
     const applies = stack.boundaryCalls('design.applyOperations').length;
@@ -368,21 +455,84 @@ describe('the sidecar, run locally against FakeProvider', () => {
     assert.deepEqual(await stack.read(design!.id), before);
   });
 
-  it('removes only once the person approves, as exactly one new version', async () => {
+  it('S6 explicit set: the approved ids are the ids removed, and filter shapes are refused', async () => {
     const before = await stack.read(design!.id);
     const applies = stack.boundaryCalls('design.applyOperations').length;
     await stack.say(APPROVE);
     const pending = await stack.nextEvent('approval.requested');
     assert.equal(stack.boundaryCalls('design.applyOperations').length, applies, 'no Boundary F write before consent');
     assert.deepEqual(await stack.read(design!.id), before, 'the design is untouched while consent is pending');
+
+    const approvalRequest = pending.at(-1)?.payload;
+    assert.equal(approvalRequest?.capabilityId, 'design.applyOperations');
+    assert.equal(approvalRequest?.affectedResourceCount, 1, 'the card counts the one removal in the batch');
+    const importantArguments = approvalRequest?.importantArguments;
+    assert.ok(isUnknownArray(importantArguments));
+    const operationsArgument = importantArguments.find((argument) => isRecord(argument) && argument.name === 'operations');
+    assert.ok(isRecord(operationsArgument));
+    assert.deepEqual(
+      operationsArgument.value,
+      [{ op: 'remove_layer', layer_id: layer }],
+      'the card carries the exact explicit id set the person is approving',
+    );
+
     await stack.intent('approval.resolve', { approvalId: approvalId(pending), decision: 'approveOnce' });
     await stack.nextEvent('turn.completed');
     const now = await stack.read(design!.id);
     assert.equal(now.version, before.version + 1);
     assert.equal(headline(now), undefined, 'the headline is gone');
+    assert.ok(layerIds(now).includes(tagline), 'the tagline outside the consented set remains');
+    const removedIds = layerIds(before).filter((id) => !layerIds(now).includes(id));
+    assert.deepEqual(removedIds, [layer], 'Forma removed exactly the id named on the card');
+    assert.equal(approvalRequest?.affectedResourceCount, removedIds.length, 'the card count equals the executed removals');
     assert.equal(stack.boundaryCalls('design.applyOperations').length, applies + 1, 'one write, carrying the approval');
+
+    const invalidRemovals: { readonly name: string; readonly operation: Record<string, unknown> }[] = [
+      { name: 'selector', operation: { op: 'remove_layer', selector: { role: 'headline' } } },
+      { name: 'wildcard', operation: { op: 'remove_layer', layer_id: '*' } },
+      { name: 'missing id', operation: { op: 'remove_layer' } },
+    ];
+    for (const invalid of invalidRemovals) {
+      const invocationId = `inv_${randomUUID().replaceAll('-', '')}`;
+      const refused = await stack.invokeCapabilityForTest(
+        'design.applyOperations',
+        {
+          design_id: design!.id,
+          base_version: now.version,
+          operations: [invalid.operation],
+        },
+        { invocationId, approval: approvalFor(invocationId) },
+      );
+      assert.equal(refused.status, 'failed', `${invalid.name} removal is refused`);
+      if (refused.status === 'failed') {
+        assert.equal(refused.error.code, 'validation_error', `${invalid.name} is rejected by Forma's operation parser`);
+      }
+      assert.deepEqual(await stack.read(design!.id), now, `${invalid.name} was never interpreted as a removal`);
+    }
   });
 });
+
+function approvalFor(invocationId: string): ApprovalEvidence {
+  const grantedAt = new Date();
+  return {
+    approvalId: `apr_${randomUUID().replaceAll('-', '')}`,
+    sessionId: stack.sessionId,
+    applicationContextId: stack.account,
+    capabilityId: 'design.applyOperations',
+    scope: { kind: 'once', invocationId },
+    risk: 'destructive',
+    grantedAt: grantedAt.toISOString(),
+    expiresAt: new Date(grantedAt.getTime() + 60_000).toISOString(),
+  };
+}
+
+function layerIds(value: Design): string[] {
+  return value.document.pages.flatMap((page) => page.layers.map(({ id }) => id));
+}
+
+function isUnknownArray(value: unknown): value is unknown[] {
+  return Array.isArray(value);
+}
 
 function validationReport(value: unknown): ValidationReport {
   assert.ok(isValidationReport(value), 'the response is a validation report');

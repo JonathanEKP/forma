@@ -32,6 +32,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 
+import type { ApprovalEvidence } from '@pontis/core';
 import { defineAgentApp, type InvokeOutcome } from '@pontis/server';
 
 import { FormaBoundary } from './boundary.ts';
@@ -237,7 +238,11 @@ export class Stack {
    * Invokes the registered sidecar gateway directly for contracts that must
    * mutate host membership while a Runtime session is open. Test code only.
    */
-  async invokeCapabilityForTest(capabilityId: string, input: unknown): Promise<InvokeOutcome> {
+  async invokeCapabilityForTest(
+    capabilityId: string,
+    input: unknown,
+    options: { readonly invocationId?: string; readonly approval?: ApprovalEvidence } = {},
+  ): Promise<InvokeOutcome> {
     const app = defineAgentApp({
       id: 'forma',
       guidance: GUIDANCE,
@@ -245,12 +250,13 @@ export class Stack {
       resolveUser: (userId) => (isUuid(userId) ? { id: userId } : undefined),
     });
     return await app.gateway.invoke({
-      invocationId: `inv_${randomUUID().replaceAll('-', '')}`,
+      invocationId: options.invocationId ?? `inv_${randomUUID().replaceAll('-', '')}`,
       sessionId: this.sessionId,
       applicationContextId: this.account,
       userId: this.subject,
       capabilityId,
       input,
+      ...(options.approval === undefined ? {} : { approval: options.approval }),
     });
   }
 
