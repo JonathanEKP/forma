@@ -63,6 +63,25 @@ the person cannot read (no names available); the repeat-after-deny line.
 - After an approved deletion the editor shows the new version (v6 → v7) and the agent confirms in one line;
   Undo goes to v8, never back to v6.
 
+## A calmer editor ("Calm" layout, proposed)
+
+Asked for by the owner after the card was approved: the editor read like a CRM (eight text buttons in the
+top bar, a boxed header on every panel). Prototyped as a second layout, switchable in the review rail:
+
+- The canvas is the room; regions separate by tone, not boxed borders.
+- Top bar: Forma symbol, "Projects /" breadcrumb, design name, quiet version tag; on the right Undo/Redo
+  icons, a validation chip ("✓ Valid" / "2 issues", opens a popover) and Export as the one primary action.
+- Left: a slim icon rail (Layers & pages, Assets, Brand), one flyout at a time; pages as a switcher on top
+  of the layers.
+- Properties appears only while something is selected.
+- Zoom is a floating control at the bottom-right of the visible canvas, showing the real percentage.
+- The agent is a presence: collapsed, a floating composer at the bottom-centre of the canvas ("Ask the
+  agent…"); expanded, the chat docks on the right. An approval while collapsed shows a labelled bubble
+  ("Needs your approval", sentence, countdown, Review) above the composer.
+
+This stays inside plan §10's regions (pages and layers left, canvas centre, properties right, Export top
+right); it changes how they are shown, not where they are.
+
 ## Decisions
 
 *(filled in as the round is reviewed)*
