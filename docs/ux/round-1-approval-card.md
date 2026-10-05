@@ -47,6 +47,22 @@ Cases: one layer ("Delete the layer “Headline” from “ALPHA Launch cover”
 a batch of eight layers across two pages; a removal mixed with ordinary edits in one batch; a design
 the person cannot read (no names available); the repeat-after-deny line.
 
+## Learned while prototyping
+
+- **"A design the person cannot read" cannot happen.** The agent acts as the person through Boundary F, so it
+  can never remove anything from a design they cannot read. The real no-names case is that the sidecar's read
+  for names failed or timed out when it wrote the card: "Delete 1 layer from “ALPHA Launch cover”" (or "from this
+  design"), then "Forma couldn't load the layer's name. Details shows its id." Recommendation 1 changes
+  accordingly: names are best-effort, the ids are always the authority.
+- When a batch spans pages, each chip carries its page as a small suffix ("Headline · Cover"); a page chip
+  carries a page icon.
+- Settled cards collapse to one line that says the outcome in the person's words: "Approved. Deleted the layer
+  “Headline”." / "Denied. “Headline” was kept." / "Expired before you answered. Page “Back” and its 3 layers were
+  kept." The tool row above it reads "Not run" when nothing executed.
+- While "Sending…", the countdown is hidden; an approval that expires while sending still settles as expired.
+- After an approved deletion the editor shows the new version (v6 → v7) and the agent confirms in one line;
+  Undo goes to v8, never back to v6.
+
 ## Decisions
 
 *(filled in as the round is reviewed)*
