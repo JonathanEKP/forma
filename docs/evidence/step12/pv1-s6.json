@@ -60,7 +60,8 @@
   ],
   "priorSubcases": {
     "expiry": "passed on FakeProvider and real Codex; docs/evidence/step12/pv1-gaps.json",
-    "consentDenialAndReplay": "passed in Step 11; docs/evidence/step11/run-1.json"
+    "consent": "passed in Step 11; docs/evidence/step11/run-1.json",
+    "denialAndReplay": "passed on real Codex; docs/evidence/step12/real-codex-gaps.json"
   },
   "s6Overall": {
     "status": "passed",
