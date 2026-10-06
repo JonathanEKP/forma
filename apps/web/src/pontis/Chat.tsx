@@ -7,7 +7,7 @@
  * application running a capability, an approval request, the application's
  * result, and a navigation of the person's own view.
  */
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 
 import type { Line, NoticeCopy, ProviderView, ViewChip } from "./chat";
 import { ApprovalCard } from "./ChatApproval";
@@ -50,6 +50,8 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
   const [draft, setDraft] = useState(recallDraft);
   const log = useRef<HTMLOListElement>(null);
   const composer = useRef<HTMLTextAreaElement>(null);
+  const sessionInfo = useRef<HTMLDivElement>(null);
+  const sessionInfoButton = useRef<HTMLButtonElement>(null);
   const followsLatest = useRef(true);
   const [showJump, setShowJump] = useState(false);
   const [sessionInfoOpen, setSessionInfoOpen] = useState(false);
@@ -59,6 +61,26 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
   useEffect(() => {
     if (chat.needsComputerChoice) setRunOnOpen(true);
   }, [chat.needsComputerChoice]);
+
+  useEffect(() => {
+    if (!sessionInfoOpen) return;
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setSessionInfoOpen(false);
+      sessionInfoButton.current?.focus();
+    };
+    const closeOutside = (event: PointerEvent) => {
+      const popover = sessionInfo.current;
+      if (popover && event.target instanceof Node && !popover.contains(event.target)) setSessionInfoOpen(false);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    document.addEventListener("pointerdown", closeOutside);
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape);
+      document.removeEventListener("pointerdown", closeOutside);
+    };
+  }, [sessionInfoOpen]);
 
   // Follow new entries only while the person is already at the end of the transcript.
   useEffect(() => {
@@ -114,7 +136,7 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
     setDraft(text);
     rememberDraft(text);
   };
-  const onKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+  const onKey = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       submit();
@@ -126,8 +148,8 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
       <header className="flex items-center gap-2 border-b border-edge px-4 py-3">
         <h2 className="text-[13px] font-medium">Agent</h2>
         <div className="flex-1" />
-        <div className="relative">
-          <button type="button" aria-label="Session information" aria-expanded={sessionInfoOpen} onClick={() => setSessionInfoOpen((open) => !open)} className="text-xs text-muted hover:text-paper">
+        <div ref={sessionInfo} className="relative">
+          <button ref={sessionInfoButton} type="button" aria-label="Session information" aria-expanded={sessionInfoOpen} onClick={() => setSessionInfoOpen((open) => !open)} className="text-xs text-muted hover:text-paper">
             Info
           </button>
           {sessionInfoOpen && (

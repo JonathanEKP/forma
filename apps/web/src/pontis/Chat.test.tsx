@@ -485,14 +485,28 @@ describe("a conversation", () => {
     expect(card.querySelector("ul")?.textContent).not.toMatch(/design-123|layer-456/);
   });
 
-  it("shows session information in an anchored popover without a backdrop", async () => {
+  it("closes session information on Escape and outside click, returns focus, and keeps its toggle", async () => {
     await ready();
-    fireEvent.click(screen.getByRole("button", { name: "Session information" }));
+    const trigger = screen.getByRole("button", { name: "Session information" });
+    fireEvent.click(trigger);
     const popover = screen.getByRole("region", { name: "Session information" });
     expect(popover.textContent).toContain("This window's session");
     expect(popover.textContent).toContain("Started");
     expect(popover.querySelector("[aria-modal], dialog")).toBeNull();
     expect(document.querySelector("[aria-modal], dialog")).toBeNull();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("region", { name: "Session information" })).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+
+    fireEvent.click(trigger);
+    expect(screen.getByRole("region", { name: "Session information" })).toBeTruthy();
+    fireEvent.pointerDown(screen.getByRole("log"));
+    expect(screen.queryByRole("region", { name: "Session information" })).toBeNull();
+
+    fireEvent.click(trigger);
+    fireEvent.click(trigger);
+    expect(screen.queryByRole("region", { name: "Session information" })).toBeNull();
   });
 
   it("offers Jump to latest only after the transcript is scrolled up, and follows the newest line after the jump", async () => {
