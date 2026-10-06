@@ -466,6 +466,22 @@ describe("a conversation", () => {
     expect(backend.intents()).toContainEqual({ type: "session.input", payload: { sessionId: SESSION, text: "work on it", view: { projectId: "project-1" } } });
   });
 
+  it("renders UI outcomes as article cards with identifiers inside Details", async () => {
+    await inSession();
+    backend.push(3, "capability.requested", { invocationId: "select", capabilityId: "ui.selectLayer", input: { design_id: "design-123", layer_id: "layer-456" } });
+    backend.push(4, "capability.completed", { invocationId: "select", capabilityId: "ui.selectLayer", result: { outcome: "handled", detail: "Selected “Headline”" } });
+
+    const card = await screen.findByRole("article", { name: "Moved your view" });
+    expect(card.parentElement?.tagName).toBe("LI");
+    expect(card.querySelector("div")).toBeNull();
+    expect(within(card).getByRole("heading", { name: "Moved your view" })).toBeTruthy();
+    expect(within(card).getByText("Selected “Headline”").closest("details")).toBeNull();
+    const details = card.querySelector("details");
+    expect(details?.textContent).toContain("design-123");
+    expect(details?.textContent).toContain("layer-456");
+    expect(card.querySelector("ul")?.textContent).not.toMatch(/design-123|layer-456/);
+  });
+
   it("shows session information in an anchored popover without a backdrop", async () => {
     await ready();
     fireEvent.click(screen.getByRole("button", { name: "Session information" }));
