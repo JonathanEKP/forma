@@ -26,7 +26,7 @@ const OTHER_CONTEXT = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const DESIGN = '33333333-3333-4333-8333-333333333333';
 const UNREADABLE = '99999999-9999-4999-8999-999999999999';
 const LAYER = '44444444-4444-4444-8444-444444444444';
-const SESSION = 'ses_ui';
+const SESSION = 'ses_00000000000000000000000000000000';
 const ORIGIN = 'http://editor.test';
 /**
  * What the proxy in front of both sends.
@@ -43,6 +43,8 @@ const TOKENS: Record<string, { subject: string; account_id: string }> = {
   'session-user': { subject: USER, account_id: CONTEXT },
   'session-other': { subject: OTHER_USER, account_id: OTHER_CONTEXT },
 };
+
+const defaultSessionBound = new WeakSet<Sidecar>();
 
 /**
  * forma-server as these tests need it: it resolves the two sessions, serves one
@@ -71,7 +73,16 @@ async function forma() {
 
 /** One connected window, registered for all four actions unless a test says otherwise. */
 function connect(sidecar: Sidecar, token: string, options: WindowOptions = {}, origin = ORIGIN): Promise<Window> {
-  return connectWindow(sidecar.origin, token, origin, UI_ACTIONS, options);
+  const withDefaultSession = options.agentSession === undefined && token === 'session-user';
+  const prepare = async (): Promise<Window> => {
+    if (withDefaultSession && !defaultSessionBound.has(sidecar)) {
+      const deviceId = await pair(sidecar, USER);
+      sidecar.controlPlane.bindSessionContext({ sessionId: SESSION, userId: USER, deviceId, applicationContextId: CONTEXT });
+      defaultSessionBound.add(sidecar);
+    }
+    return await connectWindow(sidecar.origin, token, origin, UI_ACTIONS, withDefaultSession ? { ...options, agentSession: SESSION } : options);
+  };
+  return prepare();
 }
 
 async function sidecarWith(editorOrigins: readonly string[] | undefined, body: (sidecar: Sidecar) => Promise<void>) {
@@ -409,7 +420,7 @@ describe('an action goes to the window whose chat started the session (D-2)', ()
       const bound = session();
       sidecar.controlPlane.bindSessionContext({ sessionId: bound, userId: USER, deviceId: device, applicationContextId: CONTEXT });
       const chat = await connect(sidecar, 'session-user', { agentSession: bound });
-      const bystander = await connect(sidecar, 'session-user');
+      const bystander = await connect(sidecar, 'session-user', { agentSession: '' });
       try {
         const invocation = sidecar.agentApp.gateway.invoke({
           userId: USER,
@@ -434,8 +445,8 @@ describe('an action goes to the window whose chat started the session (D-2)', ()
 
   it('answers ui_unavailable with two windows and none bound, rather than guessing', async () => {
     await sidecarWith([ORIGIN], async (sidecar) => {
-      const one = await connect(sidecar, 'session-user');
-      const two = await connect(sidecar, 'session-user');
+      const one = await connect(sidecar, 'session-user', { agentSession: '' });
+      const two = await connect(sidecar, 'session-user', { agentSession: '' });
       try {
         const outcome = await invoke(sidecar, 'ui.setZoom', { zoom: 2 }, 'inv_ambiguous');
         assert.equal(outcome.status, 'failed');
@@ -455,7 +466,7 @@ describe('an action goes to the window whose chat started the session (D-2)', ()
       const bound = session();
       sidecar.controlPlane.bindSessionContext({ sessionId: bound, userId: USER, deviceId: device, applicationContextId: CONTEXT });
       const chat = await connect(sidecar, 'session-user', { agentSession: bound });
-      const other = await connect(sidecar, 'session-user');
+      const other = await connect(sidecar, 'session-user', { agentSession: '' });
       try {
         chat.close();
         await registered(sidecar, 1);
@@ -483,8 +494,8 @@ describe('an action goes to the window whose chat started the session (D-2)', ()
       sidecar.controlPlane.bindSessionContext({ sessionId: mine, userId: USER, deviceId: device, applicationContextId: CONTEXT });
       // The forger has a Device of their own, so the check really does ask about it.
       await pair(sidecar, OTHER_USER);
-      const one = await connect(sidecar, 'session-user');
-      const two = await connect(sidecar, 'session-user');
+      const one = await connect(sidecar, 'session-user', { agentSession: '' });
+      const two = await connect(sidecar, 'session-user', { agentSession: '' });
       const forger = await connect(sidecar, 'session-other', { agentSession: mine });
       try {
         const bound = sidecar.agentApp.uiClients.all().map((client) => client.agentSessionId);

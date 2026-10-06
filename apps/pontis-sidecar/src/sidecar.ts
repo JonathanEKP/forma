@@ -96,11 +96,15 @@ export async function startSidecar(options: SidecarOptions): Promise<Sidecar> {
   const people = personResolver(boundary);
   const resolvePerson = people.memoized;
   const resolvePersonFresh = people.fresh;
+  let uiWindowIsBound: (userId: string, applicationContextId: string, sessionId: string) => boolean = () => false;
 
   const agentApp = defineAgentApp({
     id: APPLICATION_ID,
     guidance: GUIDANCE,
-    capabilities: [...formaCapabilities(boundary), ...uiCapabilities(boundary)],
+    capabilities: [
+      ...formaCapabilities(boundary),
+      ...uiCapabilities(boundary, (userId, applicationContextId, sessionId) => uiWindowIsBound(userId, applicationContextId, sessionId)),
+    ],
     // The represented user arrives inside a delegation this process issued
     // for a person it resolved through Forma, so the id is a Forma subject.
     // Whether that subject may still act in the session's account is not
@@ -119,6 +123,13 @@ export async function startSidecar(options: SidecarOptions): Promise<Sidecar> {
   // `sequence`, and what is not — output deltas, presence — from the Device's own
   // notification. `agentApp.uiClients` is the registry the UI stream registers in.
   const windows = agentApp.uiClients;
+  uiWindowIsBound = (userId, applicationContextId, sessionId) =>
+    windows.all().some(
+      (client) =>
+        client.userId === userId &&
+        client.applicationContextId === applicationContextId &&
+        client.agentSessionId === sessionId,
+    );
   const devices = new DeviceGateway({ controlPlane, onNotification: liveNotification(controlPlane, windows, options.log) });
   const stopFanOut = fanOutDurable(controlPlane, windows, options.log);
   devices.attach(server);
