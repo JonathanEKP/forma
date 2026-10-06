@@ -416,8 +416,8 @@ describe('the gateway in front of Boundary F', () => {
       const reason = String(approval.reason);
       assert.ok(!/[\r\n\u2028\u2029]/u.test(summary));
       assert.ok(!/[\r\n\u2028\u2029]/u.test(reason));
-      assert.ok(summary.includes('“Head\\” line'), summary);
-      assert.ok(summary.includes('“Launch\\” [script] cover '), summary);
+      assert.ok(summary.includes('“Head” line'), summary);
+      assert.ok(summary.includes('“Launch” [script] cover '), summary);
       assert.ok(!summary.includes('x'.repeat(81)), summary);
       assert.ok(!summary.includes('y'.repeat(81)), summary);
       assert.ok(!summary.includes('**'), summary);
