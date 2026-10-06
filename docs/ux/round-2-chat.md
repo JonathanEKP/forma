@@ -64,3 +64,34 @@ own and not the chat.
   nothing. This is Forma's own refusal on top of Pontis's rule 2. The owner's reasoning: a view that changes by
   surprise, possibly to another design, is worse than an agent that says it could not reach you. It covers view moves
   only; a design edit is a new version, seen by any window that has the design open.
+- **Everything else in recommendations 1–6 is approved as prototyped (owner, 2026-10-06)**, with the changes from
+  [feedback 1](opendesign/round-2-feedback-1.md):
+  - **Text:** the formatting subset is rendered without `innerHTML`, and hostile markup shows as literal text.
+  - **UI action cards:** four headings by outcome ("Moved your view", "Couldn't move your view", "Not confirmed by this
+    window", "The agent asked for something Forma can't do"), with ids only inside Details. Long text wraps, and there
+    is no horizontal scroll.
+  - **Session notices:** one component with three tones (info, needs you, stopped), each with what happened, what to
+    do, and one action. While stopped, the composer is disabled with the reason.
+    - Text that no agent said, such as "Your message has not been sent", belongs to the notice and is never voiced as
+      "Forma Agent".
+    - **New session** starts at once, with no confirmation and no modal. A divider "New session · hh:mm" sits above
+      the new session's first entry, the old transcript is kept above it, and the composer is re-enabled and focused.
+  - **Context chip:** read-only, above the composer. With a design open it shows the design, page and selected layer.
+    On a project page it shows `Project “…”`, which needs F-chat-17's change in the sidecar's `[forma-view]` line. On
+    the projects list there is no chip.
+  - **The chrome:**
+    - Send is disabled while the composer is empty.
+    - Undo, Redo, the validation chip and Export are hidden when no design is open.
+    - The transcript follows the newest entry, with "Jump to latest" when the person has scrolled up.
+  - **Visual-result slot:** reserved and not built. It waits for Pontis CR-2.3.
+- **Not verified in the prototype:** that the transcript scrolls to the newest entry. The Orca test browser does not
+  paint background tabs, so its `requestAnimationFrame` never fires. The implementation must test this itself.
+
+## Later (ideas, not scheduled)
+
+- **Resume an earlier conversation.** Closing a tab loses its chat by design (`session-store.ts` keeps it in
+  `sessionStorage`). A reload keeps the session and transcript; a new tab starts a new agent with no memory of the
+  conversation, though it can still read the design and the `[forma-view]` line. The owner would like to be able to
+  reopen a recent conversation later, for example from a list of recent conversations in the chat. This depends on how
+  long Pontis keeps a session, which today is blocked by F-30-5 (sessions die at five minutes), and on Pontis keeping
+  the transcript's durable events. Asked for on 2026-10-06; not designed.
