@@ -635,7 +635,9 @@ describe("a conversation", () => {
     await waitFor(() => expect(transcript.scrollTop).toBe(scrollHeight - 120));
 
     scrollHeight += 180;
-    act(() => queryClient.setQueryData(keys.design("design-1"), approvalDesign));
+    act(() => {
+      void queryClient.setQueryData(keys.design("design-1"), approvalDesign);
+    });
     const card = screen.getByText("NEEDS YOUR APPROVAL").closest("li") as HTMLElement;
     await within(card).findByText("Headline");
     await waitFor(() => expect(transcript.scrollTop).toBe(scrollHeight - 120));
