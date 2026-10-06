@@ -23,10 +23,12 @@ export function Assets({
   projectId,
   onPlace,
   disabled,
+  onClose,
 }: {
   projectId: string;
   onPlace: (asset: Asset) => void;
   disabled: boolean;
+  onClose?: () => void;
 }) {
   const assets = useAssets(projectId);
   const requests = useAssetRequests(projectId);
@@ -40,7 +42,7 @@ export function Assets({
   const error = [upload.error, resolve.error, cancel.error].find(Boolean);
 
   return (
-    <Panel title="Assets">
+    <Panel title="Assets" onClose={onClose}>
       {error && <Failure error={error} />}
 
       {pending.length > 0 && (

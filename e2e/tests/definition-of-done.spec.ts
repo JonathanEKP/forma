@@ -69,6 +69,8 @@ test("every hosted SPA entry point reaches the application shell", async ({ page
 /** Section 79 steps 3 and 4: a project, and the Brand Kit everything assumes. */
 async function createProjectWithBrand(page: Page, name: string) {
   await page.goto("/");
+  await expect(page.getByRole("button", { name: "Undo" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Export", exact: true })).toHaveCount(0);
 
   await page.getByPlaceholder("New project").fill(name);
   await page.getByPlaceholder("New project").press("Enter");
@@ -88,7 +90,13 @@ async function createDesign(page: Page, name: string) {
   await page.getByPlaceholder("New design").fill(name);
   await page.getByPlaceholder("New design").press("Enter");
   // Creating a design opens it.
-  await expect(page.getByRole("button", { name: "← Projects" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open Projects" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Undo" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Redo" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Export", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Layers & pages", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByLabel(/Canvas zoom \d+ percent/)).toBeVisible();
+  await expect(page.getByRole("complementary", { name: "Properties" })).toHaveCount(0);
 }
 
 /// A page nothing links to is a page most people do not have.
@@ -110,21 +118,25 @@ test("a new user gets from an empty Forma to a PNG on disk", async ({ page }) =>
   // --- step 5: upload a photo ------------------------------------------------
   // Done from the editor's assets panel, so a design has to exist first.
   await createDesign(page, "Teaser");
-  await page.getByRole("button", { name: "assets" }).click();
+  await page.getByRole("button", { name: "Assets", exact: true }).click();
   await page.locator('input[type="file"]').first().setInputFiles(HERO);
   await expect(page.getByTitle(/Place hero.png/)).toBeVisible({ timeout: 15_000 });
+  await page.getByRole("button", { name: "Layers & pages", exact: true }).click();
 
   // --- build a piece by hand, which is Phase 6's acceptance ------------------
+  const versionBeforeText = await readVersion(page);
   await page.getByRole("button", { name: "+ Text" }).click();
-  await expect(page.getByRole("button", { name: /Text/ }).last()).toBeVisible();
+  await expect.poll(() => readVersion(page)).toBe(versionBeforeText + 1);
+  const layersPane = page.getByRole("complementary", { name: "Layers & pages" });
+  const textLayer = layersPane.getByRole("button", { name: /Text/ }).last();
+  await expect(textLayer).toBeVisible();
 
   // Place the uploaded photo through the same operation an agent would send.
+  await page.getByRole("button", { name: "Assets", exact: true }).click();
+  const versionBeforePlacement = await readVersion(page);
   await page.getByTitle(/Place hero.png/).click();
-  // Wait for the layer to actually land before reading a version. Reading it
-  // while a mutation is still in flight is how this test was flaky: it would
-  // capture the version from before the placement and then expect one more than
-  // that, while two operations had landed.
-  await expect(page.getByText("Image", { exact: true })).toBeVisible();
+  // Wait for the layer to land before starting the next version assertion.
+  await expect.poll(() => readVersion(page)).toBe(versionBeforePlacement + 1);
 
   // --- step 16: move an element ---------------------------------------------
   // Dragged on the canvas rather than typed into a field, because the mechanism
@@ -139,6 +151,7 @@ test("a new user gets from an empty Forma to a PNG on disk", async ({ page }) =>
   await page.mouse.down();
   await page.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2 + 40, { steps: 8 });
   await page.mouse.up();
+  await expect(page.getByRole("complementary", { name: "Properties" })).toBeVisible();
 
   // --- step 17: saved, and exactly once -------------------------------------
   await expect
@@ -146,8 +159,10 @@ test("a new user gets from an empty Forma to a PNG on disk", async ({ page }) =>
     .toBe(versionBefore + 1);
 
   // --- steps 10 and 11: validate, and see the render ------------------------
-  await page.getByRole("button", { name: "validation" }).click();
+  await page.getByRole("button", { name: /Open validation:/ }).click();
+  await expect(page.getByRole("region", { name: "Validation" })).toBeVisible();
   await expect(page.getByText(/No errors|error/)).toBeVisible({ timeout: 15_000 });
+  await page.getByRole("button", { name: "Close validation" }).click();
 
   // --- step 14: export, and verify the download -----------------------------
   await page.getByRole("button", { name: "Export", exact: true }).click();

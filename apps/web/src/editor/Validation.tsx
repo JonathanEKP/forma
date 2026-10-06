@@ -9,31 +9,28 @@
 
 import type { ValidationReport } from "../api";
 import { useEditor } from "../store";
-import { Panel } from "./Panels";
 
 export function Validation({
   report,
   loading,
+  onSelect,
 }: {
   report: ValidationReport | undefined;
   loading: boolean;
+  onSelect?: () => void;
 }) {
   const selectLayer = useEditor((s) => s.selectLayer);
   const selectPage = useEditor((s) => s.selectPage);
 
   if (loading || !report) {
-    return (
-      <Panel title="Validation">
-        <p className="px-1 py-2 text-xs text-faint">Checking…</p>
-      </Panel>
-    );
+    return <p className="px-1 py-2 text-xs text-faint">Checking…</p>;
   }
 
   const errors = report.issues.filter((i) => i.severity === "error");
   const warnings = report.issues.filter((i) => i.severity === "warning");
 
   return (
-    <Panel title="Validation">
+    <div>
       <div
         className={`mb-3 rounded-lg border px-2.5 py-2 text-xs ${
           errors.length > 0
@@ -62,6 +59,7 @@ export function Validation({
           onClick={() => {
             if (issue.page_id) selectPage(issue.page_id);
             if (issue.layer_id) selectLayer(issue.layer_id);
+            onSelect?.();
           }}
           disabled={!issue.layer_id && !issue.page_id}
         >
@@ -76,6 +74,6 @@ export function Validation({
           <p className="mt-1 text-[11px] leading-snug text-muted">{issue.message}</p>
         </button>
       ))}
-    </Panel>
+    </div>
   );
 }

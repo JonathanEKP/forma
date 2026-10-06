@@ -81,6 +81,8 @@ test("the base product is fully usable while Pontis is absent", async ({ page })
   // --- the editor loads, with nothing claiming to be connected ---------------
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Give visual ideas a form." })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Undo" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Export", exact: true })).toHaveCount(0);
   await expectNoPresenceClaim(page, "the projects page");
 
   // The page that would carry a connection status, if anything did.
@@ -104,7 +106,10 @@ test("the base product is fully usable while Pontis is absent", async ({ page })
   await page.getByPlaceholder("New design").fill("Offline");
   const firstPreview = previewOf(page, 1);
   await page.getByPlaceholder("New design").press("Enter");
-  await expect(page.getByRole("button", { name: "← Projects" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open Projects" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Layers & pages", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByLabel(/Canvas zoom \d+ percent/)).toBeVisible();
+  await expect(page.getByRole("complementary", { name: "Properties" })).toHaveCount(0);
   await firstPreview;
   await expectNoPresenceClaim(page, "the editor");
 

@@ -91,3 +91,450 @@ samp {
   scrollbar-width: thin;
   scrollbar-color: var(--color-edge-strong) transparent;
 }
+
+/* The Calm editor uses tone to name each region, with the artboard as the
+   brightest surface and the surrounding tools kept quiet. */
+.editor-root {
+  min-width: 0;
+  overflow: hidden;
+  background: var(--color-ink);
+}
+
+.editor-topbar {
+  isolation: isolate;
+  z-index: 20;
+}
+
+.editor-mark {
+  flex: none;
+  margin-right: 2px;
+  color: var(--color-paper);
+  font-size: 24px;
+  font-weight: 650;
+  line-height: 1;
+  letter-spacing: -0.09em;
+}
+
+.editor-version {
+  flex: none;
+  border-radius: 999px;
+  background: var(--color-surface-2);
+  padding: 3px 7px;
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.editor-icon-button,
+.editor-close-button {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  min-width: 32px;
+  min-height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  padding: 4px;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+
+.editor-icon-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.editor-close-button {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.editor-icon-button:hover:not(:disabled),
+.editor-close-button:hover {
+  background: var(--color-surface-2);
+  color: var(--color-paper);
+}
+
+.editor-icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.38;
+}
+
+.editor-icon-button:focus-visible,
+.editor-close-button:focus-visible,
+.editor-validation-chip:focus-visible,
+.editor-rail-button:focus-visible {
+  outline: 1px solid var(--color-signal);
+  outline-offset: 2px;
+}
+
+.editor-validation-chip {
+  min-height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--color-surface-2);
+  padding: 5px 10px;
+  color: var(--color-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.editor-validation-chip:hover,
+.editor-validation-chip[aria-expanded="true"] {
+  color: var(--color-paper);
+}
+
+.editor-export-button {
+  border: 1px solid var(--color-signal);
+  background: var(--color-signal);
+  color: var(--color-ink);
+  cursor: pointer;
+}
+
+.editor-export-button:hover:not(:disabled) {
+  outline: 1px solid var(--color-paper);
+  outline-offset: 1px;
+}
+
+.editor-validation-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 60;
+  width: min(320px, calc(100vw - 24px));
+  max-height: min(560px, calc(100vh - 88px));
+  overflow: auto;
+  border: 1px solid var(--color-edge-strong);
+  border-radius: 12px;
+  background: var(--color-surface-2);
+  padding: 12px;
+  box-shadow: 0 16px 40px rgb(0 0 0 / 32%);
+}
+
+.editor-validation-popover > .editor-pane {
+  width: 100%;
+  overflow: visible;
+  background: transparent;
+  padding: 10px 0 0;
+}
+
+.editor-validation-popover > .editor-pane > .editor-pane-heading {
+  display: none;
+}
+
+.editor-workspace {
+  min-width: 0;
+  overflow: hidden;
+  background: var(--color-ink);
+}
+
+.editor-rail {
+  width: 48px;
+  background: var(--color-ink);
+}
+
+.editor-rail-button {
+  position: relative;
+  border: 0;
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+
+.editor-rail-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.editor-rail-button:hover,
+.editor-rail-button.is-active {
+  background: var(--color-surface-2);
+  color: var(--color-signal);
+}
+
+.editor-rail-button::after {
+  position: absolute;
+  top: 4px;
+  left: calc(100% + 8px);
+  z-index: 80;
+  visibility: hidden;
+  width: max-content;
+  max-width: 160px;
+  border: 1px solid var(--color-edge-strong);
+  border-radius: 8px;
+  background: var(--color-ink);
+  padding: 4px 8px;
+  color: var(--color-paper);
+  content: attr(data-tooltip);
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.editor-rail-button:focus-visible::after {
+  visibility: visible;
+}
+
+.editor-pane {
+  min-width: 0;
+  background: var(--color-ink);
+}
+
+.editor-flyout-pane {
+  width: 256px;
+  flex: none;
+}
+
+.editor-properties-pane {
+  width: 100%;
+  border: 0;
+  background: var(--color-ink);
+}
+
+.editor-pane-heading {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+}
+
+.editor-page-select {
+  min-height: 36px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--color-surface-2);
+  padding: 6px 8px;
+  color: var(--color-paper);
+  font-size: 12px;
+}
+
+.editor-page-select:focus-visible {
+  outline: 1px solid var(--color-signal);
+  outline-offset: 2px;
+}
+
+.editor-canvas-room {
+  overflow: hidden;
+  background: var(--color-surface);
+}
+
+.editor-canvas-scroll {
+  background: var(--color-surface);
+}
+
+.editor-canvas-scroll > div {
+  box-shadow: 0 18px 54px rgb(0 0 0 / 30%);
+}
+
+.editor-zoom-control {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 12;
+  border-radius: 8px;
+  background: var(--color-ink);
+  padding: 4px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 24%);
+  white-space: nowrap;
+}
+
+.editor-zoom-control button {
+  min-width: 28px;
+  min-height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  padding: 4px 7px;
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+}
+
+.editor-zoom-control button:hover {
+  background: var(--color-surface-2);
+  color: var(--color-paper);
+}
+
+.editor-agent-presence {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  z-index: 14;
+  display: flex;
+  width: min(440px, calc(100% - 32px));
+  min-height: 48px;
+  align-items: center;
+  gap: 8px;
+  transform: translateX(-50%);
+  border-radius: 9px;
+  background: var(--color-ink);
+  padding: 7px 10px 7px 12px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 24%);
+}
+
+.editor-agent-presence:focus-within {
+  outline: 1px solid var(--color-signal);
+  outline-offset: 2px;
+}
+
+.editor-presence-dot {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--color-muted);
+}
+
+.editor-agent-presence textarea {
+  width: 100%;
+  min-width: 0;
+  resize: none;
+  border: 0;
+  background: transparent;
+  padding: 5px 0;
+  color: var(--color-paper);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  outline: none;
+}
+
+.editor-agent-presence textarea::placeholder {
+  color: var(--color-muted);
+}
+
+.editor-properties {
+  width: 256px;
+  flex: none;
+  overflow-y: auto;
+  background: var(--color-ink);
+}
+
+.editor-docked-chat {
+  z-index: 16;
+  flex: none;
+}
+
+.editor-docked-chat > aside {
+  height: 100%;
+  border: 0;
+  background: var(--color-ink);
+}
+
+@media (hover: hover) {
+  .editor-rail-button:hover::after {
+    visibility: visible;
+  }
+}
+
+@media (max-width: 1120px) {
+  .editor-flyout-pane,
+  .editor-properties {
+    width: 224px;
+  }
+}
+
+@media (max-width: 900px) {
+  .editor-workspace {
+    position: relative;
+  }
+
+  .editor-flyout-pane {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 48px;
+    z-index: 15;
+    box-shadow: 12px 0 32px rgb(0 0 0 / 20%);
+  }
+
+  .editor-properties {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 14;
+    box-shadow: -12px 0 32px rgb(0 0 0 / 20%);
+  }
+
+  .editor-docked-chat {
+    position: absolute;
+    inset: 0 0 0 auto;
+    z-index: 30;
+    box-shadow: -16px 0 40px rgb(0 0 0 / 28%);
+  }
+}
+
+@media (max-width: 680px) {
+  .editor-root {
+    overflow-y: auto;
+  }
+
+  .editor-topbar {
+    height: auto;
+    min-height: 56px;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 12px;
+  }
+
+  .editor-top-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .editor-workspace {
+    min-height: 0;
+    flex-direction: column;
+    overflow: visible;
+  }
+
+  .editor-rail {
+    width: 100%;
+    min-height: 48px;
+    flex-direction: row;
+    justify-content: flex-start;
+    padding: 6px 8px;
+  }
+
+  .editor-rail-button::after {
+    top: calc(100% + 8px);
+    left: 0;
+  }
+
+  .editor-flyout-pane {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    max-height: 260px;
+    box-shadow: none;
+  }
+
+  .editor-canvas-room {
+    min-height: 480px;
+    flex: none;
+  }
+
+  .editor-properties {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    max-height: 360px;
+    box-shadow: none;
+  }
+
+  .editor-docked-chat {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    height: min(720px, 80vh);
+    box-shadow: none;
+  }
+
+  .editor-docked-chat > aside {
+    width: 100%;
+  }
+}

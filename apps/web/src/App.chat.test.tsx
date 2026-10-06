@@ -280,6 +280,34 @@ describe("the chat of a window", () => {
     expect(screen.getByLabelText("Canvas zoom 125 percent")).toBeTruthy();
   });
 
+  it("fits the artboard to the available canvas once when a design opens", async () => {
+    const originalWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
+    const originalHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", {
+      configurable: true,
+      get() {
+        return this.classList.contains("editor-canvas-room") ? 800 : originalWidth?.get?.call(this) ?? 0;
+      },
+    });
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+      configurable: true,
+      get() {
+        return this.classList.contains("editor-canvas-room") ? 700 : originalHeight?.get?.call(this) ?? 0;
+      },
+    });
+
+    try {
+      renderApp();
+      await openDesign("Cover");
+      expect(screen.getByLabelText("Canvas zoom 51 percent")).toBeTruthy();
+    } finally {
+      if (originalWidth) Object.defineProperty(HTMLElement.prototype, "clientWidth", originalWidth);
+      else Reflect.deleteProperty(HTMLElement.prototype, "clientWidth");
+      if (originalHeight) Object.defineProperty(HTMLElement.prototype, "clientHeight", originalHeight);
+      else Reflect.deleteProperty(HTMLElement.prototype, "clientHeight");
+    }
+  });
+
   it("expands the floating composer into the dock and focuses its composer", async () => {
     renderApp();
     await openDesign("Cover");
