@@ -60,4 +60,22 @@ recorded here.**
 
 ## Decisions
 
-*(filled in as the round is reviewed)*
+- **Two computers online: option (a), choose in the chat (owner, 2026-10-06).** A person may pair and run several
+  computers. While two or more are online, the chat composer shows "Run on: {name} ▾" in its footer, listing the online
+  computers with their presence, and the sidecar routes the session to the chosen one. This replaces F-00-6's rule
+  ("exactly one online device per person", `ambiguous_device`) with "exactly one chosen device per window". It is a
+  sidecar change; Pontis is not touched. The page says: "You can pair several computers. When more than one is online,
+  choose which one runs the agent in the chat." Still to specify for implementation:
+  - what the default choice is;
+  - whether the choice is remembered per window;
+  - what happens to a running session when its chosen computer goes offline. This should be the round 2 "stopped"
+    notice with New session; the chat never switches computers by itself.
+- **Separate pages (owner, 2026-10-06).** "Agent connections" splits in two, because the MCP side needs more explanation
+  and loading both on one page is too much:
+  - **Chat in the editor:** Devices and Pontis pairing, as prototyped.
+  - **Use Forma from your AI app (MCP):** the MCP URL, per-host instructions, connected applications and personal
+    access tokens, with room to explain.
+
+  Each page links to the other in one line. Prototyped next ([feedback 2](opendesign/round-3-feedback-2.md)).
+- Everything else in A–D (the three steps, the states, the list, the inline revoke) is approved as prototyped after
+  [feedback 1](opendesign/round-3-feedback-1.md).
