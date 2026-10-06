@@ -77,5 +77,12 @@ recorded here.**
     access tokens, with room to explain.
 
   Each page links to the other in one line. Prototyped next ([feedback 2](opendesign/round-3-feedback-2.md)).
+- **The MCP page's design is approved; its per-app instructions are not (owner, 2026-10-06).** The layout of `mcp.html`
+  (intro, "Your MCP URL", "Pick your app" cards with numbered steps, connected applications, personal access tokens,
+  inline confirmations) is the visual guide for implementation. The step-by-step text on each card is a generic
+  placeholder. It has to come from a separate research task: per host, take it from that host's current official
+  documentation, verify it against Forma where that can be done without touching production, and record it with its
+  sources. Implementation fills the cards from that research; it does not reuse the prototype's wording.
+- A token just created is shown **in full**, once, with Copy. The prototype truncated it; the app already shows it whole.
 - Everything else in A–D (the three steps, the states, the list, the inline revoke) is approved as prototyped after
   [feedback 1](opendesign/round-3-feedback-1.md).
