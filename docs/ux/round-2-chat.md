@@ -58,4 +58,9 @@ own and not the chat.
 
 ## Decisions
 
-*(filled in as the round is reviewed)*
+- **D-2, 2026-10-06 (owner): option 2, refused.** When the window whose chat started the session is gone, an agent's
+  UI action is not delivered to another window, even if that window is the only one connected. The sidecar answers
+  `ui_unavailable`, and the agent says it cannot reach the person's window. The other window does not move and shows
+  nothing. This is Forma's own refusal on top of Pontis's rule 2. The owner's reasoning: a view that changes by
+  surprise, possibly to another design, is worse than an agent that says it could not reach you. It covers view moves
+  only; a design edit is a new version, seen by any window that has the design open.
