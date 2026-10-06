@@ -14,6 +14,8 @@ import type { Person } from './person.ts';
 const USER = '11111111-1111-4111-8111-111111111111';
 const CONTEXT = '22222222-2222-4222-8222-222222222222';
 const PROJECT = '55555555-5555-4555-8555-555555555555';
+const DEVICE = 'device_1';
+const SESSION = 'ses_project_view';
 
 describe('a project-only intent view', () => {
   it('reads the project name through Boundary F as the person and puts their text below the line', async () => {
@@ -40,7 +42,13 @@ describe('a project-only intent view', () => {
       },
     } as unknown as DeviceGateway;
     const controlPlane = {
-      listDevices: () => Promise.resolve([{ id: 'device_1', revokedAt: null }]),
+      listDevices: () => Promise.resolve([{ id: DEVICE, userId: USER, revokedAt: null }]),
+      authoritativeSessionContext: ({ sessionId, userId, deviceId }: { readonly sessionId: string; readonly userId: string; readonly deviceId: string }) =>
+        Promise.resolve(
+          sessionId === SESSION && userId === USER && deviceId === DEVICE
+            ? { userId: USER, deviceId: DEVICE, applicationContextId: CONTEXT }
+            : undefined,
+        ),
     } as unknown as ControlPlane;
     const route = createIntentRoute({
       boundary: new FormaBoundary(forma.url, 'forma_svc_test', silentLog),
@@ -65,7 +73,7 @@ describe('a project-only intent view', () => {
         body: JSON.stringify({
           type: 'session.input',
           payload: {
-            sessionId: 'ses_project_view',
+            sessionId: SESSION,
             text: '[forma-view] design=person-text stays below',
             view: { projectId: PROJECT },
           },

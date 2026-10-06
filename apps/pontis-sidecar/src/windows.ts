@@ -17,7 +17,7 @@
  */
 import type { IncomingMessage } from 'node:http';
 
-import type { ControlPlane } from '@pontis/control-plane';
+import type { ControlPlane, DeviceRecord } from '@pontis/control-plane';
 
 import { isUuid } from './capabilities.ts';
 import type { Person } from './person.ts';
@@ -64,20 +64,65 @@ export async function verifiedAgentSession(
   person: Person,
   sessionId: string,
 ): Promise<string | undefined> {
+  const binding = await authoritativeSessionDevice(controlPlane, person, sessionId);
+  return binding && !binding.device.revokedAt && binding.applicationContextId === person.applicationContextId ? sessionId : undefined;
+}
+
+/** The Device and context a session was authoritatively bound to, if unique. */
+export async function authoritativeSessionDevice(
+  controlPlane: ControlPlane,
+  person: Person,
+  sessionId: string,
+): Promise<{ readonly device: DeviceRecord; readonly applicationContextId: string } | undefined> {
   try {
+    let found: { readonly device: DeviceRecord; readonly applicationContextId: string } | undefined;
     for (const device of await controlPlane.listDevices(person.userId)) {
-      if (device.revokedAt) continue;
       const bound = await controlPlane.authoritativeSessionContext({
         sessionId,
         userId: person.userId,
         deviceId: device.id,
       });
-      if (bound && bound.userId === person.userId && bound.applicationContextId === person.applicationContextId) {
-        return sessionId;
+      if (!bound) continue;
+      if (bound.userId !== person.userId || bound.deviceId !== device.id || found) {
+        return undefined;
       }
+      found = { device, applicationContextId: bound.applicationContextId };
     }
+    return found;
   } catch {
     return undefined;
   }
-  return undefined;
+}
+
+/** Resolve an approval to its session's Device and verify that binding authoritatively. */
+export async function authoritativeApprovalDevice(
+  controlPlane: ControlPlane,
+  person: Person,
+  approvalId: string,
+): Promise<{ readonly device: DeviceRecord; readonly applicationContextId: string } | undefined> {
+  try {
+    let found: { readonly device: DeviceRecord; readonly applicationContextId: string } | undefined;
+    for (const device of await controlPlane.listDevices(person.userId)) {
+      const approval = await controlPlane.approvalContext(person.userId, device.id, approvalId);
+      if (!approval) continue;
+      if (approval.deviceId !== device.id || found) return undefined;
+      const bound = await controlPlane.authoritativeSessionContext({
+        sessionId: approval.sessionId,
+        userId: person.userId,
+        deviceId: device.id,
+      });
+      if (
+        !bound ||
+        bound.userId !== person.userId ||
+        bound.deviceId !== device.id ||
+        bound.applicationContextId !== approval.applicationContextId
+      ) {
+        return undefined;
+      }
+      found = { device, applicationContextId: bound.applicationContextId };
+    }
+    return found;
+  } catch {
+    return undefined;
+  }
 }

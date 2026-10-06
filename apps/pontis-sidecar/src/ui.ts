@@ -34,6 +34,8 @@ export const UI_ACTIONS = ['ui.openDesign', 'ui.selectLayer', 'ui.setPanel', 'ui
 
 export type UiAction = (typeof UI_ACTIONS)[number];
 
+export type BoundUiWindow = (userId: string, applicationContextId: string, sessionId: string) => boolean;
+
 interface DesignTarget {
   readonly design_id: string;
 }
@@ -60,6 +62,19 @@ function addressable({ user, applicationContextId }: { user: FormaUser; applicat
 
 function representing(user: FormaUser, applicationContextId: string): Represented {
   return { userId: user.id, applicationContextId };
+}
+
+function hasBoundWindow(
+  isBound: BoundUiWindow,
+  user: FormaUser,
+  applicationContextId: string,
+  sessionId: string,
+): boolean {
+  if (!addressable({ user, applicationContextId })) return false;
+  if (!isBound(user.id, applicationContextId, sessionId)) {
+    throw new CapabilityError('ui_unavailable', 'this window is no longer connected to the session');
+  }
+  return true;
 }
 
 /**
@@ -101,11 +116,13 @@ async function mayRead(
   }
 }
 
-export function uiCapabilities(boundary: FormaBoundary): Capability[] {
+export function uiCapabilities(boundary: FormaBoundary, isBound: BoundUiWindow): Capability[] {
   const openDesign = defineUiCapability<DesignTarget, FormaUser>({
     ...declaredUi('ui.openDesign'),
-    authorize: ({ user, applicationContextId, input, signal }) =>
-      mayRead(boundary, user, applicationContextId, input.design_id, signal),
+    authorize: ({ user, applicationContextId, input, sessionId, signal }) => {
+      if (!hasBoundWindow(isBound, user, applicationContextId, sessionId)) return false;
+      return mayRead(boundary, user, applicationContextId, input.design_id, signal);
+    },
   });
 
   // The same check as `ui.openDesign`, on the same field. The layer id is not
@@ -114,18 +131,20 @@ export function uiCapabilities(boundary: FormaBoundary): Capability[] {
   // editor answers it by rejecting the action rather than by handling it.
   const selectLayer = defineUiCapability<DesignTarget, FormaUser>({
     ...declaredUi('ui.selectLayer'),
-    authorize: ({ user, applicationContextId, input, signal }) =>
-      mayRead(boundary, user, applicationContextId, input.design_id, signal),
+    authorize: ({ user, applicationContextId, input, sessionId, signal }) => {
+      if (!hasBoundWindow(isBound, user, applicationContextId, sessionId)) return false;
+      return mayRead(boundary, user, applicationContextId, input.design_id, signal);
+    },
   });
 
   const setPanel = defineUiCapability<unknown, FormaUser>({
     ...declaredUi('ui.setPanel'),
-    authorize: addressable,
+    authorize: ({ user, applicationContextId, sessionId }) => hasBoundWindow(isBound, user, applicationContextId, sessionId),
   });
 
   const setZoom = defineUiCapability<unknown, FormaUser>({
     ...declaredUi('ui.setZoom'),
-    authorize: addressable,
+    authorize: ({ user, applicationContextId, sessionId }) => hasBoundWindow(isBound, user, applicationContextId, sessionId),
   });
 
   return [openDesign, selectLayer, setPanel, setZoom];
