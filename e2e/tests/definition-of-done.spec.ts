@@ -97,6 +97,8 @@ async function createDesign(page: Page, name: string) {
   await expect(page.getByRole("button", { name: "Layers & pages", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByLabel(/Canvas zoom \d+ percent/)).toBeVisible();
   await expect(page.getByRole("complementary", { name: "Properties" })).toHaveCount(0);
+  await expect(page.locator("dialog")).toHaveCount(0);
+  await expect(page.locator("[aria-modal]")).toHaveCount(0);
 }
 
 /// A page nothing links to is a page most people do not have.
