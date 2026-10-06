@@ -145,7 +145,7 @@ describe("agent credentials", () => {
     fireEvent.change(screen.getByLabelText("Key name"), {
       target: { value: "Codex CLI" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Create API key" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create token" }));
 
     expect(await screen.findByText(TOKEN)).toBeTruthy();
     expect(screen.getAllByText(TOKEN)).toHaveLength(1);
@@ -156,8 +156,18 @@ describe("agent credentials", () => {
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
     fireEvent.click(screen.getByRole("button", { name: "Copy newly created token" }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(TOKEN));
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss the full token for Codex CLI after saving it" }));
+    expect(screen.queryByText(TOKEN)).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
+    fireEvent.click(screen.getByRole("button", { name: "Revoke Codex CLI" }));
+    const keep = screen.getByRole("button", { name: "Keep Codex CLI, created 30 Aug" });
+    expect(document.activeElement).toBe(keep);
+    fireEvent.keyDown(keep, { key: "Escape" });
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Revoke Codex CLI" }));
+    expect(requests.some((request) => request.method === "DELETE")).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Revoke Codex CLI" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm revoke Codex CLI, created 30 Aug" }));
     await waitFor(() => expect(screen.getByText("Revoked")).toBeTruthy());
   });
 
@@ -178,7 +188,7 @@ describe("agent credentials", () => {
     expect(screen.getByRole("link", { name: "Chat in the editor" }).getAttribute("href")).toBe("/agents");
   });
 
-  it("explains MCP and keeps the existing per-host wording", async () => {
+  it("explains MCP and keeps the existing per-host wording", () => {
     window.history.replaceState({}, "", "/agents/mcp");
     renderAgents();
 
@@ -198,7 +208,16 @@ describe("agent credentials", () => {
     renderAgents();
 
     expect(await screen.findByText("Claude")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Disconnect Claude" }));
+    const disconnect = screen.getByRole("button", { name: "Disconnect Claude" });
+    fireEvent.click(disconnect);
+    const keep = screen.getByRole("button", { name: "Keep Claude, connected 4 Oct" });
+    expect(document.activeElement).toBe(keep);
+    fireEvent.keyDown(keep, { key: "Escape" });
+    expect(document.activeElement).toBe(disconnect);
+    expect(agentState.disconnected).toEqual([]);
+
+    fireEvent.click(disconnect);
+    fireEvent.click(screen.getByRole("button", { name: "Confirm disconnect Claude, connected 4 Oct" }));
 
     await waitFor(() => expect(agentState.disconnected).toEqual(["claude"]));
     expect(screen.queryByRole("dialog")).toBeNull();
