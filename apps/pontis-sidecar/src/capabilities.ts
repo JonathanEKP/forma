@@ -27,6 +27,7 @@ import { CapabilityError, defineCapability, type ApprovalEvidence, type Approval
 import type { ApprovalEvidence as FormaApprovalEvidence } from '@forma/bindings/ApprovalEvidence';
 import type { CapabilitySpec } from '@forma/bindings/CapabilitySpec';
 import type { DesignOperation } from '@forma/bindings/DesignOperation';
+import type { DesignRecord } from '@forma/bindings/DesignRecord';
 import type { JsonValue } from '@forma/bindings/serde_json/JsonValue';
 
 import { capabilityCatalog } from '../../../bindings/generated/capabilityCatalog.ts';
@@ -187,6 +188,207 @@ interface ApplyInput {
   readonly operations: readonly Record<string, unknown>[];
 }
 
+const APPROVAL_NAME_READ_MS = 3_000;
+const MAX_APPROVAL_NAME_CHARS = 80;
+const NAME_READ_FALLBACK = "Forma couldn't load the layer's name. Details shows its id.";
+const PAGE_NAME_FALLBACK = "Forma couldn't load the page's name. Details shows its id.";
+const MULTIPLE_NAMES_FALLBACK = "Forma couldn't load the names. Details shows the ids.";
+
+interface RemovedPage {
+  readonly id: string;
+  readonly name: string | undefined;
+  readonly index: number;
+  readonly layerCount: number;
+}
+
+interface RemovedLayer {
+  readonly name: string | undefined;
+  readonly pageId: string;
+}
+
+interface RemovalCopy {
+  readonly summary: string;
+  readonly reason: string;
+  readonly affectedResourceCount: number;
+}
+
+function operationIds(operations: readonly Record<string, unknown>[], op: string, key: string): string[] {
+  return [...new Set(operations.flatMap((operation) => {
+    if (operation.op !== op) return [];
+    const value = operation[key];
+    return typeof value === 'string' ? [value.toLowerCase()] : [];
+  }))];
+}
+
+function safeName(name: unknown): string | undefined {
+  if (typeof name !== 'string') return undefined;
+  const flattened = [...name]
+    .map((character) => (/\p{Cc}|\p{Cf}|\u2028|\u2029/u.test(character) ? ' ' : character))
+    .join('')
+    .replace(/\s+/gu, ' ')
+    .trim();
+  if (!flattened) return undefined;
+  const capped = [...flattened].slice(0, MAX_APPROVAL_NAME_CHARS).join('');
+  return capped
+    .replaceAll('\\', '\\\\')
+    .replaceAll('“', '\\“')
+    .replaceAll('”', '\\”')
+    .replaceAll('"', '\\"');
+}
+
+function quotedApprovalName(name: string | undefined): string | undefined {
+  return name === undefined ? undefined : `“${name}”`;
+}
+
+function readableDesign(record: DesignRecord | undefined, designId: string): DesignRecord | undefined {
+  return record && record.id.toLowerCase() === designId.toLowerCase() ? record : undefined;
+}
+
+function operationFallbackCopy(
+  pageIds: readonly string[],
+  layerIds: readonly string[],
+  operations: readonly Record<string, unknown>[],
+  designLabel: string,
+): RemovalCopy {
+  const requestedItems = [
+    pageIds.length > 0 ? `${pageIds.length} ${pageIds.length === 1 ? 'page' : 'pages'}` : undefined,
+    layerIds.length > 0 ? `${layerIds.length} ${layerIds.length === 1 ? 'layer' : 'layers'}` : undefined,
+  ].filter((part): part is string => part !== undefined);
+  const reason = requestedItems.length === 1 && pageIds.length === 1
+    ? PAGE_NAME_FALLBACK
+    : requestedItems.length === 1 && layerIds.length === 1
+      ? NAME_READ_FALLBACK
+      : MULTIPLE_NAMES_FALLBACK;
+  return {
+    summary: `Delete ${requestedItems.join(' and ') || 'the requested items'} from ${designLabel}`,
+    reason,
+    affectedResourceCount: removals(operations),
+  };
+}
+
+function removalCopy(
+  design: DesignRecord | undefined,
+  operations: readonly Record<string, unknown>[],
+): RemovalCopy {
+  const pageIds = operationIds(operations, 'remove_page', 'page_id');
+  const layerIds = operationIds(operations, 'remove_layer', 'layer_id');
+  const designName = safeName(design?.name);
+  const designLabel = quotedApprovalName(designName) ?? 'this design';
+  if (!design) return operationFallbackCopy(pageIds, layerIds, operations, designLabel);
+
+  const pages = design.document.pages;
+  const removedPages: RemovedPage[] = pageIds.flatMap((id) => {
+    const index = pages.findIndex((page) => page.id.toLowerCase() === id);
+    const page = pages[index];
+    return page && index >= 0
+      ? [{ id, name: safeName(page.name), index, layerCount: page.layers.length }]
+      : [];
+  });
+  const removedPageIds = new Set(removedPages.map(({ id }) => id));
+  const affectedLayers = new Map<string, RemovedLayer>();
+
+  for (const page of removedPages) {
+    const source = pages[page.index];
+    if (!source) continue;
+    for (const layer of source.layers) {
+      const id = layer.id.toLowerCase();
+      affectedLayers.set(id, {
+        name: safeName(layer.name),
+        pageId: page.id,
+      });
+    }
+  }
+
+  for (const id of layerIds) {
+    const located = pages.flatMap((page, pageIndex) => {
+      const layer = page.layers.find((candidate) => candidate.id.toLowerCase() === id);
+      return layer ? [{ page, pageIndex, layer }] : [];
+    })[0];
+    if (!located || removedPageIds.has(located.page.id.toLowerCase())) continue;
+    affectedLayers.set(id, {
+      name: safeName(located.layer.name),
+      pageId: located.page.id.toLowerCase(),
+    });
+  }
+
+  if (
+    pageIds.some((id) => !removedPages.some((page) => page.id === id)) ||
+    layerIds.some((id) => !affectedLayers.has(id))
+  ) {
+    return operationFallbackCopy(pageIds, layerIds, operations, designLabel);
+  }
+
+  const layerList = [...affectedLayers.values()];
+  const affectedResourceCount = removedPages.length + layerList.length;
+
+  if (removedPages.length === 0 && layerIds.length === 1) {
+    const layer = layerList[0];
+    if (!layer?.name) {
+      return {
+        summary: `Delete 1 layer from ${designLabel}`,
+        reason: NAME_READ_FALLBACK,
+        affectedResourceCount,
+      };
+    }
+    const layerLabel = quotedApprovalName(layer.name);
+    const summary = `Delete the layer ${layerLabel} from ${designLabel}`;
+    return {
+      summary,
+      reason: `This will permanently delete the layer ${layerLabel} from ${designLabel}.`,
+      affectedResourceCount,
+    };
+  }
+
+  if (removedPages.length === 1 && layerIds.length === 0) {
+    const page = removedPages[0];
+    if (page) {
+      const pageName = quotedApprovalName(page.name);
+      const pageLabel = `page ${page.index + 1}${pageName ? ` (${pageName})` : ''}`;
+      const layers = page.layerCount;
+      const layerNoun = layers === 1 ? 'layer' : 'layers';
+      const summary = `Delete ${pageLabel} of ${designLabel}${layers > 0 ? ` and the ${layers} ${layerNoun} on it` : ''}`;
+      return {
+        summary,
+        reason: `This will permanently delete ${pageLabel}${layers > 0 ? ` and its ${layers} ${layerNoun}` : ''} from ${designLabel}.`,
+        affectedResourceCount,
+      };
+    }
+  }
+
+  if (removedPages.length === 0 && layerList.length > 1) {
+    const pageCount = new Set(layerList.map(({ pageId }) => pageId)).size;
+    const summary = pageCount > 1
+      ? `Delete ${layerList.length} layers across ${pageCount} pages of ${designLabel}`
+      : `Delete ${layerList.length} layers from ${designLabel}`;
+    const pagesLabel = `${pageCount} ${pageCount === 1 ? 'page' : 'pages'}`;
+    return {
+      summary,
+      reason: `This will permanently delete ${layerList.length} layers across ${pagesLabel} of ${designLabel}.`,
+      affectedResourceCount,
+    };
+  }
+
+  const pageParts = removedPages.map(({ index, name, layerCount }) => {
+    const pageName = quotedApprovalName(name);
+    const label = `page ${index + 1}${pageName ? ` (${pageName})` : ''}`;
+    return `${label}${layerCount > 0 ? ` and its ${layerCount} layers` : ''}`;
+  });
+  const looseLayers = layerList.filter(({ pageId }) => !removedPageIds.has(pageId));
+  const looseNames = looseLayers.flatMap(({ name }) => {
+    const layerName = quotedApprovalName(name);
+    return layerName ? [`the layer ${layerName}`] : [];
+  });
+  const removedPart = [
+    ...pageParts,
+    ...(looseNames.length > 0 ? [looseNames.join(' and ')] : looseLayers.length > 0 ? [`${looseLayers.length} layers`] : []),
+  ].join(' and ');
+  const summary = `Delete ${removedPart || `${pageIds.length + layerIds.length} items`} from ${designLabel}`;
+  const fallbackReason = layerList.some(({ name }) => !name)
+    ? MULTIPLE_NAMES_FALLBACK
+    : `This will permanently delete ${removedPart || `${pageIds.length + layerIds.length} items`} from ${designLabel}.`;
+  return { summary, reason: fallbackReason, affectedResourceCount };
+}
+
 export function formaCapabilities(boundary: FormaBoundary): Capability[] {
   const projectList = defineCapability<Record<string, never>, unknown, FormaUser>({
     ...declared('project.list'),
@@ -285,14 +487,26 @@ export function formaCapabilities(boundary: FormaBoundary): Capability[] {
     authorize,
     // Plan §3.1: the declared class is `write`; a batch that removes work is
     // elevated to `destructive`, and only ever upward.
-    requiresApproval: ({ input }): ApprovalRequirement | undefined => {
-      const count = removals(input.operations);
-      if (count === 0) return undefined;
+    requiresApproval: async ({ input, user, applicationContextId }): Promise<ApprovalRequirement | undefined> => {
+      if (removals(input.operations) === 0) return undefined;
+      let design: DesignRecord | undefined;
+      try {
+        design = await boundary.getDesign(
+          representing(user, applicationContextId),
+          input.design_id,
+          spec('design.get').bounds.maxResultBytes,
+          AbortSignal.timeout(APPROVAL_NAME_READ_MS),
+        );
+      } catch {
+        // The names improve an approval, but a failed read never prevents the
+        // person from receiving the approval request.
+      }
+      const copy = removalCopy(readableDesign(design, input.design_id), input.operations);
       return {
         risk: 'destructive',
-        reason: count === 1 ? 'This batch removes a page or a layer.' : `This batch removes ${count} pages or layers.`,
-        summary: `Remove ${count === 1 ? 'one element' : `${count} elements`} from this design, as one new version`,
-        affectedResourceCount: count,
+        reason: copy.reason,
+        summary: copy.summary,
+        affectedResourceCount: copy.affectedResourceCount,
       };
     },
     execute: async ({ user, applicationContextId, input, invocationId, approval, signal }) => {

@@ -54,6 +54,7 @@ the person cannot read (no names available); the repeat-after-deny line.
   for names failed or timed out when it wrote the card: "Delete 1 layer from “ALPHA Launch cover”" (or "from this
   design"), then "Forma couldn't load the layer's name. Details shows its id." Recommendation 1 changes
   accordingly: names are best-effort, the ids are always the authority.
+- If a name read fails for any removal shape, say only what the operations identify (for example, “Delete 1 page from this design”); use the design name only when read, the number of removal operations for `affectedResourceCount`, and a singular or plural name-unavailable line with the ids in Details.
 - When a batch spans pages, each chip carries its page as a small suffix ("Headline · Cover"); a page chip
   carries a page icon.
 - Settled cards collapse to one line that says the outcome in the person's words: "Approved. Deleted the layer
