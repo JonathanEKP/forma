@@ -1,6 +1,8 @@
 # UX batch 1 browser re-test
 
-**Run:** 2026-10-06, local browser stack instance 25, own Orca browser tabs, FakeProvider. The app was served from this worktree at `127.0.0.1:5052`; the checked screens were the seeded ALPHA project and its cover design. No real Codex turns were run: FakeProvider supplied fixed replies and could not exercise model guidance or `ui_unavailable`. The stack and the test driver started for this run were stopped after the checks. No product code was changed and no lint/typecheck/test gates were run for this browser-only report.
+**Finding run:** 2026-10-06, local browser stack instance 25, own Orca browser tabs, FakeProvider. The app was served from this worktree at `127.0.0.1:5052`; the checked screens were the seeded ALPHA project and its cover design. No real Codex turns were run: FakeProvider supplied fixed replies and could not exercise model guidance or `ui_unavailable`.
+
+**Fix re-test:** 2026-10-06, local browser stack instance 27, foreground Orca tab, FakeProvider. The app was served from this worktree at `127.0.0.1:5072`. Session information closed on Escape with focus returned to Info and on an outside click, with no dialog; the current-context chip showed design · page · layer, `Project “ALPHA project”` on its project page, and nothing on the projects list. A FakeProvider reply and a pending approval card both appeared while the transcript was at the bottom; the scroll gap was `0` and Jump to latest was absent. The sent message retained its “Sent with” record. The local stack and test driver were stopped after the checks.
 
 ## Checklist
 
@@ -28,11 +30,11 @@ Each row is one decision or implementation item. Counts below include all 39 row
 | R2 decision 2 — safe formatted text and hostile markup | not testable here | No FakeProvider fixture returned Markdown or HTML-like agent text. The hostile pairing name was rendered literally, but that does not cover the chat formatter. |
 | R2 decision 3 — outcome cards, schema refusal and long action text | not testable here | No UI-action or schema-refusal fixture was available. A 4,000-character composer draft was checked separately; it stayed in the textarea with internal scrolling and no horizontal page overflow. |
 | R2 decision 4 — session notices and New session | pass | The fixture-error needs-you state and the revoke/offline stopped notices each stated what happened and what to do; stopped states disabled the composer. New session started immediately with a divider and an enabled composer. |
-| R2 decision 5 — read-only context chip above composer | fail | With a design open, the design/page context appeared on each sent message, but there was no current-context chip above the composer before sending. See UX1-2. |
+| R2 decision 5 — read-only context chip above composer | pass | Before sending, the chip showed `ALPHA Launch cover · Cover · Headline`; on the project page it showed `Project “ALPHA project”`, and the projects list had no chip. The sent message still showed its “Sent with” record. |
 | R2 decision 6 — composer and editor chrome controls | pass | Empty Send was disabled with its reason; the no-design Agents pages did not show design-only Undo/Redo, validation or Export controls. |
 | R2 decision 7 — reserved visual-result slot | not testable here | No visual result was emitted by the scripted provider, so a reserved transcript slot could not be distinguished from an unbuilt one. |
-| R2 decision 8 — no modals; flyouts and session-info popover | fail | No `<dialog>` or `aria-modal` UI appeared; the rail flyout closed with Escape. The session-info popover did not close on Escape or outside click (UX1-1). |
-| R2 decision 9 — transcript follows newest entry | fail | Started at the bottom of the active transcript, then let a FakeProvider reply arrive without scrolling. The transcript remained above the bottom and showed Jump to latest; see UX1-3. |
+| R2 decision 8 — no modals; flyouts and session-info popover | pass | No `<dialog>` or `aria-modal` UI appeared; the rail flyout closed with Escape. Session information closed on Escape and outside click; Escape returned focus to its button. |
+| R2 decision 9 — transcript follows newest entry | pass | At the bottom, a FakeProvider reply arrived and then a pending approval card appeared; after each, the scroll gap was `0` and Jump to latest was absent. |
 
 ### Round 3 — devices and MCP
 
@@ -66,11 +68,11 @@ Each row is one decision or implementation item. Counts below include all 39 row
 | S1 — approval wording and project-only view | not testable here | Named approval wording and the design view were observed. I did not send from a selected project with no design open, so the project-only view line remains unverified. |
 | S2 — sidecar device routing and D-2 | pass | Selected device routing, session divider, revocation and offline stop were exercised through the browser; D-2 itself remains untestable here as noted above. |
 | W1 — Calm editor | pass | Compared editor layout at 1280×900 and 390×844; no horizontal overflow, modal, or material layout divergence was observed. |
-| W2 — chat | fail | The context chip was attached to sent messages instead of shown above the composer, and the transcript did not follow the newest entry (UX1-2, UX1-3). |
+| W2 — chat | pass | Re-tested the pre-send context on the design, project page and projects list, preserved the per-message “Sent with” record, and confirmed bottom-follow for a reply and pending approval card. Session-info dismissal and focus return also passed. |
 | W3 — approval card | pass | Exercised named destructive approval, highlight, read-only layer, urgency, deny/repeat, expiry, approval, version increment and Undo. Real-model confirmation wording remains untested. |
 | W4 — connection pages | not testable here | Both routes, navigation, pairing, device list, provider details, revoke and the one-time token flow were checked. No OAuth grant fixture was available to exercise connected-app Disconnect. |
 
-**Checklist totals:** 24 pass, 4 fail, 11 not testable here (39 rows). **Findings:** 0 high, 2 medium, 1 low, 0 info.
+**Checklist totals:** 28 pass, 0 fail, 11 not testable here (39 rows). **Findings:** 3 fixed (1 low, 2 medium); 0 open.
 
 ## First-time-user break tests
 
@@ -88,27 +90,30 @@ Each row is one decision or implementation item. Counts below include all 39 row
 
 ## Prototype comparison
 
-Compared the running editor/chat, `/agents`, and `/agents/mcp` at 1280×900 with `prototypes/index.html`, `chat.html`, `devices.html`, and `mcp.html`. The prototype’s review rail, mock browser chrome, seeded artboard and scenario controls are not product UI and were absent from the app. The Calm editor, chat dock, connection-page hierarchy and dark palette otherwise aligned; the seeded app artboard is 1080×1920 while the approval prototype artboard is 1080×1440, so the canvas contents and fit differ. On the chat screen, the context-chip placement and transcript-follow behavior are material divergences recorded as UX1-2 and UX1-3. The devices prototype used distinct names/icons and one online state; the app’s cards were structurally aligned, while duplicate `Forma local run` labels came from the test-driver metadata and the offline timestamps were unavailable. The MCP page’s local URL and current host instructions differ from prototype examples as expected; no other material visual divergence was observed.
+Compared the running editor/chat, `/agents`, and `/agents/mcp` at 1280×900 with `prototypes/index.html`, `chat.html`, `devices.html`, and `mcp.html`. The prototype’s review rail, mock browser chrome, seeded artboard and scenario controls are not product UI and were absent from the app. The Calm editor, chat dock, connection-page hierarchy and dark palette otherwise aligned; the seeded app artboard is 1080×1920 while the approval prototype artboard is 1080×1440, so the canvas contents and fit differ. The initial chat comparison found the context-chip placement and transcript-follow issues recorded below; both were re-tested after the fixes. The devices prototype used distinct names/icons and one online state; the app’s cards were structurally aligned, while duplicate `Forma local run` labels came from the test-driver metadata and the offline timestamps were unavailable. The MCP page’s local URL and current host instructions differ from prototype examples as expected; no other material visual divergence was observed.
 
 ## Findings
 
-### UX1-1 — low — session-info popover stays open
+### UX1-1 — low — session-info popover stays open — fixed (aa727d4)
 
 - **Steps:** Open Agent chat, open Session information, press Escape; repeat and click the canvas outside the popover.
 - **Expected:** The small popover closes by Escape or outside click, with no backdrop.
 - **Actual:** It stayed open for both actions; clicking Session information again closed it. No modal/backdrop was present.
 - **Evidence:** [session info open](evidence/ux1/ux1-1-session-info-open.png)
+- **Cause:** The popover had no Escape or outside-pointer dismissal handlers; the fix restores button focus on Escape.
 
-### UX1-2 — medium — current context is missing above the composer
+### UX1-2 — medium — current context is missing above the composer — fixed (2ccb03d)
 
 - **Steps:** Open a design and Agent chat; inspect the composer before sending, then send a message.
 - **Expected:** A read-only design/page/layer context chip appears above the composer.
 - **Actual:** No chip appeared above the composer. The sent message later carried “Sent with: ALPHA Launch cover, Cover” inside its message card.
 - **Evidence:** [chat context](evidence/ux1/ux1-2-chat-context.png)
+- **Cause:** Current view context was captured for the sent-message record only; the composer had no live read-only view chip.
 
-### UX1-3 — medium — transcript does not follow new entries from the bottom
+### UX1-3 — medium — transcript does not follow new entries from the bottom — fixed (22fbff5)
 
 - **Steps:** In the active app tab, scroll the transcript to its bottom, send a message, and let the FakeProvider response arrive without touching the transcript.
 - **Expected:** The transcript follows the newest entry; Jump to latest appears only if the person had scrolled up.
 - **Actual:** It stopped above the bottom with Jump to latest visible. At capture, `scrollTop=696`, `clientHeight=505`, `scrollHeight=1364`.
 - **Evidence:** [transcript not following](evidence/ux1/ux1-3-transcript-not-following.png)
+- **Cause:** The approval card's design query adds named layer chips after the line-count scroll effect runs, growing the transcript without changing its effect dependencies.
