@@ -13,7 +13,7 @@
  * windows, blocked site data), and a chat that cannot remember still has to work.
  */
 import { isRecord } from "./events";
-import type { Remembered, Said, ViewChip } from "./chat";
+import type { NoticeCopy, Remembered, Said, ViewChip } from "./chat";
 
 const KEY = "forma.chat";
 const DRAFT_KEY = "forma.chat.draft";
@@ -36,11 +36,21 @@ function chip(raw: unknown): ViewChip | undefined {
   if (!isRecord(raw)) return undefined;
   const text = (value: unknown) => (typeof value === "string" ? value : undefined);
   const parsed: ViewChip = {
+    ...(text(raw.project) === undefined ? {} : { project: text(raw.project) }),
     ...(text(raw.design) === undefined ? {} : { design: text(raw.design) }),
     ...(text(raw.page) === undefined ? {} : { page: text(raw.page) }),
     ...(text(raw.layer) === undefined ? {} : { layer: text(raw.layer) }),
   };
   return Object.keys(parsed).length > 0 ? parsed : undefined;
+}
+
+function deadNotice(raw: unknown): NoticeCopy | null {
+  if (typeof raw === "string") {
+    return { tone: "stopped", happened: raw, next: "Start a new session to carry on.", action: "New session" };
+  }
+  if (!isRecord(raw) || (raw.tone !== "info" && raw.tone !== "needs-you" && raw.tone !== "stopped") || typeof raw.happened !== "string" || typeof raw.next !== "string") return null;
+  const action = raw.action === "New session" || raw.action === "Sign in again" || raw.action === "Open Agents page" ? raw.action : undefined;
+  return { tone: raw.tone, happened: raw.happened, next: raw.next, ...(action ? { action } : {}) };
 }
 
 function said(raw: unknown): Said | null {
@@ -60,12 +70,13 @@ export function recall(context: string, window: string, store: Store | null = br
     if (!raw) return null;
     const parsed: unknown = JSON.parse(raw);
     if (!isRecord(parsed) || parsed.context !== context || parsed.window !== window || !isRecord(parsed.remembered)) return null;
-    const { sessionId, deviceId, dead, said: lines } = parsed.remembered;
+    const { sessionId, deviceId, dead, said: lines, startedAt } = parsed.remembered;
     if (typeof sessionId !== "string" || sessionId.length === 0) return null;
     return {
       sessionId,
+      startedAt: typeof startedAt === "string" ? startedAt : null,
       deviceId: typeof deviceId === "string" ? deviceId : null,
-      dead: typeof dead === "string" ? dead : null,
+      dead: deadNotice(dead),
       said: Array.isArray(lines) ? (lines as unknown[]).map(said).filter((line): line is Said => line !== null) : [],
     };
   } catch {

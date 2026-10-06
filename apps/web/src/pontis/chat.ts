@@ -29,10 +29,21 @@ const DEVICES_PATH = "/pons/v1/devices";
 
 export type Decision = "approveOnce" | "deny";
 
+export type NoticeTone = "info" | "needs-you" | "stopped";
+export type NoticeAction = "New session" | "Sign in again" | "Open Agents page";
+
+export interface NoticeCopy {
+  readonly tone: NoticeTone;
+  readonly happened: string;
+  readonly next: string;
+  readonly action?: NoticeAction;
+}
+
 export type FailureReason =
   | "unreachable"
   | "runtime_offline"
-  | "ambiguous_device"
+  | "device_choice_required"
+  | "device_offline"
   | "not_authorized"
   | "not_authenticated"
   | "message_too_large"
@@ -41,24 +52,30 @@ export type FailureReason =
 
 export interface Failure {
   readonly reason: FailureReason;
-  /** Said to the person; never the raw code. */
+  /** Component-ready copy; never the raw code. */
+  readonly notice: NoticeCopy;
+  /** Short control hint for places that cannot render the full notice. */
   readonly message: string;
 }
 
 export type Outcome<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly failure: Failure };
 
-const MESSAGES: Record<FailureReason, string> = {
-  unreachable: "Forma's agent service can't be reached.",
-  runtime_offline: "Your Runtime is offline. Start it on your device, then try again.",
-  ambiguous_device: "More than one of your devices is online, and Forma can't tell which one to use. Leave one connected.",
-  not_authorized: "This session isn't allowed to do that.",
-  not_authenticated: "Your sign-in has expired. Sign in again.",
-  message_too_large: "That message is too long (max 64 KB).",
-  not_delivered: "The Runtime didn't take that message.",
-  unexpected: "The agent service answered something unexpected.",
+const MESSAGES: Record<FailureReason, NoticeCopy> = {
+  unreachable: { tone: "needs-you", happened: "Forma's agent service can't be reached.", next: "Check the connection, then try again." },
+  runtime_offline: { tone: "needs-you", happened: "No computer is online.", next: "Start a paired computer, then try again.", action: "Open Agents page" },
+  device_choice_required: { tone: "needs-you", happened: "Choose a computer to run the agent.", next: "Choose one from Run on before sending." },
+  device_offline: { tone: "stopped", happened: "The computer running this session went offline.", next: "Bring it online, then start a new session.", action: "New session" },
+  not_authorized: { tone: "stopped", happened: "This session can no longer reach its Runtime.", next: "Start a new session to carry on.", action: "New session" },
+  not_authenticated: { tone: "needs-you", happened: "Your sign-in has expired.", next: "Sign in again, then start a new session.", action: "Sign in again" },
+  message_too_large: { tone: "needs-you", happened: "That message is too long (max 64 KB).", next: "Shorten it, then try again." },
+  not_delivered: { tone: "needs-you", happened: "The Runtime didn't take that message.", next: "Try sending it again when the Runtime is ready." },
+  unexpected: { tone: "needs-you", happened: "The agent service answered unexpectedly.", next: "Try again in a moment." },
 };
 
-const failure = (reason: FailureReason): Outcome<never> => ({ ok: false, failure: { reason, message: MESSAGES[reason] } });
+const failure = (reason: FailureReason): Outcome<never> => ({
+  ok: false,
+  failure: { reason, message: MESSAGES[reason].happened, notice: MESSAGES[reason] },
+});
 
 export interface AgentClientOptions {
   /** The session bearer, read per request: the provider refreshes it underneath. */
@@ -72,7 +89,7 @@ export interface AgentClient {
   /** Which application context the session is bound to — the event stream must name it. */
   context(): Promise<Outcome<string>>;
   devices(sessionDeviceId?: string | null): Promise<Outcome<RuntimeView>>;
-  start(providerId: string): Promise<Outcome<{ sessionId: string }>>;
+  start(providerId: string, deviceId?: string): Promise<Outcome<{ sessionId: string }>>;
   /** `view` is what the editor shows; the sidecar turns it into the line in front of the text. */
   input(sessionId: string, text: string, view?: ViewIds): Promise<Outcome<null>>;
   cancel(sessionId: string): Promise<Outcome<null>>;
@@ -108,7 +125,8 @@ export function createAgentClient(options: AgentClientOptions): AgentClient {
     if (code === null) return failure(response.status >= 500 ? "unreachable" : "unexpected");
     switch (code) {
       case "runtime_offline":
-      case "ambiguous_device":
+      case "device_choice_required":
+      case "device_offline":
       case "not_authorized":
       case "not_authenticated":
         return failure(code);
@@ -139,8 +157,8 @@ export function createAgentClient(options: AgentClientOptions): AgentClient {
       const answer = await call(DEVICES_PATH, { method: "GET" });
       return answer.ok ? { ok: true, value: runtimeView(answer.value, sessionDeviceId) } : answer;
     },
-    async start(providerId) {
-      const answer = await intent("session.start", { providerId });
+    async start(providerId, deviceId) {
+      const answer = await intent("session.start", { providerId, ...(deviceId ? { deviceId } : {}) });
       if (!answer.ok) return answer;
       if (!isRecord(answer.value) || answer.value.delivered !== true || typeof answer.value.sessionId !== "string") {
         return failure("not_delivered");
@@ -182,8 +200,16 @@ type RuntimeStatus =
   | { readonly at: "offline"; readonly name: string }
   /** Revoked differs from offline: a revoked Runtime cannot come back, so the advice differs. */
   | { readonly at: "revoked"; readonly name: string }
-  | { readonly at: "ambiguous" }
+  | { readonly at: "ambiguous"; readonly devices: readonly RuntimeDevice[] }
   | { readonly at: "none" };
+
+export interface RuntimeDevice {
+  readonly id: string;
+  readonly name: string;
+  readonly runtimeVersion: string;
+  readonly provider: ProviderView | null;
+  readonly presence: "Online";
+}
 
 export type RuntimeView = RuntimeStatus & {
   /** What happened to the device this window's session was using, if it is known. */
@@ -212,9 +238,8 @@ function providerView(raw: unknown): ProviderView | null {
 /**
  * Which device a message would go to, what status to show, and with which provider.
  *
- * The sidecar's own rule is exactly one online device, and says `ambiguous_device`
- * otherwise; this mirrors it so the panel says so before a message is typed
- * rather than after. A session keeps the device its Runtime started on, even if
+ * The sidecar requires a named choice when several computers are online. A
+ * session keeps the computer its Runtime started on, even if
  * another device is online. Without a session device, the newest pairing decides
  * which offline state to show; the server's list order carries no meaning.
  * Of a device's providers the first usable one is shown and used: the
@@ -240,7 +265,22 @@ export function runtimeView(body: unknown, sessionDeviceId?: string | null): Run
           };
   const withSession = (view: RuntimeStatus): RuntimeView =>
     sessionStatus === undefined ? view : { ...view, sessionDevice: sessionStatus };
-  if (online.length > 1) return withSession({ at: "ambiguous" });
+  if (online.length > 1) {
+    const choices = online.flatMap((candidate): RuntimeDevice[] => {
+      if (typeof candidate.id !== "string") return [];
+      const providers = (Array.isArray(candidate.capabilities) ? (candidate.capabilities as unknown[]) : [])
+        .map(providerView)
+        .filter((provider): provider is ProviderView => provider !== null);
+      return [{
+        id: candidate.id,
+        name: deviceName(candidate),
+        runtimeVersion: typeof candidate.runtimeVersion === "string" ? candidate.runtimeVersion : "unknown",
+        provider: providers.find((provider) => provider.usable) ?? providers[0] ?? null,
+        presence: "Online",
+      }];
+    });
+    return withSession({ at: "ambiguous", devices: choices });
+  }
   const [device] = online;
   if (!device) {
     if (sessionStatus?.at === "revoked" || sessionStatus?.at === "missing") {
@@ -259,12 +299,13 @@ export function runtimeView(body: unknown, sessionDeviceId?: string | null): Run
   const providers = (Array.isArray(device.capabilities) ? (device.capabilities as unknown[]) : [])
     .map(providerView)
     .filter((provider): provider is ProviderView => provider !== null);
+  const provider = providers.find((candidate) => candidate.usable) ?? providers[0] ?? null;
   return withSession({
     at: "online",
     deviceId: typeof device.id === "string" ? device.id : null,
     name: deviceName(device),
     runtimeVersion: typeof device.runtimeVersion === "string" ? device.runtimeVersion : "unknown",
-    provider: providers.find((provider) => provider.usable) ?? providers[0] ?? null,
+    provider,
   });
 }
 
@@ -381,6 +422,7 @@ export type ApprovalStatus = "pending" | "approved" | "denied" | "expired" | "ca
 
 /** Where the person was when they said it, in the words they know: names, not ids. */
 export interface ViewChip {
+  readonly project?: string;
   readonly design?: string;
   readonly page?: string;
   readonly layer?: string;
@@ -411,10 +453,21 @@ export type Line =
   | { readonly kind: "result"; readonly id: string; readonly capabilityId: string; readonly ok: boolean; readonly text: string }
   /** A person is being asked to consent. */
   | { readonly kind: "approval"; readonly id: string; readonly approval: ApprovalView; readonly status: ApprovalStatus }
-  /** The agent moved the person's view. */
-  | { readonly kind: "navigation"; readonly id: string; readonly invocationId: string; readonly capabilityId: string; readonly text: string; readonly status: "running" | "done" | "failed" }
+  /** A UI action, presented by what happened rather than by a tool name. */
+  | {
+      readonly kind: "navigation";
+      readonly id: string;
+      readonly invocationId: string;
+      readonly capabilityId: string;
+      readonly heading: string;
+      readonly summaries: readonly string[];
+      readonly details: string;
+      readonly status: "running" | "done" | "failed";
+    }
+  /** A quiet, readable explanation for a request the Forma schema refused. */
+  | { readonly kind: "refusal"; readonly id: string; readonly heading: string; readonly summary: string; readonly details: string }
   /** The chat's own voice: a stop, a failure, the end of a session. */
-  | { readonly kind: "notice"; readonly id: string; readonly tone: "info" | "error"; readonly text: string };
+  | { readonly kind: "notice"; readonly id: string; readonly notice: NoticeCopy };
 
 export type SessionStatus = "starting" | "live" | "ended";
 
@@ -432,6 +485,7 @@ export interface Said {
 export interface ChatState {
   readonly lines: readonly Line[];
   readonly session: { readonly id: string; readonly status: SessionStatus } | null;
+  readonly startedAt: string | null;
   /**
    * The session this window started or was reattached to, if it has one. Events of
    * any other session are ignored: a replay of an earlier conversation, or of
@@ -444,7 +498,7 @@ export interface ChatState {
    * it again, so the chat says so and offers a new one rather than a box that
    * answers every message with the same refusal (F-chat-4, F-chat-5, F-10-2).
    */
-  readonly dead: { readonly reason: string } | null;
+  readonly dead: NoticeCopy | null;
   /** The Device whose Runtime runs the session, as its own events say. */
   readonly deviceId: string | null;
   /** The highest durable sequence applied, of any session in the context. */
@@ -490,6 +544,7 @@ export interface ChatState {
 export const emptyChat: ChatState = {
   lines: [],
   session: null,
+  startedAt: null,
   owned: null,
   dead: null,
   deviceId: null,
@@ -510,8 +565,9 @@ export const emptyChat: ChatState = {
 /** What a window keeps, per tab, to find its conversation again after a reload (D-1). */
 export interface Remembered {
   readonly sessionId: string;
+  readonly startedAt?: string | null;
   readonly deviceId: string | null;
-  readonly dead: string | null;
+  readonly dead: NoticeCopy | null;
   readonly said: readonly Said[];
 }
 
@@ -525,17 +581,17 @@ export type ChatAction =
   /** The sidecar refused, or could not be reached: nothing was started. */
   | { readonly type: "startFailed" }
   /** This window started a session, and the sidecar has answered with its id. */
-  | { readonly type: "started"; readonly sessionId: string; readonly id: string }
+  | { readonly type: "started"; readonly sessionId: string; readonly id: string; readonly dividerText?: string; readonly deviceId?: string; readonly startedAt?: string }
   /** This tab had a session before the page was reloaded. */
   | { readonly type: "restore"; readonly remembered: Remembered }
   /** The first successful history read establishes whether a restored turn was already running. */
   | { readonly type: "historyLoaded" }
-  | { readonly type: "notice"; readonly id: string; readonly tone: "info" | "error"; readonly text: string }
+  | { readonly type: "notice"; readonly id: string; readonly notice: NoticeCopy }
   | { readonly type: "approval"; readonly approvalId: string; readonly status: ApprovalStatus }
   /** The person pressed stop. The Runtime may take a moment to confirm, or never will (see `reduce`). */
   | { readonly type: "stopped"; readonly id: string }
   /** The session cannot be carried on; `reason` is said to the person in plain words. */
-  | { readonly type: "dead"; readonly reason: string }
+  | { readonly type: "dead"; readonly notice: NoticeCopy }
   /** Nobody is signed in any more: the conversation was theirs and goes with them (D-1). */
   | { readonly type: "reset" };
 
@@ -551,11 +607,11 @@ function settle(lines: readonly Line[]): readonly Line[] {
   );
 }
 
-function die(state: ChatState, reason: string): ChatState {
+function die(state: ChatState, notice: NoticeCopy): ChatState {
   if (state.dead) return state;
   return {
     ...state,
-    dead: { reason },
+    dead: notice,
     working: false,
     streaming: null,
     session: state.session ? { ...state.session, status: "ended" } : null,
@@ -623,10 +679,12 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         ...emptyChat,
         seq: state.seq,
         lines: [
-          ...settle(earlier),
-          ...(earlier.length > 0 ? [{ kind: "divider" as const, id: action.id, text: "New session" }] : []),
+        ...settle(earlier),
+          ...(earlier.length > 0 || state.owned !== null ? [{ kind: "divider" as const, id: action.id, text: action.dividerText ?? "New session · 00:00" }] : []),
           ...current,
         ],
+        deviceId: action.deviceId ?? null,
+        startedAt: action.startedAt ?? new Date().toISOString(),
         said: fresh.map((said) => ({ ...said, sessionId: action.sessionId })),
         session: { id: action.sessionId, status: "starting" },
         owned: action.sessionId,
@@ -639,6 +697,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       const restored: ChatState = {
         ...emptyChat,
         session: { id: remembered.sessionId, status: "starting" },
+        startedAt: remembered.startedAt ?? null,
         owned: remembered.sessionId,
         deviceId: remembered.deviceId,
         suppressDeltas: true,
@@ -648,7 +707,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       return remembered.dead === null ? restored : die(restored, remembered.dead);
     }
     case "notice":
-      return { ...state, lines: [...state.lines, { kind: "notice", id: action.id, tone: action.tone, text: action.text }] };
+      return { ...state, lines: [...state.lines, { kind: "notice", id: action.id, notice: action.notice }] };
     case "approval":
       return { ...state, lines: setApproval(state.lines, action.approvalId, action.status) };
     case "stopped":
@@ -662,10 +721,10 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         suppressDeltas: false,
         stoppedLocally: true,
         streaming: null,
-        lines: [...state.lines, { kind: "notice", id: action.id, tone: "info", text: "You stopped the agent." }],
+        lines: [...state.lines, { kind: "notice", id: action.id, notice: { tone: "info", happened: "You stopped the agent.", next: "Start a new session when you're ready.", action: "New session" } }],
       };
     case "dead":
-      return die(state, action.reason);
+      return die(state, action.notice);
     case "reset":
       return emptyChat;
   }
@@ -676,8 +735,9 @@ export function remember(state: ChatState): Remembered | null {
   if (state.owned === null) return null;
   return {
     sessionId: state.owned,
+    startedAt: state.startedAt,
     deviceId: state.deviceId,
-    dead: state.dead?.reason ?? null,
+    dead: state.dead,
     said: state.said.filter((said) => said.sessionId === state.owned),
   };
 }
@@ -714,21 +774,21 @@ function applyEvent(state: ChatState, event: DurableEvent): ChatState {
     case "session.started":
       return state.session.status === "ended" ? state : status("live");
     case "session.completed":
-      return die(state, "The session ended. Start a new one to carry on.");
+      return die(state, DEAD.completed);
     case "session.cancelled":
       // Stopped by this window, which has already said so; from anywhere else it is news.
       return state.session.status === "ended" || state.stoppedLocally
         ? state
-        : die(state, "The session was stopped from another window. Start a new one to carry on.");
+        : die(state, DEAD.otherWindow);
     case "session.failed":
-      return die(state, `The session failed: ${errorText(payload.error)}. Start a new one to carry on.`);
+      return die(state, { tone: "stopped", happened: `The session failed: ${errorText(payload.error)}.`, next: "Start a new session to carry on.", action: "New session" });
     case "turn.started":
       return { ...state, working: true, stoppedLocally: false };
     case "turn.completed":
     case "turn.cancelled":
       return { ...state, working: false, suppressDeltas: false, streaming: null };
     case "turn.failed":
-      return { ...state, working: false, suppressDeltas: false, streaming: null, lines: [...state.lines, { kind: "notice", id, tone: "error", text: `The agent's turn failed: ${errorText(payload.error)}` }] };
+      return { ...state, working: false, suppressDeltas: false, streaming: null, lines: [...state.lines, { kind: "notice", id, notice: { tone: "needs-you", happened: `The agent's turn failed: ${errorText(payload.error)}`, next: "Review the response, then try again." } }] };
     case "agent.output.completed": {
       // Replaces whatever was streaming for the turn: the final text is the whole
       // of it, so appending would say everything twice.
@@ -779,13 +839,80 @@ function applyEvent(state: ChatState, event: DurableEvent): ChatState {
 }
 
 /** What a UI action asked for, in the words of the person it happened to. */
-function navigationText(capabilityId: string, input: unknown): string {
-  const fields = isRecord(input)
-    ? Object.entries(input)
-        .map(([name, value]) => `${name} ${describeValue(value)}`)
-        .join(", ")
-    : "";
-  return fields ? `${capabilityId} — ${fields}` : capabilityId;
+const UI_MOVING = "Moving your view…";
+const UI_MOVED = "Moved your view";
+const UI_REJECTED = "Couldn't move your view";
+const UI_UNCONFIRMED = "Not confirmed by this window";
+const UI_UNSUPPORTED = "The agent asked for something Forma can't do";
+
+function actionDetails(capabilityId: string, input: unknown, outcome: unknown): string {
+  return `${capabilityId}\nInput:\n${JSON.stringify(input, null, 2) ?? "null"}\nOutcome:\n${JSON.stringify(outcome, null, 2) ?? "null"}`;
+}
+
+function safeDetail(detail: string, input: unknown): string {
+  let result = detail;
+  if (isRecord(input)) {
+    for (const [field, value] of Object.entries(input)) {
+      if (!field.endsWith("_id") || typeof value !== "string" || value.length === 0) continue;
+      const label = field === "design_id" ? "that design" : field === "page_id" ? "that page" : field === "layer_id" ? "that layer" : "that item";
+      result = result.replaceAll(value, label);
+    }
+  }
+  return result.replace(/\b[0-9a-f]{8}-[0-9a-f-]{27,}\b/gi, "that item");
+}
+
+function handledSummary(capabilityId: string, input: unknown, result: unknown): string {
+  const detail = isRecord(result) && typeof result.detail === "string" ? safeDetail(result.detail, input).trim() : "";
+  if (capabilityId === "ui.openDesign") {
+    if (detail.startsWith("Opened ")) return detail;
+    const name = detail.split(", page ")[0]?.trim();
+    return name ? `Opened “${name}”` : "Opened the requested design.";
+  }
+  if (capabilityId === "ui.selectLayer") {
+    if (detail.startsWith("Selected ")) return detail;
+    const name = detail.split(" on page ")[0]?.replace(/^layer\s+/i, "").trim();
+    return name && name !== "that layer" ? `Selected “${name}”` : "Selected the requested layer.";
+  }
+  if (capabilityId === "ui.setZoom") {
+    const zoom = isRecord(input) && typeof input.zoom === "number" ? input.zoom : null;
+    return zoom === null ? "Changed the canvas zoom." : `Zoom ${Math.round(zoom * 100)}%`;
+  }
+  if (capabilityId === "ui.setPanel") {
+    const panel = isRecord(input) && typeof input.panel === "string" ? input.panel : null;
+    return panel ? `Opened the ${panel[0]?.toUpperCase()}${panel.slice(1)} panel` : "Opened the requested panel.";
+  }
+  return detail || "Your view was updated.";
+}
+
+function rejectedSummary(capabilityId: string, input: unknown, message: string): string {
+  const normalized = message.toLowerCase();
+  if (normalized.includes("open a design first") || normalized.includes("does not have design") || normalized.includes("call ui.opend esign")) {
+    return "Open a design first.";
+  }
+  if (normalized.includes("has no layer")) return "That layer isn't on this page.";
+  if (normalized.includes("has no page")) return "That page isn't in this design.";
+  if (normalized.includes("could not be read")) return "That design couldn't be opened.";
+  if (capabilityId === "ui.setPanel" && isRecord(input) && typeof input.panel === "string") {
+    return `Forma doesn't have a ${input.panel} panel.`;
+  }
+  return "The requested view change couldn't be made.";
+}
+
+function unsupportedSummary(capabilityId: string, input: unknown): string {
+  if (capabilityId === "ui.setZoom" && isRecord(input) && typeof input.zoom === "number") {
+    return input.zoom > 4 ? "Zoom is limited to 400%." : "Zoom is limited to 5%–400%.";
+  }
+  if (capabilityId === "ui.setPanel" && isRecord(input) && typeof input.panel === "string") {
+    return `Forma doesn't have a ${input.panel} panel.`;
+  }
+  return "That request doesn't match what Forma supports.";
+}
+
+function refusalSummary(message: string): string {
+  const summary = message.replace(/\b[0-9a-f]{8}-[0-9a-f-]{27,}\b/gi, "that item").trim();
+  // Schema diagnostics vary by Runtime version and can expose internal field names.
+  // Keep the card deliberately quiet and put the full diagnostic under Details.
+  return summary.length > 0 ? "That request doesn't match what Forma supports." : "Forma couldn't use that request.";
 }
 
 function requested(state: ChatState, id: string, payload: Readonly<Record<string, unknown>>): ChatState {
@@ -793,7 +920,16 @@ function requested(state: ChatState, id: string, payload: Readonly<Record<string
   if (typeof invocationId !== "string" || typeof capabilityId !== "string") return state;
   const inputs = { ...state.inputs, [invocationId]: payload.input };
   const line: Line = isUi(capabilityId)
-    ? { kind: "navigation", id, invocationId, capabilityId, text: navigationText(capabilityId, payload.input), status: "running" }
+    ? {
+        kind: "navigation",
+        id,
+        invocationId,
+        capabilityId,
+        heading: UI_MOVING,
+        summaries: [],
+        details: actionDetails(capabilityId, payload.input, "waiting for the window"),
+        status: "running",
+      }
     : { kind: "capability", id, invocationId, capabilityId, summary: spec(capabilityId)?.presentation?.summary ?? `Runs ${capabilityId}`, status: "running" };
   return { ...state, inputs, lines: [...state.lines, line] };
 }
@@ -806,19 +942,57 @@ function answered(state: ChatState, id: string, ok: boolean, payload: Readonly<R
     (line.kind === "capability" || line.kind === "navigation") && line.invocationId === invocationId ? { ...line, status: next } : line,
   );
 
+  const input = state.inputs[invocationId];
+  const error = isRecord(payload.error) ? payload.error : {};
+  const errorCode = typeof error.code === "string" ? error.code : "";
+  const errorMessage = typeof error.message === "string" ? error.message : "";
+
   if (isUi(capabilityId)) {
-    // Told apart from a domain result: the navigation line carries its own
-    // outcome — the window's, or why there was none — instead of a second line.
-    const detail = ok
-      ? isRecord(payload.result) && typeof payload.result.detail === "string"
-        ? payload.result.detail
-        : "handled"
-      : isRecord(payload.error) && typeof payload.error.code === "string"
-        ? payload.error.code
-        : "failed";
+    const result = isRecord(payload.result) ? payload.result : {};
+    const resultOutcome = typeof result.outcome === "string" ? result.outcome : "";
+    const details = actionDetails(capabilityId, input, ok ? payload.result : payload.error);
+    const navigation = lines.map((line) => {
+      if (line.kind !== "navigation" || line.invocationId !== invocationId) return line;
+      if (errorCode === "ui_unavailable" || errorCode === "ui_action_timeout") {
+        return {
+          ...line,
+          heading: UI_UNCONFIRMED,
+          summaries: ["Nothing confirmed this action in time.", "Your view may not have changed. Check it before asking again."],
+          details,
+          status: "failed" as const,
+        };
+      }
+      if (errorCode === "validation_error") {
+        return { ...line, heading: UI_UNSUPPORTED, summaries: [unsupportedSummary(capabilityId, input)], details, status: "failed" as const };
+      }
+      if (!ok || resultOutcome === "rejected" || errorCode === "ui_action_rejected") {
+        return {
+          ...line,
+          heading: UI_REJECTED,
+          summaries: [rejectedSummary(capabilityId, input, typeof result.detail === "string" ? result.detail : errorMessage)],
+          details,
+          status: "failed" as const,
+        };
+      }
+      return {
+        ...line,
+        heading: UI_MOVED,
+        summaries: [handledSummary(capabilityId, input, payload.result)],
+        details,
+        status: "done" as const,
+      };
+    });
+    return { ...state, lines: navigation };
+  }
+
+  if (!ok && errorCode === "validation_error") {
+    const summary = refusalSummary(errorMessage);
     return {
       ...state,
-      lines: lines.map((line) => (line.kind === "navigation" && line.invocationId === invocationId ? { ...line, text: `${line.text} · ${detail}` } : line)),
+      lines: [
+        ...lines,
+        { kind: "refusal", id, heading: UI_UNSUPPORTED, summary, details: actionDetails(capabilityId, input, payload.error) },
+      ],
     };
   }
 
@@ -831,15 +1005,15 @@ function answered(state: ChatState, id: string, ok: boolean, payload: Readonly<R
  * do, because "the session failed" with nothing after it is where F-chat-5 left them.
  */
 export const DEAD = {
-  notAuthorized:
-    "Your Runtime no longer recognises this conversation, usually because it was restarted or replaced. Start a new session to carry on.",
-  revoked: "That device was revoked, so this conversation has stopped. Pair a new device from the Agents page, then start a new session.",
-  none: "No device is paired any more, so this conversation has stopped. Pair one from the Agents page, then start a new session.",
-  replaced: "The Runtime that was running this conversation is not the device you have connected now. Start a new session to carry on.",
-  offline: "Your Runtime went offline during this turn, so the conversation has stopped. Start it again, then start a new session.",
-  expired:
-    "This session expired: the permission it holds to work in Forma lasts about five minutes and was not renewed. Start a new session to carry on; what you have said so far stays above it.",
-  stopWhileOffline: "Your Runtime is offline, so this conversation has stopped. Start it again, then start a new session.",
+  notAuthorized: { tone: "stopped", happened: "This session can no longer reach its Runtime.", next: "Start a new session to carry on.", action: "New session" },
+  revoked: { tone: "stopped", happened: "The computer for this session was revoked.", next: "Pair a computer from the Agents page, then start a new session.", action: "Open Agents page" },
+  none: { tone: "stopped", happened: "No computer is paired any more.", next: "Pair one from the Agents page, then start a new session.", action: "Open Agents page" },
+  replaced: { tone: "stopped", happened: "The computer that ran this session is no longer connected.", next: "Start a new session to carry on.", action: "New session" },
+  offline: MESSAGES.device_offline,
+  expired: { tone: "stopped", happened: "This session expired because its permission to work in Forma was not renewed.", next: "Start a new session to carry on; what you said stays above it.", action: "New session" },
+  stopWhileOffline: MESSAGES.device_offline,
+  completed: { tone: "stopped", happened: "The session ended.", next: "Start a new one to carry on.", action: "New session" },
+  otherWindow: { tone: "stopped", happened: "The session was stopped from another window.", next: "Start a new one to carry on.", action: "New session" },
 } as const;
 
 /** How long a Runtime may stay offline in the middle of a turn before the turn is given up. */
@@ -884,6 +1058,7 @@ export function splitViewLine(text: string): { readonly text: string; readonly c
   const name = /name="((?:[^"\\]|\\.)*)"/u.exec(line)?.[1]?.replaceAll(/\\(.)/gu, "$1");
   const has = (key: string) => new RegExp(`(?:^| )${key}=`, "u").test(line);
   const chip: ViewChip = {
+    ...(has("project") && !has("design") ? { project: name ?? "project" } : {}),
     ...(has("design") ? { design: name ?? "design" } : {}),
     ...(has("page") ? { page: "page" } : {}),
     ...(has("layer") ? { layer: "layer" } : {}),

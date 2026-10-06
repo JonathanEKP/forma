@@ -29,6 +29,8 @@ import {
   type ChatState,
   type Decision,
   type Failure,
+  type NoticeCopy,
+  type RuntimeDevice,
   type RuntimeView,
   type ViewChip,
   type ViewIds,
@@ -78,7 +80,11 @@ export interface Chat {
    */
   readonly sessionId: string | null;
   /** Why the session cannot be carried on, or `null`. Sending waits for `newSession` while it is set. */
-  readonly dead: string | null;
+  readonly dead: NoticeCopy | null;
+  readonly computers: readonly RuntimeDevice[];
+  readonly selectedComputerId: string | null;
+  readonly needsComputerChoice: boolean;
+  readonly chooseComputer: (deviceId: string) => Promise<void>;
   readonly send: (text: string, onAccepted?: () => void) => Promise<void>;
   readonly newSession: () => Promise<void>;
   readonly stop: () => Promise<void>;
@@ -102,7 +108,8 @@ export interface ChatOptions {
 }
 
 /** Why the current runtime cannot take a message, in words, or `null` if it can. */
-export function whyBlocked(connection: Connection, runtime: Runtime): string | null {
+export function whyBlocked(connection: Connection, runtime: Runtime, needsComputerChoice = false): string | null {
+  if (needsComputerChoice) return "Choose a computer to run the agent.";
   if (runtime.at === "unauthenticated") return "Your sign-in has expired. Sign in again.";
   if (connection === "offline") return "The agent service can't be reached.";
   switch (runtime.at) {
@@ -117,12 +124,43 @@ export function whyBlocked(connection: Connection, runtime: Runtime): string | n
     case "revoked":
       return `${runtime.name} was revoked. Pair a new device from the Agents page.`;
     case "ambiguous":
-      return "More than one device is online.";
+      return null;
     case "online":
       if (!runtime.provider) return `${runtime.name} reports no agent provider.`;
       if (!runtime.provider.usable) return `${runtime.provider.id} is ${runtime.provider.unusableBecause ?? "unavailable"}.`;
       return null;
   }
+}
+
+const DEVICE_CHOICE_KEY = "forma.chat.device";
+
+function rememberedDevice(): string | null {
+  try {
+    return globalThis.localStorage.getItem(DEVICE_CHOICE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function onlineComputers(runtime: Runtime): readonly RuntimeDevice[] {
+  if (runtime.at === "ambiguous") return runtime.devices;
+  if (runtime.at !== "online" || runtime.deviceId === null) return [];
+  return [{ id: runtime.deviceId, name: runtime.name, runtimeVersion: runtime.runtimeVersion, provider: runtime.provider, presence: "Online" }];
+}
+
+function dividerLabel(deviceName?: string): string {
+  const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+  return deviceName ? `New session on ${deviceName} · ${time}` : `New session · ${time}`;
+}
+
+function unavailableNotice(runtime: Runtime, connection: Connection, hasChoices: boolean): NoticeCopy {
+  if (hasChoices) return { tone: "needs-you", happened: "Choose a computer to run the agent.", next: "Choose one from Run on before sending." };
+  if (runtime.at === "none") return { tone: "needs-you", happened: "No computer is paired.", next: "Pair one, then start a session.", action: "Open Agents page" };
+  if (runtime.at === "offline") return { tone: "needs-you", happened: `${runtime.name} is offline.`, next: "Bring it online, then try again." };
+  if (runtime.at === "revoked") return { tone: "needs-you", happened: `${runtime.name} was revoked.`, next: "Pair a computer, then start again.", action: "Open Agents page" };
+  if (runtime.at === "unauthenticated") return { tone: "needs-you", happened: "Your sign-in has expired.", next: "Sign in again, then start a new session.", action: "Sign in again" };
+  if (connection === "offline" || runtime.at === "unreachable") return { tone: "needs-you", happened: "Forma's agent service can't be reached.", next: "Check the connection, then try again." };
+  return DEAD.offline;
 }
 
 export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRACE_MS, view, onWrite, storage }: ChatOptions): Chat {
@@ -135,6 +173,7 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
   writeRef.current = onWrite;
   const [stream, setStream] = useState<Connection>("connecting");
   const [runtime, setRuntime] = useState<Runtime>({ at: "unknown" });
+  const [preferredDeviceId, setPreferredDeviceId] = useState(rememberedDevice);
   const [answering, setAnswering] = useState<ReadonlySet<string>>(new Set());
   const [unconfirmed, setUnconfirmed] = useState<ReadonlySet<string>>(new Set());
   const [live, setLive] = useState(() => liveFeed.state().at === "connected");
@@ -158,10 +197,7 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
     seq.current += 1;
     return `l${seq.current}`;
   }, []);
-  const notice = useCallback(
-    (tone: "info" | "error", text: string) => dispatch({ type: "notice", id: localId(), tone, text }),
-    [localId],
-  );
+  const notice = useCallback((copy: NoticeCopy) => dispatch({ type: "notice", id: localId(), notice: copy }), [localId]);
 
   // The context first, then the stream that has to name it. Retried quietly: the
   // sidecar may simply not be up yet, and an editor that stays broken until
@@ -267,6 +303,13 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
     if (read) setRuntime(read);
   }, [readDevices]);
 
+  const computers = onlineComputers(runtime);
+  const session = state.session;
+  const activeDeviceId = session !== null && session.status !== "ended" ? state.deviceId : null;
+  const rememberedOnline = computers.find((device) => device.id === preferredDeviceId);
+  const selectedComputerId = activeDeviceId ?? (computers.length === 1 ? computers[0]?.id ?? null : rememberedOnline?.id ?? null);
+  const needsComputerChoice = computers.length > 1 && selectedComputerId === null;
+
   // The live path: what the sidecar fans out to this window while the agent
   // works. A frame with a sequence goes to the reader, which applies it only if
   // it is the next one; one without — a delta, a presence announcement — is
@@ -316,7 +359,7 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
   }, [enabled, readDevices]);
 
   // A session that cannot be carried on is said so once, and the box waits for a new one.
-  const die = useCallback((reason: string) => dispatch({ type: "dead", reason }), []);
+  const die = useCallback((notice: NoticeCopy) => dispatch({ type: "dead", notice }), []);
 
   // What a refusal from the sidecar means for the conversation. "This session isn't allowed
   // to do that" is the Runtime saying it does not know the session any more (F-chat-5), which
@@ -324,7 +367,8 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
   const refused = useCallback(
     (failure: Failure) => {
       if (failure.reason === "not_authorized") die(DEAD.notAuthorized);
-      else notice("error", failure.message);
+      else if (failure.reason === "device_offline") die(DEAD.offline);
+      else notice(failure.notice);
     },
     [die, notice],
   );
@@ -332,7 +376,6 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
   // A message typed before the session is live waits for `session.started`: the
   // provider is not there to take input until then, and sending it early is a
   // race the person would see as a message that vanished.
-  const session = state.session;
   // D-2: an agent's actions go to the window whose chat *started* the session — not one it merely
   // adopted from the history, and not one that is over: a dead or stopped conversation has nobody
   // running it, so the window stops speaking for it.
@@ -367,39 +410,71 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
     if (sessionDevice?.at === "revoked" || sessionDevice?.at === "missing") return die(DEAD.revoked);
     if (runtime.at === "revoked") return die(DEAD.revoked);
     if (runtime.at === "none") return die(DEAD.none);
+    if (sessionDevice?.at === "offline") return die(DEAD.offline);
     if (runtime.at === "online" && runtime.deviceId !== null && deviceId !== null && runtime.deviceId !== deviceId) {
       return die(DEAD.replaced);
     }
-    if ((runtime.at === "offline" || runtime.at === "ambiguous") && working) {
+    if (runtime.at === "offline" && working) {
       const timer = setTimeout(() => die(DEAD.offline), offlineGraceMs);
       return () => clearTimeout(timer);
     }
   }, [enabled, sessionEnded, runtime, deviceId, working, die, offlineGraceMs]);
 
-  const blocked = whyBlocked(stream, runtime);
-  const dead = state.dead?.reason ?? null;
+  const targetComputer = computers.find((device) => device.id === selectedComputerId);
+  const blocked = needsComputerChoice
+    ? "Choose a computer to run the agent."
+    : runtime.at === "ambiguous"
+      ? targetComputer?.provider === null || targetComputer?.provider === undefined
+        ? "That computer does not report an agent provider."
+        : !targetComputer.provider.usable
+          ? `${targetComputer.provider.id} is ${targetComputer.provider.unusableBecause ?? "unavailable"}.`
+          : null
+      : whyBlocked(stream, runtime);
+  const dead = state.dead;
 
-  const start = useCallback(async (): Promise<string | null> => {
-    if (runtime.at !== "online" || !runtime.provider?.usable) {
-      notice("error", blocked ?? "There is no device to send that to.");
+  const start = useCallback(async (requestedDeviceId?: string): Promise<{ readonly sessionId: string; readonly device: RuntimeDevice } | null> => {
+    const available = onlineComputers(runtime);
+    const selectedId = requestedDeviceId ?? (available.length === 1 ? available[0]?.id : preferredDeviceId && available.some((device) => device.id === preferredDeviceId) ? preferredDeviceId : null);
+    const selected = available.find((device) => device.id === selectedId);
+    if (!selectedId || !selected) {
+      notice(unavailableNotice(runtime, stream, available.length > 1));
+      return null;
+    }
+    if (!selected.provider?.usable) {
+      notice({ tone: "needs-you", happened: selected.provider?.unusableBecause ? `${selected.provider.id} is ${selected.provider.unusableBecause}.` : `${selected.name} does not report an agent provider.`, next: "Choose a computer with an available provider.", action: "Open Agents page" });
       return null;
     }
     dispatch({ type: "starting" });
-    const started = await agent.start(runtime.provider.id);
+    const started = await agent.start(selected.provider.id, selected.id);
     if (!started.ok) {
       dispatch({ type: "startFailed" });
-      notice("error", started.failure.message);
+      notice(started.failure.notice);
       // The likeliest reason is that presence changed since the last read.
-      if (started.failure.reason === "runtime_offline" || started.failure.reason === "ambiguous_device") void refreshRuntime();
+      if (started.failure.reason === "runtime_offline" || started.failure.reason === "device_choice_required" || started.failure.reason === "device_offline") void refreshRuntime();
       return null;
     }
-    return started.value.sessionId;
-  }, [agent, runtime, blocked, notice, refreshRuntime]);
+    return { sessionId: started.value.sessionId, device: selected };
+  }, [agent, runtime, stream, preferredDeviceId, notice, refreshRuntime]);
+
+  const chooseComputer = useCallback(async (requestedDeviceId: string) => {
+    const selected = computers.find((device) => device.id === requestedDeviceId);
+    if (!selected) return;
+    setPreferredDeviceId(requestedDeviceId);
+    try {
+      globalThis.localStorage.setItem(DEVICE_CHOICE_KEY, requestedDeviceId);
+    } catch {
+      // The selector remains usable when browser storage is unavailable.
+    }
+    if (session && session.status !== "ended" && state.deviceId !== null && state.deviceId !== requestedDeviceId) {
+      const started = await start(requestedDeviceId);
+      if (started) dispatch({ type: "started", sessionId: started.sessionId, deviceId: started.device.id, dividerText: dividerLabel(started.device.name), id: localId() });
+    }
+  }, [computers, session, state.deviceId, start, localId]);
 
   const send = useCallback(
     async (raw: string, onAccepted?: () => void) => {
       const text = raw.trim();
-      if (text.length === 0 || dead !== null || state.working) return;
+      if (text.length === 0 || dead !== null || state.working || needsComputerChoice) return;
       const seen = viewRef.current?.();
       dispatch({ type: "person", id: localId(), text, ...(seen?.chip ? { chip: seen.chip } : {}) });
       const ids = seen?.ids ?? {};
@@ -415,20 +490,20 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
         return;
       }
 
-      const sessionId = await start();
-      if (sessionId === null) return;
-      queued.current = { sessionId, text, view: ids, ...(onAccepted ? { onAccepted } : {}) };
-      dispatch({ type: "started", sessionId, id: localId() });
+      const started = await start(selectedComputerId ?? undefined);
+      if (started === null) return;
+      queued.current = { sessionId: started.sessionId, text, view: ids, ...(onAccepted ? { onAccepted } : {}) };
+      dispatch({ type: "started", sessionId: started.sessionId, deviceId: started.device.id, dividerText: dividerLabel(), id: localId() });
     },
-    [agent, session, dead, state.working, start, refused, localId],
+    [agent, session, dead, state.working, needsComputerChoice, selectedComputerId, start, refused, localId],
   );
 
   // Nothing starts by itself: a dead session waits here, with its history above, until the
   // person asks for another (D-6).
   const newSession = useCallback(async () => {
-    const sessionId = await start();
-    if (sessionId !== null) dispatch({ type: "started", sessionId, id: localId() });
-  }, [start, localId]);
+    const started = await start(selectedComputerId ?? undefined);
+    if (started !== null) dispatch({ type: "started", sessionId: started.sessionId, deviceId: started.device.id, dividerText: dividerLabel(), id: localId() });
+  }, [start, selectedComputerId, localId]);
 
   const stop = useCallback(async () => {
     if (!session || !state.working || stopPending.current === session.id) return;
@@ -441,7 +516,8 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
       // does not offer a message against a turn the person cannot stop.
       else if (answer.failure.reason === "not_authorized") die(DEAD.notAuthorized);
       else if (answer.failure.reason === "runtime_offline") die(DEAD.stopWhileOffline);
-      else notice("error", answer.failure.message);
+      else if (answer.failure.reason === "device_offline") die(DEAD.offline);
+      else notice(answer.failure.notice);
     } finally {
       if (stopPending.current === sessionId) stopPending.current = null;
     }
@@ -481,9 +557,10 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
         next.delete(approvalId);
         return next;
       });
-      notice("error", answer.failure.message);
+      if (answer.failure.reason === "device_offline") die(DEAD.offline);
+      else notice(answer.failure.notice);
     },
-    [agent, notice],
+    [agent, notice, die],
   );
 
   return {
@@ -498,6 +575,10 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
     blocked,
     sessionId,
     dead,
+    computers,
+    selectedComputerId,
+    needsComputerChoice,
+    chooseComputer,
     send,
     newSession,
     stop,

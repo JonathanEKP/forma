@@ -31,7 +31,7 @@ function renderBlock(block: Block, key: number): ReactNode {
   switch (block.kind) {
     case "paragraph":
       return (
-        <p key={key} className="whitespace-pre-wrap [overflow-wrap:anywhere]">
+        <p key={key} dir="auto" style={{ unicodeBidi: "plaintext" }} className="whitespace-pre-wrap [overflow-wrap:anywhere]">
           {renderInline(parseInline(block.text))}
         </p>
       );
@@ -39,6 +39,8 @@ function renderBlock(block: Block, key: number): ReactNode {
       return (
         <pre
           key={key}
+          dir="auto"
+          style={{ unicodeBidi: "plaintext" }}
           aria-label={block.language ? `${block.language} code` : undefined}
           className="max-w-full overflow-x-auto whitespace-pre-wrap [overflow-wrap:anywhere]"
         >
@@ -48,7 +50,7 @@ function renderBlock(block: Block, key: number): ReactNode {
     case "list": {
       const List = block.ordered ? "ol" : "ul";
       return (
-        <List key={key} start={block.ordered ? block.start : undefined} className="min-w-0 list-inside space-y-1 [overflow-wrap:anywhere]">
+        <List key={key} start={block.ordered ? block.start : undefined} dir="auto" style={{ unicodeBidi: "plaintext" }} className="min-w-0 list-inside space-y-1 [overflow-wrap:anywhere]">
           {block.items.map((item, itemIndex) => (
             <li key={itemIndex} className="[overflow-wrap:anywhere]">
               {renderInline(parseInline(item))}
