@@ -57,6 +57,7 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
   const [sessionInfoOpen, setSessionInfoOpen] = useState(false);
   const [runOnOpen, setRunOnOpen] = useState(chat.needsComputerChoice);
   const { state } = chat;
+  const contextChip = chat.currentContext();
 
   useEffect(() => {
     if (chat.needsComputerChoice) setRunOnOpen(true);
@@ -214,6 +215,12 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
       )}
 
       <footer className="border-t border-edge p-3">
+        {contextChip && (
+          <div role="status" aria-label="Current message context" className="mb-2 flex min-w-0 items-center gap-2 rounded border border-edge px-2 py-1 text-[10px] text-faint">
+            <span className="shrink-0 uppercase tracking-[0.1em]">Current view</span>
+            <span className="min-w-0 truncate text-muted">{viewChipText(contextChip)}</span>
+          </div>
+        )}
         <textarea
           ref={composer}
           value={draft}
@@ -443,12 +450,7 @@ function Row({ line, answering, unconfirmed, onDecide, onNoticeAction, deviceNam
 
 /** Where the person was when they said it: what the agent was told, in their own words. */
 function Chip({ chip }: { chip: ViewChip }) {
-  const parts = [
-    chip.project === undefined ? undefined : `Project “${chip.project}”`,
-    chip.design,
-    chip.page,
-    chip.layer,
-  ].filter((part): part is string => part !== undefined);
+  const parts = viewChipParts(chip);
   return (
     <p
       aria-label={`Sent with: ${parts.join(", ")}`}
@@ -457,6 +459,19 @@ function Chip({ chip }: { chip: ViewChip }) {
       {parts.join(" · ")}
     </p>
   );
+}
+
+function viewChipParts(chip: ViewChip): string[] {
+  return [
+    chip.project === undefined ? undefined : `Project “${chip.project}”`,
+    chip.design,
+    chip.page,
+    chip.layer,
+  ].filter((part): part is string => part !== undefined);
+}
+
+function viewChipText(chip: ViewChip): string {
+  return viewChipParts(chip).join(" · ");
 }
 
 function SessionNotice({ notice, onAction }: { notice: NoticeCopy; onAction: (action: NoticeCopy["action"]) => void }) {

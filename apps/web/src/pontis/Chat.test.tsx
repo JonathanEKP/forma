@@ -465,8 +465,41 @@ describe("a conversation", () => {
 
   it("shows the project context chip and sends only the selected project id", async () => {
     await inSession(() => render(<Harness enabled view={() => ({ ids: { projectId: "project-1" }, chip: { project: "Launch" } })} />));
-    expect(screen.getByText("Project “Launch”")).toBeTruthy();
+    expect(screen.getByLabelText("Sent with: Project “Launch”").textContent).toBe("Project “Launch”");
     expect(backend.intents()).toContainEqual({ type: "session.input", payload: { sessionId: SESSION, text: "work on it", view: { projectId: "project-1" } } });
+  });
+
+  it("shows the next message context above the composer and preserves each sent context", async () => {
+    await attach();
+    backend.push(1, "session.created");
+    backend.push(2, "session.started");
+    let view: ChatOptions["view"] = () => ({
+      ids: { designId: "design-1", pageId: "page-1", layerId: "layer-1" },
+      chip: { design: "ALPHA Launch cover", page: "Cover", layer: "Headline" },
+    });
+    const rendered = render(<Harness enabled view={view} />);
+    await screen.findByText(/Studio laptop/);
+
+    const context = screen.getByRole("status", { name: "Current message context" });
+    const composer = screen.getByRole("textbox", { name: "Message the agent" });
+    expect(context.textContent).toContain("ALPHA Launch cover · Cover · Headline");
+    expect(context.compareDocumentPosition(composer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    fireEvent.change(composer, { target: { value: "work on it" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(backend.intents()).toContainEqual({
+      type: "session.input",
+      payload: { sessionId: SESSION, text: "work on it", view: { designId: "design-1", pageId: "page-1", layerId: "layer-1" } },
+    }));
+    expect(screen.getByLabelText("Sent with: ALPHA Launch cover, Cover, Headline").textContent).toBe("ALPHA Launch cover · Cover · Headline");
+
+    view = () => ({ ids: { projectId: "project-1" }, chip: { project: "Launch" } });
+    rendered.rerender(<Harness enabled view={view} />);
+    expect(screen.getByRole("status", { name: "Current message context" }).textContent).toContain("Project “Launch”");
+
+    view = () => ({ ids: {} });
+    rendered.rerender(<Harness enabled view={view} />);
+    expect(screen.queryByRole("status", { name: "Current message context" })).toBeNull();
   });
 
   it("renders UI outcomes as article cards with identifiers inside Details", async () => {
