@@ -96,7 +96,7 @@ export function viewLine(view: View, name?: string): string {
   const parts = [
     view.projectId ? `project=${view.projectId}` : undefined,
     view.designId ? `design=${view.designId}` : undefined,
-    view.designId && name !== undefined ? `name=${quotedName(name)}` : undefined,
+    (view.designId || view.projectId) && name !== undefined ? `name=${quotedName(name)}` : undefined,
     view.pageId ? `page=${view.pageId}` : undefined,
     view.layerId ? `layer=${view.layerId}` : undefined,
   ].filter((part): part is string => part !== undefined);
@@ -117,6 +117,20 @@ async function designName(boundary: FormaBoundary, person: Person, designId: str
       AbortSignal.timeout(NAME_READ_MS),
     );
     return typeof record.name === 'string' ? record.name : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The selected project, read through Boundary F as the person. */
+async function projectName(boundary: FormaBoundary, person: Person, projectId: string): Promise<string | undefined> {
+  try {
+    const projects = await boundary.listProjects(
+      { userId: person.userId, applicationContextId: person.applicationContextId },
+      specOf('project.list').bounds.maxResultBytes,
+      AbortSignal.timeout(NAME_READ_MS),
+    );
+    return projects.find((project) => project.id.toLowerCase() === projectId.toLowerCase())?.name;
   } catch {
     return undefined;
   }
@@ -151,7 +165,11 @@ export function createIntentRoute(options: {
       // Before the Runtime is asked for anything, so a name read that is slow
       // costs the message its three seconds and nothing else.
       const view = parseView(isRecord(body) && isRecord(body.payload) ? body.payload.view : undefined);
-      const name = view.designId ? await designName(options.boundary, person, view.designId) : undefined;
+      const name = view.designId
+        ? await designName(options.boundary, person, view.designId)
+        : view.projectId
+          ? await projectName(options.boundary, person, view.projectId)
+          : undefined;
       intent.payload.text = `${viewLine(view, name)}\n${intent.payload.text}`;
     }
 
