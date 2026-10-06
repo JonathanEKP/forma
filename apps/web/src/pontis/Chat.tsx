@@ -233,7 +233,7 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
               {runOnOpen && (
                 <section aria-label="Run on computer" className="absolute bottom-full right-0 z-10 mb-2 w-64 rounded-lg border border-edge bg-surface-2 p-2 shadow-xl">
                   {chat.computers.map((computer) => (
-                    <button key={computer.id} type="button" aria-pressed={chat.selectedComputerId === computer.id} onClick={async () => { await chat.chooseComputer(computer.id); setRunOnOpen(false); composer.current?.focus(); }} className="flex w-full flex-col items-start rounded px-2 py-2 text-left text-xs hover:bg-surface">
+                    <button key={computer.id} type="button" aria-pressed={chat.selectedComputerId === computer.id} onClick={() => { void (async () => { await chat.chooseComputer(computer.id); setRunOnOpen(false); composer.current?.focus(); })(); }} className="flex w-full flex-col items-start rounded px-2 py-2 text-left text-xs hover:bg-surface">
                       <span className="text-paper">{computer.name}</span>
                       <span className="text-[10px] text-faint">{computer.presence} · Runtime {computer.runtimeVersion}</span>
                     </button>
