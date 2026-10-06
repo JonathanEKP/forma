@@ -155,7 +155,10 @@ export function App() {
     <div className="h-full min-w-0">
       <Editor
         designId={designId}
-        onBack={() => setDesignId(null)}
+        onBack={() => {
+          setDesignId(null);
+          setProject(null);
+        }}
         {...(chat.enabled ? { chat, chatOpen, onToggleChat: toggleChat } : {})}
       />
     </div>
