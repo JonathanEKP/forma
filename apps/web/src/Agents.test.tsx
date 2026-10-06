@@ -164,7 +164,8 @@ describe("agent credentials", () => {
     expect(document.activeElement).toBe(keep);
     fireEvent.keyDown(keep, { key: "Escape" });
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Revoke Codex CLI" }));
-    expect(requests.some((request) => request.method === "DELETE")).toBe(false);
+    expect(screen.queryByRole("button", { name: "Confirm revoke Codex CLI, created 30 Aug" })).toBeNull();
+    expect(screen.queryByText("Revoked")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Revoke Codex CLI" }));
     fireEvent.click(screen.getByRole("button", { name: "Confirm revoke Codex CLI, created 30 Aug" }));

@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { getIdentity, listProjects } from "./api";
 import { currentSession, listGrants, revokeGrant, supabase, type Grant } from "./identity";
@@ -6,13 +6,36 @@ import { DevicePanel } from "./pontis/devices-panel";
 import { useApiKeys, useCreateApiKey, useRevokeApiKey } from "./queries";
 
 export function Agents() {
+  return window.location.pathname === "/agents/mcp" ? <McpConnections /> : <ChatConnections />;
+}
+
+function ChatConnections() {
+  const pontis = usePontisEnabled();
+
+  return (
+    <main className="mx-auto w-full max-w-4xl px-6 py-12">
+      <ConnectionHeader title="Chat in the editor" page="chat" />
+      <div className="mb-8 max-w-2xl space-y-2 text-sm leading-6">
+        <p className="text-muted">
+          Pair a computer to chat with an agent inside the editor. The agent runs on your computer, with your own subscription.
+        </p>
+        <p className="text-muted">
+          Prefer to use Forma from your AI app? <a href="/agents/mcp" className="text-paper underline underline-offset-4">Set up MCP →</a>
+        </p>
+      </div>
+      {pontis && <DevicePanel />}
+    </main>
+  );
+}
+
+function McpConnections() {
   const keys = useApiKeys();
   const create = useCreateApiKey();
   const revoke = useRevokeApiKey();
   const [name, setName] = useState("");
+  const [showCreatedToken, setShowCreatedToken] = useState(false);
   const mcpUrl = `${window.location.origin}/mcp`;
   const grants = useGrants();
-  const pontis = usePontisEnabled();
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -20,189 +43,276 @@ export function Agents() {
     if (trimmed === "") return;
 
     create.mutate(trimmed, {
-      onSuccess: () => setName(""),
+      onSuccess: () => {
+        setName("");
+        setShowCreatedToken(true);
+      },
     });
   };
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-6 py-12">
-      <header className="mb-10">
-        <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-signal">
-          Forma
-        </div>
-        <h1 className="text-4xl font-medium tracking-tight">Agent connections</h1>
-        <a
-          href="/"
-          className="mt-2 inline-block text-xs text-faint underline underline-offset-4 hover:text-muted"
-        >
-          ← Projects
-        </a>
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-muted">
-          Connect an OAuth-capable agent with Forma&apos;s MCP URL. Use a personal
-          access token only for command-line and automation clients that need a
-          bearer credential.
-        </p>
-      </header>
+    <main className="mx-auto w-full max-w-4xl px-6 py-12">
+      <ConnectionHeader title="Use Forma from your AI app" page="mcp" />
 
-      <section className="mb-10 rounded-2xl border border-edge bg-surface p-5">
-        <h2 className="text-lg font-medium">Use Forma with your favourite AI</h2>
-        <p className="mt-2 text-sm leading-6 text-muted">
-          Most hosts need nothing but this URL. They open Forma&apos;s sign-in, you approve the
-          connection once, and the host handles the credential itself.
+      <div className="mb-8 max-w-2xl space-y-2 text-sm leading-6">
+        <p className="text-paper">MCP is a standard way for an AI app to use tools in another app.</p>
+        <p className="text-muted">Your AI app can create and edit designs in your Forma workspace, and you see them here.</p>
+        <p className="text-muted">
+          Want to chat with an agent in the editor? <a href="/agents" className="text-paper underline underline-offset-4">Pair a computer →</a>
         </p>
+      </div>
+
+      <section className="mb-6 rounded-xl border border-edge bg-surface p-5" aria-labelledby="mcp-url-heading">
+        <h2 id="mcp-url-heading" className="text-base font-medium text-paper">Your MCP URL</h2>
+        <p className="mt-2 text-sm leading-6 text-muted">Use the same URL in each app you want to connect.</p>
         <CopyableUrl url={mcpUrl} />
+      </section>
 
-        <dl className="mt-5 space-y-4 text-sm">
-          <Host name="Claude">
-            Add a custom connector and paste the URL. Claude completes the authorization in your
-            browser. <strong className="text-paper">Do not paste a token</strong> — it does not
-            need one.
-          </Host>
-          <Host name="ChatGPT and Codex">
-            Connect through the provider&apos;s own MCP app flow, with the same URL. These hosts
-            accept OAuth or nothing at all, so a personal access token will not work there.
-          </Host>
-          <Host name="Codex CLI · Claude Code · Gemini CLI">
-            Command-line hosts cannot open a browser for you. Create a personal access token
-            below and give it to them as a bearer credential.
-          </Host>
-        </dl>
+      <section className="mb-6 rounded-xl border border-edge bg-surface p-5" aria-labelledby="pick-app-heading">
+        <h2 id="pick-app-heading" className="text-base font-medium text-paper">Pick your app</h2>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <article className="rounded-lg border border-edge bg-surface-2 p-4">
+            <h3 className="text-sm font-medium text-paper">Claude</h3>
+            <p className="mt-2 text-sm leading-6 text-muted">
+              Add a custom connector and paste the URL. Claude completes the authorization in your browser. <strong className="font-medium text-paper">Do not paste a token</strong> — it does not need one.
+            </p>
+          </article>
+          <article className="rounded-lg border border-edge bg-surface-2 p-4">
+            <h3 className="text-sm font-medium text-paper">ChatGPT and Codex</h3>
+            <p className="mt-2 text-sm leading-6 text-muted">
+              Connect through the provider&apos;s own MCP app flow, with the same URL. These hosts accept OAuth or nothing at all, so a personal access token will not work there.
+            </p>
+          </article>
+          <article className="rounded-lg border border-edge bg-surface-2 p-4 md:col-span-2">
+            <h3 className="text-sm font-medium text-paper">Codex CLI · Claude Code · Gemini CLI</h3>
+            <p className="mt-2 text-sm leading-6 text-muted">
+              Command-line hosts cannot open a browser for you. Create a personal access token below and give it to them as a bearer credential.
+            </p>
+          </article>
+        </div>
       </section>
 
       {grants.available && (
-        <section className="mb-10 rounded-2xl border border-edge bg-surface p-5">
-          <h2 className="text-lg font-medium">Connected applications</h2>
+        <section className="mb-6 rounded-xl border border-edge bg-surface p-5" aria-labelledby="connected-apps-heading">
+          <h2 id="connected-apps-heading" className="text-base font-medium text-paper">Connected applications</h2>
           <p className="mt-2 text-sm leading-6 text-muted">
-            Applications you have authorized. Disconnecting one ends its access immediately, and
-            leaves your other connections and access tokens working.
+            Applications you have authorized. Disconnecting one ends its access immediately, and leaves your other connections and access tokens working.
           </p>
 
-          <div className="mt-5 space-y-2">
-            {grants.error && <p className="text-sm text-danger">{grants.error}</p>}
-            {grants.list?.length === 0 && (
-              <p className="text-sm text-muted">No applications connected yet.</p>
-            )}
+          <div className="mt-4 space-y-2">
+            {grants.error && <p role="alert" className="text-sm text-danger">{grants.error}</p>}
+            {grants.list?.length === 0 && <p className="text-sm text-muted">No applications connected yet.</p>}
             {grants.list?.map((grant) => (
-              <div
+              <article
                 key={grant.client.id}
-                className="flex items-center justify-between gap-4 rounded-xl border border-edge
-                           bg-surface-2 px-4 py-3"
+                aria-label={grant.client.name + ", connected " + dateLabel(grant.granted_at)}
+                className="rounded-lg border border-edge bg-surface-2 px-4 py-3"
               >
-                <div className="min-w-0">
-                  <p className="truncate text-sm text-paper">{grant.client.name}</p>
-                  <p className="mt-1 font-mono text-[11px] text-faint">
-                    connected {grant.granted_at.slice(0, 10)}
-                  </p>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm text-paper">{grant.client.name}</p>
+                    <p className="mt-1 text-xs text-faint">connected {dateLabel(grant.granted_at)}</p>
+                  </div>
+                  <InlineConfirmAction
+                    action="Disconnect"
+                    subject={grant.client.name}
+                    specific={grant.client.name + ", connected " + dateLabel(grant.granted_at)}
+                    detail="This app will lose access to your Forma workspace. You can authorize it again later."
+                    pending={grants.pending === grant.client.id}
+                    onConfirm={() => void grants.disconnect(grant.client.id)}
+                  />
                 </div>
-                <button
-                  type="button"
-                  disabled={grants.pending === grant.client.id}
-                  onClick={() => void grants.disconnect(grant.client.id)}
-                  className="rounded-lg border border-edge px-3 py-1.5 text-xs text-muted
-                             hover:border-danger/50 hover:text-danger disabled:opacity-45"
-                >
-                  Disconnect
-                </button>
-              </div>
+              </article>
             ))}
           </div>
         </section>
       )}
 
-      {pontis && <DevicePanel />}
-
-      <section className="rounded-2xl border border-edge bg-surface p-5">
-        <h2 className="text-lg font-medium">Personal access tokens</h2>
+      <section className="rounded-xl border border-edge bg-surface p-5" aria-labelledby="tokens-heading">
+        <h2 id="tokens-heading" className="text-base font-medium text-paper">Personal access tokens</h2>
         <p className="mt-2 text-sm leading-6 text-muted">
-          Name each key after the client or machine that will hold it. Revoking one
-          key does not disconnect any other client.
+          Command-line hosts cannot open a browser for you. Create a named token for the tool or computer that will use it. Revoking one token does not disconnect any other client.
         </p>
 
-        <form className="mt-5 flex gap-2" onSubmit={submit}>
+        <form className="mt-4 flex flex-wrap gap-2" onSubmit={submit}>
           <input
             value={name}
             onChange={(event) => setName(event.target.value)}
             placeholder="Key name"
             aria-label="Key name"
-            className="min-w-0 flex-1 rounded-lg border border-edge bg-surface-2 px-3 py-2 text-sm
-                       text-paper outline-none placeholder:text-faint focus:border-signal/60"
+            className="min-w-0 flex-1 rounded-lg border border-edge bg-surface-2 px-3 py-2 text-sm text-paper outline-none placeholder:text-faint focus:border-signal/60"
           />
           <button
             type="submit"
             disabled={create.isPending || name.trim() === ""}
-            className="rounded-lg bg-signal px-4 py-2 text-sm font-medium text-ink
-                       disabled:cursor-not-allowed disabled:opacity-45"
+            className="rounded-lg bg-signal px-4 py-2 text-sm font-medium text-ink disabled:cursor-not-allowed disabled:opacity-45"
           >
-            {create.isPending ? "Creating…" : "Create API key"}
+            {create.isPending ? "Creating…" : "Create token"}
           </button>
         </form>
 
-        {create.isError && (
-          <p className="mt-3 text-sm text-danger">{create.error.message}</p>
-        )}
+        {create.isError && <p role="alert" className="mt-3 text-sm text-danger">{create.error.message}</p>}
 
-        {create.data && (
-          <div
-            role="status"
-            className="mt-4 rounded-xl border border-signal/40 bg-signal/8 p-4"
-          >
+        {create.data && showCreatedToken && (
+          <div role="status" aria-label="New personal access token, shown once" className="mt-4 rounded-lg border border-signal/40 bg-signal/8 p-4">
             <p className="text-sm font-medium text-paper">Copy this token now.</p>
-            <p className="mt-1 text-xs leading-5 text-muted">
-              Forma stores only its hash. This complete value will not appear in
-              the list again.
-            </p>
-            <code className="mt-3 block overflow-x-auto rounded-lg bg-ink px-3 py-2 text-xs text-paper">
-              {create.data.token}
-            </code>
+            <p className="mt-1 text-xs leading-5 text-muted">Forma stores only its hash. This complete value will not appear in the list again.</p>
+            <div className="mt-3 flex flex-wrap items-start gap-2">
+              <code className="min-w-0 flex-1 break-all rounded-lg bg-ink px-3 py-2 font-mono text-xs text-paper">{create.data.token}</code>
+              <CopyTextButton value={create.data.token} label="Copy newly created token" />
+              <button
+                type="button"
+                aria-label={"Dismiss the full token for " + create.data.key.name + " after saving it"}
+                onClick={() => {
+                  setShowCreatedToken(false);
+                  create.reset();
+                }}
+                className="rounded-lg border border-edge px-3 py-2 text-xs text-muted hover:text-paper"
+              >
+                I’ve saved it
+              </button>
+            </div>
           </div>
         )}
 
-        <div className="mt-6 space-y-2">
-          {keys.isLoading && <p className="text-sm text-muted">Loading keys…</p>}
-          {keys.isError && <p className="text-sm text-danger">{keys.error.message}</p>}
-          {keys.data?.length === 0 && (
-            <p className="text-sm text-muted">No personal access tokens yet.</p>
-          )}
+        <div className="mt-5 space-y-2">
+          {keys.isLoading && <p className="text-sm text-muted">Loading tokens…</p>}
+          {keys.isError && <p role="alert" className="text-sm text-danger">{keys.error.message}</p>}
+          {revoke.isError && <p role="alert" className="text-sm text-danger">{revoke.error.message}</p>}
+          {keys.data?.length === 0 && <p className="text-sm text-muted">No personal access tokens yet.</p>}
           {keys.data?.map((key) => (
-            <div
-              key={key.id}
-              className="flex items-center justify-between gap-4 rounded-xl border border-edge
-                         bg-surface-2 px-4 py-3"
-            >
-              <div className="min-w-0">
-                <p className="truncate text-sm text-paper">{key.name}</p>
-                <p className="mt-1 font-mono text-[11px] text-faint">
-                  {key.token_prefix}… · created {key.created_at.slice(0, 10)}
-                  {key.last_used_at ? ` · used ${key.last_used_at.slice(0, 10)}` : ""}
-                </p>
+            <article key={key.id} aria-label={key.name + ", created " + dateLabel(key.created_at)} className="rounded-lg border border-edge bg-surface-2 px-4 py-3">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="truncate text-sm text-paper">{key.name}</p>
+                  <p className="mt-1 font-mono text-[11px] text-faint">
+                    {key.token_prefix}… · created {dateLabel(key.created_at)}
+                    {key.last_used_at ? " · used " + dateLabel(key.last_used_at) : ""}
+                  </p>
+                </div>
+                {key.revoked_at ? (
+                  <span className="shrink-0 text-xs text-faint">Revoked</span>
+                ) : (
+                  <InlineConfirmAction
+                    action="Revoke"
+                    subject={key.name}
+                    specific={key.name + ", created " + dateLabel(key.created_at)}
+                    detail="Tools using this token will lose access to your Forma workspace. This cannot be undone; create a new token to reconnect."
+                    pending={revoke.isPending}
+                    onConfirm={() => revoke.mutate(key.id)}
+                  />
+                )}
               </div>
-              {key.revoked_at ? (
-                <span className="text-xs text-faint">Revoked</span>
-              ) : (
-                <button
-                  type="button"
-                  disabled={revoke.isPending}
-                  onClick={() => revoke.mutate(key.id)}
-                  className="rounded-lg border border-edge px-3 py-1.5 text-xs text-muted
-                             hover:border-danger/50 hover:text-danger disabled:opacity-45"
-                >
-                  Revoke
-                </button>
-              )}
-            </div>
+            </article>
           ))}
-        </div>
-
-        <div className="mt-6 border-t border-edge pt-5">
-          <p className="text-xs font-medium text-paper">Manual setup</p>
-          <p className="mt-2 font-mono text-[11px] leading-5 text-muted">
-            MCP URL: {mcpUrl}
-            <br />
-            Header: Authorization: Bearer {"${FORMA_MCP_TOKEN}"}
-          </p>
         </div>
       </section>
     </main>
+  );
+}
+
+function ConnectionHeader({ title, page }: { title: string; page: "chat" | "mcp" }) {
+  return (
+    <header className="mb-8">
+      <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-signal">Forma</div>
+      <h1 className="text-3xl font-medium tracking-tight text-paper">{title}</h1>
+      <nav aria-label="Agent setup pages" className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-edge pb-3 text-sm">
+        <a href="/agents" aria-current={page === "chat" ? "page" : undefined} className={page === "chat" ? "text-paper underline decoration-signal underline-offset-[14px]" : "text-muted hover:text-paper"}>
+          Chat in the editor
+        </a>
+        <a href="/agents/mcp" aria-current={page === "mcp" ? "page" : undefined} className={page === "mcp" ? "text-paper underline decoration-signal underline-offset-[14px]" : "text-muted hover:text-paper"}>
+          AI apps (MCP)
+        </a>
+        <a href="/" className="ml-auto text-xs text-faint underline underline-offset-4 hover:text-muted">← Projects</a>
+      </nav>
+    </header>
+  );
+}
+
+function InlineConfirmAction({
+  action,
+  subject,
+  specific,
+  detail,
+  pending,
+  onConfirm,
+}: {
+  action: "Disconnect" | "Revoke";
+  subject: string;
+  specific: string;
+  detail: string;
+  pending: boolean;
+  onConfirm: () => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const keep = useRef<HTMLButtonElement>(null);
+  const wasConfirming = useRef(false);
+
+  useEffect(() => {
+    if (confirming) {
+      wasConfirming.current = true;
+      keep.current?.focus();
+    } else if (wasConfirming.current) {
+      wasConfirming.current = false;
+      trigger.current?.focus();
+    }
+  }, [confirming]);
+
+  useEffect(() => {
+    if (!confirming) return;
+    const escapeKeeps = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !pending) {
+        event.preventDefault();
+        setConfirming(false);
+      }
+    };
+    window.addEventListener("keydown", escapeKeeps);
+    return () => window.removeEventListener("keydown", escapeKeeps);
+  }, [confirming, pending]);
+
+  return (
+    <div className="shrink-0">
+      <button
+        ref={trigger}
+        type="button"
+        disabled={pending || confirming}
+        aria-label={action + " " + subject}
+        aria-expanded={confirming}
+        onClick={() => setConfirming(true)}
+        className="rounded-lg border border-edge px-3 py-1.5 text-xs text-muted hover:border-danger/50 hover:text-danger disabled:opacity-45"
+      >
+        {pending ? action + "ing…" : action}
+      </button>
+      {confirming && (
+        <div className="mt-3 grid gap-3 border-t border-edge pt-3">
+          <p className="max-w-2xl text-xs leading-5 text-muted">
+            <strong className="font-medium text-paper">{action} {subject}?</strong> {detail}
+          </p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={pending}
+              aria-label={"Confirm " + action.toLowerCase() + " " + specific}
+              onClick={onConfirm}
+              className="rounded-lg border border-danger/50 px-3 py-1.5 text-xs text-danger disabled:opacity-45"
+            >
+              {pending ? action + "ing…" : action}
+            </button>
+            <button
+              ref={keep}
+              type="button"
+              disabled={pending}
+              aria-label={"Keep " + specific}
+              onClick={() => setConfirming(false)}
+              className="rounded-lg border border-edge px-3 py-1.5 text-xs text-muted hover:text-paper disabled:opacity-45"
+            >
+              Keep
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -292,15 +402,6 @@ function usePontisEnabled(): boolean {
   return enabled;
 }
 
-function Host({ name, children }: { name: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <dt className="text-sm text-paper">{name}</dt>
-      <dd className="mt-1 text-sm leading-6 text-muted">{children}</dd>
-    </div>
-  );
-}
-
 /**
  * The URL, and a way to take it that is not "select carefully and hope".
  *
@@ -311,23 +412,59 @@ function Host({ name, children }: { name: string; children: React.ReactNode }) {
 function CopyableUrl({ url }: { url: string }) {
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
 
+  async function copy() {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("clipboard unavailable");
+      await navigator.clipboard.writeText(url);
+      setState("copied");
+    } catch {
+      setState("failed");
+    }
+  }
+
   return (
     <div className="mt-4 flex items-center gap-2">
-      <code className="min-w-0 flex-1 overflow-x-auto rounded-lg bg-surface-2 px-3 py-2 font-mono text-xs text-paper">
+      <code className="min-w-0 flex-1 break-all rounded-lg bg-surface-2 px-3 py-2 font-mono text-xs text-paper">
         {url}
       </code>
       <button
         type="button"
-        onClick={() => {
-          navigator.clipboard
-            ?.writeText(url)
-            .then(() => setState("copied"))
-            .catch(() => setState("failed"));
-        }}
-        className="shrink-0 rounded-lg border border-edge px-3 py-2 text-xs text-muted hover:border-edge-strong"
+        onClick={() => void copy()}
+        aria-label="Copy your MCP URL"
+        className="shrink-0 rounded-lg border border-edge px-3 py-2 text-xs text-muted hover:border-edge-strong hover:text-paper"
       >
         {state === "copied" ? "Copied" : state === "failed" ? "Copy failed" : "Copy"}
       </button>
+      {state === "failed" && <span role="status" className="text-xs text-muted">Clipboard unavailable.</span>}
     </div>
   );
+}
+
+function CopyTextButton({ value, label }: { value: string; label: string }) {
+  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+
+  async function copy() {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("clipboard unavailable");
+      await navigator.clipboard.writeText(value);
+      setState("copied");
+    } catch {
+      setState("failed");
+    }
+  }
+
+  return (
+    <span className="flex flex-col items-start gap-1">
+      <button type="button" onClick={() => void copy()} aria-label={label} className="rounded-lg border border-edge px-3 py-2 text-xs text-muted hover:border-edge-strong hover:text-paper">
+        {state === "copied" ? "Copied" : state === "failed" ? "Copy failed" : "Copy"}
+      </button>
+      {state === "failed" && <span role="status" className="text-[11px] text-muted">Clipboard unavailable. Select the token and copy it manually.</span>}
+    </span>
+  );
+}
+
+function dateLabel(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "date unknown";
+  return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" }).format(date);
 }

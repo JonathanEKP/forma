@@ -137,14 +137,17 @@ export async function createPairingCode(client: DevicesClient = {}): Promise<Pai
 }
 
 /**
- * The command the person runs on the machine to be paired
- * (`pontis/docs/04-runtime.md` § Runtime diagnostics).
- *
- * The display name is the person's own input to the CLI and is deliberately not
- * derived from anything here, so the placeholder is theirs to replace.
+ * The command the person runs on the machine to be paired. Every value is quoted
+ * as one POSIX shell argument, including the person's name.
  */
-export function pairCommand(pairing: PairingCode): string {
-  return `pontis pair --origin ${pairing.controlPlaneUrl} --application ${pairing.applicationId} --name "My laptop" ${pairing.code}`;
+export function pairCommand(pairing: PairingCode, name: string): string {
+  return "pontis pair --origin " + shellQuote(pairing.controlPlaneUrl) +
+    " --application " + shellQuote(pairing.applicationId) +
+    " --name " + shellQuote(name) + " " + shellQuote(pairing.code);
+}
+
+function shellQuote(value: string): string {
+  return "'" + value.replace(/'/g, "'\"'\"'") + "'";
 }
 
 // --- wording -----------------------------------------------------------------

@@ -158,27 +158,26 @@ describe("the device panel on the Agents page", () => {
   it("shows a paired device with its runtime, providers, auth mode and security profile", async () => {
     renderAgents();
 
-    const card = await screen.findByRole("article", { name: "Studio laptop" });
-    expect(within(card).getByText(/runtime 1\.2\.3/)).toBeTruthy();
-    expect(within(card).getByText(/online/)).toBeTruthy();
-    expect(within(card).getByText(/last seen 2026-10-03 09:00 UTC/)).toBeTruthy();
-    expect(within(card).getByText("codex")).toBeTruthy();
-    expect(within(card).getByText("0.156.1")).toBeTruthy();
+    const card = await screen.findByRole("article", { name: "Studio laptop, paired 1 Oct" });
+    expect(within(card).getByText("1.2.3")).toBeTruthy();
+    expect(within(card).getByText("Online")).toBeTruthy();
+    expect(within(card).getByText(/Paired 1 Oct/)).toBeTruthy();
+    fireEvent.click(within(card).getByText(/Codex 0\.156\.1 · signed in/));
     expect(within(card).getByText(/api_key — usage is billed directly/)).toBeTruthy();
     expect(within(card).getAllByText(/execution supervised_child_process/)).toHaveLength(2);
   });
 
   it("refreshes paired devices and presence from live device frames", async () => {
     renderAgents();
-    await screen.findByRole("article", { name: "Studio laptop" });
+    await screen.findByRole("article", { name: "Studio laptop, paired 1 Oct" });
 
     devices = [...devices, record({ id: "dev_2", name: "Office workstation" })];
     act(() => liveFeed.publish({ type: "device.online", payload: {} }));
-    expect(await screen.findByRole("article", { name: "Office workstation" })).toBeTruthy();
+    expect(await screen.findByRole("article", { name: "Office workstation, paired 1 Oct" })).toBeTruthy();
 
     devices = devices.map((device) => (device.id === "dev_1" ? { ...device, online: false } : device));
     act(() => liveFeed.publish({ type: "device.offline", payload: {} }));
-    expect(await within(screen.getByRole("article", { name: "Studio laptop" })).findByText("offline")).toBeTruthy();
+    expect(await within(screen.getByRole("article", { name: "Studio laptop, paired 1 Oct" })).findByText("Offline")).toBeTruthy();
   });
 
   it("refreshes on its slow fallback poll when no presence frame arrives", async () => {
@@ -191,11 +190,11 @@ describe("the device panel on the Agents page", () => {
 
     try {
       renderAgents();
-      await screen.findByRole("article", { name: "Studio laptop" });
+      await screen.findByRole("article", { name: "Studio laptop, paired 1 Oct" });
 
       devices = [...devices, record({ id: "dev_2", name: "Office workstation" })];
       act(() => poll?.());
-      expect(await screen.findByRole("article", { name: "Office workstation" })).toBeTruthy();
+      expect(await screen.findByRole("article", { name: "Office workstation, paired 1 Oct" })).toBeTruthy();
     } finally {
       interval.mockRestore();
     }
@@ -204,8 +203,9 @@ describe("the device panel on the Agents page", () => {
   it("calls a provider_managed sandbox exactly that and keeps the classifications distinct", async () => {
     renderAgents();
 
-    const card = await screen.findByRole("article", { name: "Studio laptop" });
-    expect(within(card).getAllByText("provider_managed")).toHaveLength(2);
+    const card = await screen.findByRole("article", { name: "Studio laptop, paired 1 Oct" });
+    fireEvent.click(within(card).getByText(/Codex 0\.156\.1 · signed in/));
+    expect(within(card).getAllByText(/provider_managed/)).toHaveLength(2);
     expect(within(card).getAllByText(/Pontis makes no claim about its strength/).length).toBeGreaterThan(0);
     expect(within(card).getByText("secure_default", { selector: "span[title]" })).toBeTruthy();
     expect(within(card).getByText("explicit_opt_in", { selector: "span[title]" })).toBeTruthy();
@@ -216,8 +216,8 @@ describe("the device panel on the Agents page", () => {
     devices = [record({ online: undefined })];
     renderAgents();
 
-    const card = await screen.findByRole("article", { name: "Studio laptop" });
-    expect(within(card).getByText(/presence not reported/)).toBeTruthy();
+    const card = await screen.findByRole("article", { name: "Studio laptop, paired 1 Oct" });
+    expect(within(card).getByText("Presence not reported")).toBeTruthy();
     expect(within(card).queryByText(/offline/)).toBeNull();
   });
 
@@ -232,13 +232,13 @@ describe("the device panel on the Agents page", () => {
   it("revokes only after a confirmation, then shows the device revoked", async () => {
     renderAgents();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Revoke Studio laptop, paired October 1, 2026" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Revoke Studio laptop, paired 1 Oct" }));
     expect(requests.some((r) => r.url.endsWith("/revoke"))).toBe(false);
-    fireEvent.click(screen.getByRole("button", { name: "Confirm revoke Studio laptop, paired October 1, 2026" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm revoke Studio laptop, paired 1 Oct" }));
 
     expect(await screen.findByText(/Revoked 2026-10-03 11:00 UTC/)).toBeTruthy();
     expect(requests).toContainEqual({ url: "/pons/v1/devices/dev_1/revoke", method: "POST" });
-    expect(screen.queryByRole("button", { name: "Revoke Studio laptop, paired October 1, 2026" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Revoke Studio laptop, paired 1 Oct" })).toBeNull();
   });
 
   it("creates a named pairing code and shows the copy-safe command", async () => {
@@ -246,8 +246,8 @@ describe("the device panel on the Agents page", () => {
     renderAgents();
 
     fireEvent.click(await screen.findByRole("button", { name: "Pair a computer" }));
-    fireEvent.change(screen.getByLabelText("Computer name"), { target: { value: "Studio laptop" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create pairing code for the named computer" }));
+    fireEvent.change(screen.getByLabelText(/Computer name/), { target: { value: "Studio laptop" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create a pairing code for the named computer" }));
 
     expect(await screen.findByText("ABCD-EFGH-JKLM")).toBeTruthy();
     expect(
@@ -262,8 +262,8 @@ describe("the device panel on the Agents page", () => {
     renderAgents();
 
     fireEvent.click(await screen.findByRole("button", { name: "Pair a computer" }));
-    fireEvent.change(screen.getByLabelText("Computer name"), { target: { value: "Office Mac" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create pairing code for the named computer" }));
+    fireEvent.change(screen.getByLabelText(/Computer name/), { target: { value: "Office Mac" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create a pairing code for the named computer" }));
     expect(await screen.findByText("Waiting for the pairing…")).toBeTruthy();
 
     devices = [record({
@@ -275,7 +275,7 @@ describe("the device panel on the Agents page", () => {
     })];
     act(() => liveFeed.publish({ type: "device.paired", payload: {} }));
 
-    const device = await screen.findByRole("article", { name: "Office Mac, paired October 6, 2026" });
+    const device = await screen.findByRole("article", { name: "Office Mac, paired 6 Oct" });
     expect(within(device).getByText("Paired. Waiting for it to start…")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Install Pontis on that computer." })).toBeNull();
     expect(within(device).getByText("pontis run")).toBeTruthy();
@@ -292,8 +292,8 @@ describe("the device panel on the Agents page", () => {
     renderAgents();
 
     fireEvent.click(await screen.findByRole("button", { name: "Pair a computer" }));
-    fireEvent.change(screen.getByLabelText("Computer name"), { target: { value: "Studio" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create pairing code for the named computer" }));
+    fireEvent.change(screen.getByLabelText(/Computer name/), { target: { value: "Studio" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create a pairing code for the named computer" }));
     expect(await screen.findByText("Expires in 10:00")).toBeTruthy();
 
     const ticker = interval.mock.calls.find((call) => call[1] === 1_000)?.[0];
@@ -308,8 +308,8 @@ describe("the device panel on the Agents page", () => {
     act(() => {
       if (typeof ticker === "function") ticker();
     });
-    expect(screen.getByText("Expired")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Create a new pairing code" })).toBeTruthy();
+    expect(screen.getAllByText("Expired")).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "Create a new code" })).toBeTruthy();
 
     interval.mockRestore();
     vi.setSystemTime(new Date());
@@ -323,29 +323,29 @@ describe("the device panel on the Agents page", () => {
     ];
     renderAgents();
 
-    const live = await screen.findByRole("article", { name: "Live workstation, paired October 1, 2026" });
-    const offline = screen.getByRole("article", { name: "Offline workstation, paired October 2, 2026" });
+    const live = await screen.findByRole("article", { name: "Live workstation, paired 1 Oct" });
+    const offline = screen.getByRole("article", { name: "Offline workstation, paired 2 Oct" });
     expect(live.compareDocumentPosition(offline) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const revoked = screen.getByText("Revoked (1)");
     expect(revoked.closest("details")?.hasAttribute("open")).toBe(false);
-    expect(screen.getByRole("article", { name: "Live workstation, paired October 1, 2026" })).toBeTruthy();
+    expect(screen.getByRole("article", { name: "Live workstation, paired 1 Oct" })).toBeTruthy();
     expect(within(live).getByText(/Codex 0\.156\.1 · signed in/)).toBeTruthy();
 
     fireEvent.click(within(live).getByText(/Codex 0\.156\.1 · signed in/));
-    expect(within(live).getByText(/execution supervised_child_process/)).toBeTruthy();
-    expect(screen.queryByRole("article", { name: "Old workstation, paired October 1, 2026" })).toBeNull();
+    expect(within(live).getAllByText(/execution supervised_child_process/)).toHaveLength(2);
+    expect(screen.queryByRole("article", { name: "Old workstation, paired 1 Oct" })).toBeNull();
   });
 
   it("puts focus on Keep and Escape keeps the device", async () => {
     renderAgents();
-    const revoke = await screen.findByRole("button", { name: "Revoke Studio laptop, paired October 1, 2026" });
+    const revoke = await screen.findByRole("button", { name: "Revoke Studio laptop, paired 1 Oct" });
 
     fireEvent.click(revoke);
-    const keep = screen.getByRole("button", { name: "Keep Studio laptop, paired October 1, 2026" });
+    const keep = screen.getByRole("button", { name: "Keep Studio laptop, paired 1 Oct" });
     expect(document.activeElement).toBe(keep);
     fireEvent.keyDown(keep, { key: "Escape" });
 
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Revoke Studio laptop, paired October 1, 2026" }));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Revoke Studio laptop, paired 1 Oct" }));
     expect(requests.some((request) => request.url.endsWith("/revoke"))).toBe(false);
     expect(screen.queryByRole("dialog")).toBeNull();
   });
