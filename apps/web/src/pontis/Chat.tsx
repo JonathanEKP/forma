@@ -94,6 +94,25 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
     setShowJump(false);
   }, [state.lines.length, state.working, state.streaming?.text, chat.dead]);
 
+  // Approval cards can gain their named layer chips after the design query resolves.
+  // That changes transcript height without changing the chat state dependencies above.
+  // MutationObserver runs after DOM updates and works in background tabs too.
+  useEffect(() => {
+    const transcript = log.current;
+    if (!transcript) return;
+    const followContentChange = () => {
+      if (!followsLatest.current) {
+        setShowJump(true);
+        return;
+      }
+      transcript.scrollTop = transcript.scrollHeight;
+      setShowJump(false);
+    };
+    const observer = new MutationObserver(followContentChange);
+    observer.observe(transcript, { childList: true, subtree: true, characterData: true });
+    return () => observer.disconnect();
+  }, []);
+
   const onTranscriptScroll = () => {
     const transcript = log.current;
     if (!transcript) return;

@@ -7,6 +7,9 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { DesignRecord } from "../api";
+import { keys } from "../queries";
+
 vi.mock("../identity", () => ({
   supabase: null,
   accessToken: () => Promise.resolve("session-token"),
@@ -25,6 +28,39 @@ import { useState } from "react";
 
 const CONTEXT = "22222222-2222-4222-8222-222222222222";
 const SESSION = "ses_1";
+const approvalDesign: DesignRecord = {
+  id: "design-1",
+  project_id: "project-1",
+  name: "ALPHA Launch cover",
+  version: 6,
+  created_at: "2026-10-06T00:00:00Z",
+  updated_at: "2026-10-06T00:00:00Z",
+  document: {
+    schema_version: 1,
+    format: { preset: "square", width: 1080, height: 1080 },
+    pages: [{
+      id: "page-1",
+      name: "Cover",
+      layers: [{
+        type: "text",
+        id: "layer-1",
+        name: "Headline",
+        text: "Hello",
+        font_family: "Geist",
+        font_size: 32,
+        font_weight: 400,
+        line_height: 1.2,
+        letter_spacing: 0,
+        align: "left",
+        color: "#171717",
+        visible: true,
+        locked: false,
+        opacity: 1,
+        transform: { x: 0, y: 0, width: 100, height: 40, rotation_deg: 0 },
+      }],
+    }],
+  },
+};
 
 interface Call {
   readonly path: string;
@@ -121,8 +157,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function Harness({ enabled, offlineGraceMs, view }: { enabled: boolean; offlineGraceMs?: number; view?: ChatOptions["view"] }) {
-  const [queryClient] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } }));
+function Harness({ enabled, offlineGraceMs, view, queryClient: suppliedQueryClient }: { enabled: boolean; offlineGraceMs?: number; view?: ChatOptions["view"]; queryClient?: QueryClient }) {
+  const [queryClient] = useState(() => suppliedQueryClient ?? new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } }));
   const chat = useChat({ enabled, pollMs: 20, ...(offlineGraceMs === undefined ? {} : { offlineGraceMs }), ...(view === undefined ? {} : { view }) });
   return (
     <QueryClientProvider client={queryClient}>
@@ -556,6 +592,53 @@ describe("a conversation", () => {
     expect(transcript.scrollTop).toBe(0);
     fireEvent.click(screen.getByRole("button", { name: "Jump to latest" }));
     expect(transcript.scrollTop).toBe(600);
+    expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
+  });
+
+  it("follows replies and approval details that grow after the approval event", async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    await inSession(() => render(<Harness enabled queryClient={queryClient} />));
+    const transcript = screen.getByRole("log");
+    let scrollHeight = 600;
+    let scrollTop = 0;
+    Object.defineProperty(transcript, "scrollHeight", { configurable: true, get: () => scrollHeight });
+    Object.defineProperty(transcript, "clientHeight", { configurable: true, value: 120 });
+    Object.defineProperty(transcript, "scrollTop", {
+      configurable: true,
+      get: () => scrollTop,
+      set: (next: number) => { scrollTop = Math.max(0, Math.min(next, scrollHeight - 120)); },
+    });
+    transcript.scrollTop = scrollHeight - 120;
+    fireEvent.scroll(transcript);
+    expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
+
+    scrollHeight += 100;
+    backend.push(3, "agent.output.completed", { turnId: "reply", text: "The newest reply." });
+    await screen.findByText("The newest reply.");
+    await waitFor(() => expect(transcript.scrollTop).toBe(scrollHeight - 120));
+
+    scrollHeight += 100;
+    backend.push(4, "approval.requested", {
+      approvalId: "apr_growth",
+      invocationId: "inv_growth",
+      capabilityId: "design.applyOperations",
+      risk: "destructive",
+      humanSummary: "Delete the layer “Headline” from “ALPHA Launch cover”",
+      importantArguments: [
+        { name: "design_id", value: "design-1" },
+        { name: "base_version", value: 6 },
+        { name: "operations", value: [{ op: "remove_layer", layer_id: "layer-1" }] },
+      ],
+      affectedResourceCount: 1,
+    });
+    await screen.findByText("NEEDS YOUR APPROVAL");
+    await waitFor(() => expect(transcript.scrollTop).toBe(scrollHeight - 120));
+
+    scrollHeight += 180;
+    act(() => queryClient.setQueryData(keys.design("design-1"), approvalDesign));
+    const card = screen.getByText("NEEDS YOUR APPROVAL").closest("li") as HTMLElement;
+    await within(card).findByText("Headline");
+    await waitFor(() => expect(transcript.scrollTop).toBe(scrollHeight - 120));
     expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
   });
 
