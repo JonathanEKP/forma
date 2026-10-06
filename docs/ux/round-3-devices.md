@@ -65,11 +65,13 @@ recorded here.**
   computers with their presence, and the sidecar routes the session to the chosen one. This replaces F-00-6's rule
   ("exactly one online device per person", `ambiguous_device`) with "exactly one chosen device per window". It is a
   sidecar change; Pontis is not touched. The page says: "You can pair several computers. When more than one is online,
-  choose which one runs the agent in the chat." Still to specify for implementation:
-  - what the default choice is;
-  - whether the choice is remembered per window;
-  - what happens to a running session when its chosen computer goes offline. This should be the round 2 "stopped"
-    notice with New session; the chat never switches computers by itself.
+  choose which one runs the agent in the chat." Specified with the owner on 2026-10-06 ([UX batch 1](ux-batch-1.md),
+  U-1 to U-3):
+  - the default is the last computer the person chose in this browser; with one online it is used without asking, and
+    otherwise the chat asks before sending;
+  - changing it during a conversation starts a new session on the chosen computer, under a divider that names it;
+  - a chosen computer that goes offline gives the round 2 "stopped" notice with New session, and the chat never
+    switches computers by itself.
 - **Separate pages (owner, 2026-10-06).** "Agent connections" splits in two, because the MCP side needs more explanation
   and loading both on one page is too much:
   - **Chat in the editor:** Devices and Pontis pairing, as prototyped.
