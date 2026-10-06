@@ -151,16 +151,27 @@ describe("pairing codes", () => {
     applicationId: "forma",
   };
 
-  it("mints a code with POST and builds the command the person runs", async () => {
+  it("mints a code with POST and builds the command with the chosen name", async () => {
     const fetchImpl = serving(() => json(GRANT));
 
     const pairing = await createPairingCode({ fetchImpl });
 
     expect(fetchImpl.mock.calls[0]?.[0]).toBe("/pons/v1/pairing/codes");
     expect(fetchImpl.mock.calls[0]?.[1]?.method).toBe("POST");
-    expect(pairCommand(pairing)).toBe(
-      'pontis pair --origin https://forma.example --application forma --name "My laptop" ABCD-EFGH-JKLM',
+    expect(pairCommand(pairing, "Studio laptop")).toBe(
+      "pontis pair --origin 'https://forma.example' --application 'forma' --name 'Studio laptop' 'ABCD-EFGH-JKLM'",
     );
+  });
+
+  it("shell-escapes a hostile computer name as one argument", () => {
+    const hostile = `Sam's laptop"; $(touch /tmp/pwned); $HOME`;
+
+    const command = pairCommand(GRANT, hostile);
+
+    expect(command).toBe(
+      `pontis pair --origin 'https://forma.example' --application 'forma' --name 'Sam'"'"'s laptop"; $(touch /tmp/pwned); $HOME' 'ABCD-EFGH-JKLM'`,
+    );
+    expect(command).not.toContain("My laptop");
   });
 
   it("is unavailable when the sidecar is not there", async () => {

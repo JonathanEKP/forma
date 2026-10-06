@@ -86,6 +86,7 @@ let sidecarUp: boolean;
 let signInExpired: boolean;
 let accountless: boolean;
 let requests: Array<{ url: string; method: string }>;
+let pairingCreatedAt: number | null;
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -102,10 +103,11 @@ function route(url: string, method: string): Response {
     if (url === "/pons/v1/devices" && signInExpired) return json({ error: { code: "unauthenticated" } }, 401);
     if (url === "/pons/v1/devices") return json({ protocol: 1, devices });
     if (url === "/pons/v1/pairing/codes" && method === "POST") {
+      pairingCreatedAt = Date.now();
       return json({
         protocol: 1,
         code: "ABCD-EFGH-JKLM",
-        expiresAt: "2026-10-03T10:10:00.000Z",
+        expiresAt: new Date(pairingCreatedAt + 10 * 60_000).toISOString(),
         controlPlaneUrl: "https://forma.example",
         applicationId: "forma",
       });
@@ -135,6 +137,7 @@ describe("the device panel on the Agents page", () => {
     signInExpired = false;
     accountless = false;
     requests = [];
+    pairingCreatedAt = null;
     identity.hosted = true;
     window.history.replaceState({}, "", "/agents");
     vi.stubGlobal(
@@ -229,25 +232,122 @@ describe("the device panel on the Agents page", () => {
   it("revokes only after a confirmation, then shows the device revoked", async () => {
     renderAgents();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Revoke Studio laptop" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Revoke Studio laptop, paired October 1, 2026" }));
     expect(requests.some((r) => r.url.endsWith("/revoke"))).toBe(false);
-    fireEvent.click(screen.getByRole("button", { name: "Confirm revoke" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm revoke Studio laptop, paired October 1, 2026" }));
 
     expect(await screen.findByText(/Revoked 2026-10-03 11:00 UTC/)).toBeTruthy();
     expect(requests).toContainEqual({ url: "/pons/v1/devices/dev_1/revoke", method: "POST" });
-    expect(screen.queryByRole("button", { name: "Revoke Studio laptop" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Revoke Studio laptop, paired October 1, 2026" })).toBeNull();
   });
 
-  it("creates a pairing code and shows the command to run", async () => {
+  it("creates a named pairing code and shows the copy-safe command", async () => {
+    devices = [];
     renderAgents();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Create pairing code" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Pair a computer" }));
+    fireEvent.change(screen.getByLabelText("Computer name"), { target: { value: "Studio laptop" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create pairing code for the named computer" }));
 
     expect(await screen.findByText("ABCD-EFGH-JKLM")).toBeTruthy();
     expect(
-      screen.getByText('pontis pair --origin https://forma.example --application forma --name "My laptop" ABCD-EFGH-JKLM'),
+      screen.getByText("pontis pair --origin 'https://forma.example' --application 'forma' --name 'Studio laptop' 'ABCD-EFGH-JKLM'"),
     ).toBeTruthy();
+    expect(screen.getByText("Waiting for the pairing…")).toBeTruthy();
     expect(requests).toContainEqual({ url: "/pons/v1/pairing/codes", method: "POST" });
+  });
+
+  it("tracks pairing, folds the steps into the list, then reports Online", async () => {
+    devices = [];
+    renderAgents();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Pair a computer" }));
+    fireEvent.change(screen.getByLabelText("Computer name"), { target: { value: "Office Mac" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create pairing code for the named computer" }));
+    expect(await screen.findByText("Waiting for the pairing…")).toBeTruthy();
+
+    devices = [record({
+      id: "dev_new",
+      name: "Office Mac",
+      pairedAt: new Date((pairingCreatedAt ?? Date.now()) + 1).toISOString(),
+      online: false,
+      capabilities: [],
+    })];
+    act(() => liveFeed.publish({ type: "device.paired", payload: {} }));
+
+    const device = await screen.findByRole("article", { name: "Office Mac, paired October 6, 2026" });
+    expect(within(device).getByText("Paired. Waiting for it to start…")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Install Pontis on that computer." })).toBeNull();
+    expect(within(device).getByText("pontis run")).toBeTruthy();
+
+    devices = devices.map((entry) => ({ ...entry, online: true }));
+    act(() => liveFeed.publish({ type: "device.online", payload: {} }));
+    expect(await within(device).findByText("Online")).toBeTruthy();
+  });
+
+  it("ticks the relative expiry and offers a new code after expiration", async () => {
+    vi.setSystemTime(new Date("2026-10-06T12:00:00.000Z"));
+    devices = [];
+    const interval = vi.spyOn(globalThis, "setInterval");
+    renderAgents();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Pair a computer" }));
+    fireEvent.change(screen.getByLabelText("Computer name"), { target: { value: "Studio" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create pairing code for the named computer" }));
+    expect(await screen.findByText("Expires in 10:00")).toBeTruthy();
+
+    const ticker = interval.mock.calls.find((call) => call[1] === 1_000)?.[0];
+    expect(typeof ticker).toBe("function");
+    vi.setSystemTime(new Date("2026-10-06T12:00:01.000Z"));
+    act(() => {
+      if (typeof ticker === "function") ticker();
+    });
+    expect(screen.getByText("Expires in 9:59")).toBeTruthy();
+
+    vi.setSystemTime(new Date("2026-10-06T12:10:00.000Z"));
+    act(() => {
+      if (typeof ticker === "function") ticker();
+    });
+    expect(screen.getByText("Expired")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Create a new pairing code" })).toBeTruthy();
+
+    interval.mockRestore();
+    vi.setSystemTime(new Date());
+  });
+
+  it("sorts online computers first, groups revoked devices closed, and expands provider details", async () => {
+    devices = [
+      record({ id: "offline", name: "Offline workstation", online: false, pairedAt: "2026-10-02T10:00:00.000Z" }),
+      record({ id: "live", name: "Live workstation", online: true, pairedAt: "2026-10-01T10:00:00.000Z" }),
+      record({ id: "revoked", name: "Old workstation", revokedAt: "2026-10-03T11:00:00.000Z" }),
+    ];
+    renderAgents();
+
+    const live = await screen.findByRole("article", { name: "Live workstation, paired October 1, 2026" });
+    const offline = screen.getByRole("article", { name: "Offline workstation, paired October 2, 2026" });
+    expect(live.compareDocumentPosition(offline) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const revoked = screen.getByText("Revoked (1)");
+    expect(revoked.closest("details")?.hasAttribute("open")).toBe(false);
+    expect(screen.getByRole("article", { name: "Live workstation, paired October 1, 2026" })).toBeTruthy();
+    expect(within(live).getByText(/Codex 0\.156\.1 · signed in/)).toBeTruthy();
+
+    fireEvent.click(within(live).getByText(/Codex 0\.156\.1 · signed in/));
+    expect(within(live).getByText(/execution supervised_child_process/)).toBeTruthy();
+    expect(screen.queryByRole("article", { name: "Old workstation, paired October 1, 2026" })).toBeNull();
+  });
+
+  it("puts focus on Keep and Escape keeps the device", async () => {
+    renderAgents();
+    const revoke = await screen.findByRole("button", { name: "Revoke Studio laptop, paired October 1, 2026" });
+
+    fireEvent.click(revoke);
+    const keep = screen.getByRole("button", { name: "Keep Studio laptop, paired October 1, 2026" });
+    expect(document.activeElement).toBe(keep);
+    fireEvent.keyDown(keep, { key: "Escape" });
+
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Revoke Studio laptop, paired October 1, 2026" }));
+    expect(requests.some((request) => request.url.endsWith("/revoke"))).toBe(false);
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("says Pontis is unavailable and leaves the rest of the page working", async () => {
@@ -255,9 +355,9 @@ describe("the device panel on the Agents page", () => {
     renderAgents();
 
     expect(await screen.findByText(/Pontis is unavailable/)).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Personal access tokens" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Use Forma with your favourite AI" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Create pairing code" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "Chat in the editor" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Set up MCP/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Pair a computer" })).toBeNull();
   });
 
   it("asks the person to sign in again when the devices route answers 401", async () => {
@@ -272,7 +372,7 @@ describe("the device panel on the Agents page", () => {
     identity.hosted = false;
     renderAgents();
 
-    expect(await screen.findByRole("heading", { name: "Personal access tokens" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Chat in the editor" })).toBeTruthy();
     await waitFor(() => expect(requests.some((r) => r.url.endsWith("/api/v1/identity"))).toBe(true));
     expect(screen.queryByRole("heading", { name: "Devices" })).toBeNull();
     expect(requests.filter((r) => r.url.startsWith("/pons/"))).toEqual([]);
@@ -282,7 +382,7 @@ describe("the device panel on the Agents page", () => {
     accountless = true;
     renderAgents();
 
-    expect(await screen.findByRole("heading", { name: "Personal access tokens" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Chat in the editor" })).toBeTruthy();
     await waitFor(() => expect(requests.some((r) => r.url.endsWith("/api/v1/projects"))).toBe(true));
     expect(screen.queryByRole("heading", { name: "Devices" })).toBeNull();
     expect(requests.filter((r) => r.url.startsWith("/pons/"))).toEqual([]);
