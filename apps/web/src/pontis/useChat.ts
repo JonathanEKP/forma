@@ -84,6 +84,8 @@ export interface Chat {
   readonly computers: readonly RuntimeDevice[];
   readonly selectedComputerId: string | null;
   readonly needsComputerChoice: boolean;
+  /** The names attached to the next message, read from the current editor view. */
+  readonly currentContext: () => ViewChip | undefined;
   readonly chooseComputer: (deviceId: string) => Promise<void>;
   readonly send: (text: string, onAccepted?: () => void) => Promise<void>;
   readonly newSession: () => Promise<void>;
@@ -169,6 +171,7 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
   const [context, setContext] = useState<{ readonly context: string; readonly window: string } | null>(null);
   const viewRef = useRef(view);
   viewRef.current = view;
+  const currentContext = useCallback(() => viewRef.current?.().chip, []);
   const writeRef = useRef(onWrite);
   writeRef.current = onWrite;
   const [stream, setStream] = useState<Connection>("connecting");
@@ -580,6 +583,7 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
     computers,
     selectedComputerId,
     needsComputerChoice,
+    currentContext,
     chooseComputer,
     send,
     newSession,

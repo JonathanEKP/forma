@@ -356,7 +356,7 @@ describe("the chat of a window", () => {
       type: "session.input",
       payload: { sessionId: SESSION, text: "Ask from the selected project", view: { projectId: "p1" } },
     }), { timeout: 4_000 });
-    expect(within(screen.getByLabelText("Agent chat")).getByText("Project “Launch campaign”")).toBeTruthy();
+    expect(within(screen.getByLabelText("Agent chat")).getByRole("status", { name: "Current message context" }).textContent).toContain("Project “Launch campaign”");
 
     // And into another design.
     fireEvent.click(screen.getByText("Launch campaign"));

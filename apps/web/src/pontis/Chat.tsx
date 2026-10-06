@@ -7,7 +7,7 @@
  * application running a capability, an approval request, the application's
  * result, and a navigation of the person's own view.
  */
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 
 import type { Line, NoticeCopy, ProviderView, ViewChip } from "./chat";
 import { ApprovalCard } from "./ChatApproval";
@@ -50,15 +50,38 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
   const [draft, setDraft] = useState(recallDraft);
   const log = useRef<HTMLOListElement>(null);
   const composer = useRef<HTMLTextAreaElement>(null);
+  const sessionInfo = useRef<HTMLDivElement>(null);
+  const sessionInfoButton = useRef<HTMLButtonElement>(null);
   const followsLatest = useRef(true);
   const [showJump, setShowJump] = useState(false);
   const [sessionInfoOpen, setSessionInfoOpen] = useState(false);
   const [runOnOpen, setRunOnOpen] = useState(chat.needsComputerChoice);
   const { state } = chat;
+  const contextChip = chat.currentContext();
 
   useEffect(() => {
     if (chat.needsComputerChoice) setRunOnOpen(true);
   }, [chat.needsComputerChoice]);
+
+  useEffect(() => {
+    if (!sessionInfoOpen) return;
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setSessionInfoOpen(false);
+      sessionInfoButton.current?.focus();
+    };
+    const closeOutside = (event: PointerEvent) => {
+      const popover = sessionInfo.current;
+      if (popover && event.target instanceof Node && !popover.contains(event.target)) setSessionInfoOpen(false);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    document.addEventListener("pointerdown", closeOutside);
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape);
+      document.removeEventListener("pointerdown", closeOutside);
+    };
+  }, [sessionInfoOpen]);
 
   // Follow new entries only while the person is already at the end of the transcript.
   useEffect(() => {
@@ -70,6 +93,25 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
     transcript.scrollTop = transcript.scrollHeight;
     setShowJump(false);
   }, [state.lines.length, state.working, state.streaming?.text, chat.dead]);
+
+  // Approval cards can gain their named layer chips after the design query resolves.
+  // That changes transcript height without changing the chat state dependencies above.
+  // MutationObserver runs after DOM updates and works in background tabs too.
+  useEffect(() => {
+    const transcript = log.current;
+    if (!transcript) return;
+    const followContentChange = () => {
+      if (!followsLatest.current) {
+        setShowJump(true);
+        return;
+      }
+      transcript.scrollTop = transcript.scrollHeight;
+      setShowJump(false);
+    };
+    const observer = new MutationObserver(followContentChange);
+    observer.observe(transcript, { childList: true, subtree: true, characterData: true });
+    return () => observer.disconnect();
+  }, []);
 
   const onTranscriptScroll = () => {
     const transcript = log.current;
@@ -114,7 +156,7 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
     setDraft(text);
     rememberDraft(text);
   };
-  const onKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+  const onKey = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       submit();
@@ -126,8 +168,8 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
       <header className="flex items-center gap-2 border-b border-edge px-4 py-3">
         <h2 className="text-[13px] font-medium">Agent</h2>
         <div className="flex-1" />
-        <div className="relative">
-          <button type="button" aria-label="Session information" aria-expanded={sessionInfoOpen} onClick={() => setSessionInfoOpen((open) => !open)} className="text-xs text-muted hover:text-paper">
+        <div ref={sessionInfo} className="relative">
+          <button ref={sessionInfoButton} type="button" aria-label="Session information" aria-expanded={sessionInfoOpen} onClick={() => setSessionInfoOpen((open) => !open)} className="text-xs text-muted hover:text-paper">
             Info
           </button>
           {sessionInfoOpen && (
@@ -192,6 +234,12 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
       )}
 
       <footer className="border-t border-edge p-3">
+        {contextChip && (
+          <div role="status" aria-label="Current message context" className="mb-2 flex min-w-0 items-center gap-2 rounded border border-edge px-2 py-1 text-[10px] text-faint">
+            <span className="shrink-0 uppercase tracking-[0.1em]">Current view</span>
+            <span className="min-w-0 truncate text-muted">{viewChipText(contextChip)}</span>
+          </div>
+        )}
         <textarea
           ref={composer}
           value={draft}
@@ -421,12 +469,7 @@ function Row({ line, answering, unconfirmed, onDecide, onNoticeAction, deviceNam
 
 /** Where the person was when they said it: what the agent was told, in their own words. */
 function Chip({ chip }: { chip: ViewChip }) {
-  const parts = [
-    chip.project === undefined ? undefined : `Project “${chip.project}”`,
-    chip.design,
-    chip.page,
-    chip.layer,
-  ].filter((part): part is string => part !== undefined);
+  const parts = viewChipParts(chip);
   return (
     <p
       aria-label={`Sent with: ${parts.join(", ")}`}
@@ -435,6 +478,19 @@ function Chip({ chip }: { chip: ViewChip }) {
       {parts.join(" · ")}
     </p>
   );
+}
+
+function viewChipParts(chip: ViewChip): string[] {
+  return [
+    chip.project === undefined ? undefined : `Project “${chip.project}”`,
+    chip.design,
+    chip.page,
+    chip.layer,
+  ].filter((part): part is string => part !== undefined);
+}
+
+function viewChipText(chip: ViewChip): string {
+  return viewChipParts(chip).join(" · ");
 }
 
 function SessionNotice({ notice, onAction }: { notice: NoticeCopy; onAction: (action: NoticeCopy["action"]) => void }) {
