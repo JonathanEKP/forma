@@ -88,4 +88,64 @@ right); it changes how they are shown, not where they are.
 
 ## Decisions
 
-*(filled in as the round is reviewed)*
+**2026-10-05, approved by the owner** after seven feedback passes and two test rounds (one by a Sonnet tester).
+The prototype is in OpenDesign; the record is [opendesign/](opendesign/).
+
+### The approval card
+
+1. **The sidecar writes the sentence, best effort, with ids as the authority.** It writes it in `requiresApproval`, reading
+   through Boundary F as the person: "Delete the layer “Headline” from “ALPHA Launch cover”", "Delete page 2 (“Back”)
+   of … and the 3 layers on it", "Delete 8 layers across 2 pages of …". If the read for names fails or times out, it
+   writes "Delete 1 layer from “…”" (or "from this design") followed by "Forma couldn't load the layer's name. Details
+   shows its id." It never blocks on the read.
+2. **Content.** The card's parts, in order:
+   - a heading row with "NEEDS YOUR APPROVAL", the DESTRUCTIVE badge and a right-aligned "Expires in m:ss";
+   - the sentence;
+   - the count of what disappears, with pages and layers counted separately ("8 layers will be deleted. Both pages
+     stay.");
+   - up to five chips and then "+N more"; a chip carries a page suffix only when the batch spans pages, and a page
+     chip carries a page icon;
+   - "Show on canvas";
+   - a collapsed "Details" with the ids, the base version and the raw operations in Geist Mono;
+   - "Approve once" (primary) and "Deny".
+
+   In a mixed batch the removal comes first and the ordinary edits follow, quieter.
+3. **"Show on canvas" highlights; it does not select.** It shows a Signal outline on the artboard and in the Layers
+   list, and it is a toggle with a pressed state. Properties stays closed, and while the approval is pending the
+   affected layers are read-only. It appears only when the design is open in this window. This replaces
+   recommendation 3's "selects through `useEditor`": a selection would open editing on what is about to be deleted.
+4. **Hard to miss.**
+   - The countdown comes from `expiresAt` and turns urgent, not alarming, under 30 seconds.
+   - It is hidden while sending.
+   - When the panel is closed, the Calm bubble appears (see below) and the tab title becomes "(1) Approval needed ·
+     Forma". There is no sound.
+5. **States.**
+   - **Sending:** "Sending your answer… Waiting for confirmation from {device}." The buttons are replaced, not merely
+     greyed.
+   - **Not confirmed by your device:** after 20 seconds the buttons come back with a quiet explanation.
+   - **Settled:** one line in the person's words, the tool row above it reads "Not run" when nothing executed, and a
+     denied, expired or cancelled line adds "Ask the agent again if you change your mind.":
+     - Approved: "Approved. Deleted the layer “Headline”."
+     - Denied: "Denied. “Headline” was kept."
+     - Expired: "Expired before you answered. … was kept."
+     - Cancelled: the same form.
+   - **Repeat after deny:** "You declined this earlier in this session, so it wasn't asked again." plus the same hint.
+6. **After an approved deletion** the version goes up (v6 → v7). The agent confirms in one line that names what was
+   removed, says what was deliberately kept, ends with "Undo brings it back.", and names any validation issue the
+   deletion caused. Undo goes forward (v8).
+7. **Controls say why they are unavailable:**
+   - Stop: "No agent task is running".
+   - Send: "Write a message to send" or "The agent is working. Stop it to send now."
+8. **Open: the countdown after the person has answered** (see *Learned while prototyping*). This is decided
+   against Pontis's resolve timeout, not here.
+
+### The editor: adopt Calm
+
+The "Calm" layout above is adopted for the editor, in place of the toggle row. Two more points apply:
+
+- The icon rail has tooltips.
+- Zoom is stable for the same artboard and window and does not move after an approval.
+
+It stays within plan §10's regions, so it is a presentation change, not a plan change. It is a separate implementation
+task from the card, and the card does not depend on it: in the current layout the bubble is the toast at the Agent
+panel's edge.
