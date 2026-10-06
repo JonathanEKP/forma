@@ -24,6 +24,7 @@ reproduction steps) is in Forma's findings files: `forma:docs/pontis-browser-fin
 | 10 | A polyglot host has to write Rust to use FakeProvider | info | sidecar README |
 | 11 | A Runtime-refused approval resolve still returns `delivered: true` to the host | **low** | F-30-6 |
 | 12 | No per-session stop intent: a host cannot end one session without stopping its Device | low | S12 |
+| 13 | The Control Plane has no device rename or permanent removal operation | low | Forma W4 |
 
 ---
 
@@ -226,6 +227,23 @@ above. Sanitized evidence: [`pv1-gaps.json`](evidence/step12/pv1-gaps.json).
 
 **Evidence:** `forma:docs/pontis-browser-findings/30-approvals.md` (F-30-6), cases A06, A11 and A17;
 Task G1 expiry replay in [`pontis-pv1-evidence.md`](pontis-pv1-evidence.md#s6--approval--full-stack).
+
+## 13. No device rename or permanent removal operation
+
+**Severity: low.** Forma's device API exposes listing, pairing-code creation, and revocation. It does
+not expose a way to rename a paired Device or permanently remove its revoked record.
+
+**Effect on a host.** A person can correct a name only by revoking and pairing the computer again.
+Revoked Devices remain in the history, and a host cannot offer permanent removal.
+
+**Suggested fix:** expose authenticated Control Plane operations to rename a Device and permanently
+remove a revoked Device, with the same account and ownership checks as device revocation. Until those
+operations exist, Forma should offer neither action.
+
+**Evidence:** the Control Plane's `services/control-plane/src/http.ts` exposes device listing,
+pairing-code creation, and `POST /pons/v1/devices/:id/revoke`; its `ControlPlane` has list and revoke
+methods only. Revocation deletes credentials while retaining the Device record. No rename or
+permanent-removal operation is exposed.
 
 ---
 
