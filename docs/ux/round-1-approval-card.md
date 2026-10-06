@@ -62,6 +62,10 @@ the person cannot read (no names available); the repeat-after-deny line.
 - While "Sending…", the countdown is hidden; an approval that expires while sending still settles as expired.
 - After an approved deletion the editor shows the new version (v6 → v7) and the agent confirms in one line;
   Undo goes to v8, never back to v6.
+- **Open: the countdown after the person has answered.** A tester saw the deadline keep running while an
+  approval waited for the device's confirmation, so a slow confirmation could expire an answer already given.
+  It has to be decided against how Pontis actually times out `approval.resolve` (item 11 of the upstream
+  report), not in the prototype.
 
 ## A calmer editor ("Calm" layout, proposed)
 
