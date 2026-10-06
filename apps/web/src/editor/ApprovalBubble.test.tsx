@@ -5,12 +5,17 @@ import { ApprovalBubble, approvalWindowTitle } from "./ApprovalBubble";
 
 const approval = {
   approvalId: "apr_1",
+  invocationId: "inv_1",
   capabilityId: "design.applyOperations",
   action: "Delete the layer “Headline” from “ALPHA Launch cover”",
   parameters: [],
   risk: "destructive",
   affected: 1,
   expiresAt: "2026-10-06T12:01:00.000Z",
+  designId: "design-1",
+  baseVersion: 2,
+  operations: [{ op: "remove_layer", layer_id: "layer-1" }],
+  reason: null,
 };
 
 afterEach(() => vi.useRealTimers());

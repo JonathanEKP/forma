@@ -11,6 +11,7 @@ import type { ApprovalCardView } from "./ChatApproval";
 
 const baseApproval: ApprovalCardView = {
   approvalId: "apr_1",
+  invocationId: "inv_1",
   capabilityId: "design.applyOperations",
   action: "Delete the layer “Headline” from “ALPHA Launch cover”",
   parameters: [],
@@ -20,6 +21,7 @@ const baseApproval: ApprovalCardView = {
   designId: null,
   baseVersion: null,
   operations: [],
+  reason: null,
 };
 
 const designRecord: DesignRecord = {

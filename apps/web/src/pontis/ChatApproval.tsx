@@ -105,13 +105,7 @@ function Chip({ chip }: { chip: ApprovalChip }) {
   );
 }
 
-export interface ApprovalCardView extends ApprovalView {
-  readonly invocationId?: string | null;
-  readonly designId?: string | null;
-  readonly baseVersion?: number | null;
-  readonly operations?: readonly unknown[];
-  readonly reason?: string | null;
-}
+export type ApprovalCardView = ApprovalView;
 
 export function ApprovalCard({
   approval,

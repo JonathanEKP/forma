@@ -336,6 +336,7 @@ function newerDeviceFirst(left: Record<string, unknown>, right: Record<string, u
 
 export interface ApprovalView {
   readonly approvalId: string;
+  readonly invocationId: string | null;
   readonly capabilityId: string;
   /** The human-readable action, in Forma's terms. */
   readonly action: string;
@@ -344,6 +345,11 @@ export interface ApprovalView {
   /** `null` when neither the request nor the input says how many things are affected. */
   readonly affected: number | null;
   readonly expiresAt: string | null;
+  /** Raw context retained for the editor to describe targets using its REST read. */
+  readonly designId: string | null;
+  readonly baseVersion: number | null;
+  readonly operations: readonly unknown[];
+  readonly reason: string | null;
 }
 
 const spec = (capabilityId: string) => capabilityCatalog.find((entry) => entry.id === capabilityId);
@@ -385,6 +391,11 @@ export function approvalView(payload: Readonly<Record<string, unknown>>, input: 
   if (typeof approvalId !== "string" || typeof capabilityId !== "string") return null;
   const presentation = spec(capabilityId)?.presentation;
   const given = Array.isArray(payload.importantArguments) ? (payload.importantArguments as unknown[]) : [];
+  const rawArgument = (name: string): unknown => {
+    const argument = given.find((entry) => isRecord(entry) && entry.name === name);
+    if (isRecord(argument)) return argument.value;
+    return isRecord(input) ? input[name] : undefined;
+  };
 
   let parameters = given.filter(isRecord).flatMap((argument) =>
     typeof argument.name === "string" ? [{ name: argument.name, value: describeValue(argument.value) }] : [],
@@ -403,6 +414,7 @@ export function approvalView(payload: Readonly<Record<string, unknown>>, input: 
 
   return {
     approvalId,
+    invocationId: typeof payload.invocationId === "string" ? payload.invocationId : null,
     capabilityId,
     action:
       typeof payload.humanSummary === "string" && payload.humanSummary.length > 0
@@ -412,6 +424,10 @@ export function approvalView(payload: Readonly<Record<string, unknown>>, input: 
     risk: typeof payload.risk === "string" ? payload.risk : (spec(capabilityId)?.risk ?? "unknown"),
     affected,
     expiresAt: typeof payload.expiresAt === "string" ? payload.expiresAt : null,
+    designId: typeof rawArgument("design_id") === "string" ? rawArgument("design_id") as string : null,
+    baseVersion: typeof rawArgument("base_version") === "number" ? rawArgument("base_version") as number : null,
+    operations: Array.isArray(rawArgument("operations")) ? rawArgument("operations") as unknown[] : [],
+    reason: typeof payload.humanReason === "string" ? payload.humanReason : typeof payload.reason === "string" ? payload.reason : null,
   };
 }
 
@@ -449,11 +465,13 @@ export type Line =
   /** The agent's own words. */
   | { readonly kind: "agent"; readonly id: string; readonly text: string }
   /** The application running a capability the agent asked for. */
-  | { readonly kind: "capability"; readonly id: string; readonly invocationId: string; readonly capabilityId: string; readonly summary: string; readonly status: "running" | "done" | "failed" }
+  | { readonly kind: "capability"; readonly id: string; readonly invocationId: string; readonly capabilityId: string; readonly summary: string; readonly status: "running" | "done" | "failed" | "not_run" }
   /** What the application answered. */
   | { readonly kind: "result"; readonly id: string; readonly capabilityId: string; readonly ok: boolean; readonly text: string }
   /** A person is being asked to consent. */
   | { readonly kind: "approval"; readonly id: string; readonly approval: ApprovalView; readonly status: ApprovalStatus }
+  /** A previously denied action was recognized and was not run again. */
+  | { readonly kind: "approval-repeat"; readonly id: string; readonly text: string; readonly hint: string }
   /** A UI action, presented by what happened rather than by a tool name. */
   | {
       readonly kind: "navigation";
@@ -816,6 +834,12 @@ function applyEvent(state: ChatState, event: DurableEvent): ChatState {
       // same failure under each message.
       const code = isRecord(payload.error) ? payload.error.code : undefined;
       if (code === "delegation_expired") return die(failed, DEAD.expired);
+      if (code === "approval_denied") {
+        const invocationId = typeof payload.invocationId === "string" ? payload.invocationId : null;
+        return invocationId !== null && repeatsDeniedApproval(state, invocationId)
+          ? { ...failed, lines: [...failed.lines, { kind: "approval-repeat", id: `${id}:repeat`, text: "You declined this earlier in this session, so it wasn't asked again.", hint: "Ask the agent again if you change your mind." }] }
+          : failed;
+      }
       // A call the person's Stop cancelled. Pontis writes no terminal event for the turn when a cancel
       // lands (F-chat-3), so a window that did not press Stop — another tab — would stay "working"
       // for ever; the cancelled call is the one sign it was given, and it ends the turn.
@@ -938,9 +962,14 @@ function requested(state: ChatState, id: string, payload: Readonly<Record<string
 function answered(state: ChatState, id: string, ok: boolean, payload: Readonly<Record<string, unknown>>): ChatState {
   const { invocationId, capabilityId } = payload;
   if (typeof invocationId !== "string" || typeof capabilityId !== "string") return state;
-  const next: "done" | "failed" = ok ? "done" : "failed";
+  const notRun = !ok && isRecord(payload.error) && payload.error.code === "approval_denied";
+  const next: "done" | "failed" | "not_run" = ok ? "done" : notRun ? "not_run" : "failed";
   const lines = state.lines.map((line) =>
-    (line.kind === "capability" || line.kind === "navigation") && line.invocationId === invocationId ? { ...line, status: next } : line,
+    line.kind === "capability" && line.invocationId === invocationId
+      ? { ...line, status: next }
+      : line.kind === "navigation" && line.invocationId === invocationId
+        ? { ...line, status: ok ? "done" as const : "failed" as const }
+        : line,
   );
 
   const input = state.inputs[invocationId];
@@ -997,8 +1026,30 @@ function answered(state: ChatState, id: string, ok: boolean, payload: Readonly<R
     };
   }
 
-  const text = ok ? "Completed" : `Failed: ${errorText(payload.error)}`;
+  const text = ok ? "Completed" : notRun ? "Not run" : `Failed: ${errorText(payload.error)}`;
   return { ...state, lines: [...lines, { kind: "result", id, capabilityId, ok, text }] };
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (isRecord(value)) {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "undefined";
+}
+
+function repeatsDeniedApproval(state: ChatState, invocationId: string): boolean {
+  const currentInput = state.inputs[invocationId];
+  if (!isRecord(currentInput) || !Array.isArray(currentInput.operations) || currentInput.operations.length === 0 || typeof currentInput.design_id !== "string") return false;
+  const currentOperations = canonicalJson(currentInput.operations);
+  return state.lines.some((line) =>
+    line.kind === "approval" &&
+    line.status === "denied" &&
+    line.approval.invocationId !== invocationId &&
+    line.approval.designId === currentInput.design_id &&
+    line.approval.operations.length > 0 &&
+    canonicalJson(line.approval.operations) === currentOperations,
+  );
 }
 
 /**

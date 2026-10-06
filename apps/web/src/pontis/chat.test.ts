@@ -273,6 +273,7 @@ describe("an approval card", () => {
   it("shows capability, action, important parameters, risk and the resource count", () => {
     expect(approvalView(request, undefined)).toEqual({
       approvalId: "apr_1",
+      invocationId: "inv_1",
       capabilityId: "design.applyOperations",
       action: "Edit this design: apply the listed changes together as one new version",
       parameters: [
@@ -282,6 +283,10 @@ describe("an approval card", () => {
       risk: "destructive",
       affected: 2,
       expiresAt: "2026-10-03T12:00:00Z",
+      designId: "d-123",
+      baseVersion: null,
+      operations: [{ op: "remove_layer", layer_id: "l1" }, { op: "set_text", layer_id: "l2" }],
+      reason: null,
     });
   });
 
