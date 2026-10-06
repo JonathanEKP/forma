@@ -84,6 +84,13 @@ own and not the chat.
     - Undo, Redo, the validation chip and Export are hidden when no design is open.
     - The transcript follows the newest entry, with "Jump to latest" when the person has scrolled up.
   - **Visual-result slot:** reserved and not built. It waits for Pontis CR-2.3.
+- **No modals anywhere in the editor (owner, 2026-10-06)**, after a regression in which `chat.html`'s rail icons opened a
+  full-screen `<dialog>` ([feedback 2](opendesign/round-2-feedback-2.md)):
+  - Layers and pages, Assets and Brand open a flyout beside the rail, one at a time. A flyout closes with ×, by
+    clicking its icon again, or with Escape.
+  - Session information (the (i) in the Agent header) is a small popover with the device, when the session started,
+    and "This window's session". It closes on a click outside or with Escape, and has no backdrop.
+  - Implementations must not use `<dialog>` or `aria-modal` overlays for these.
 - **Not verified in the prototype:** that the transcript scrolls to the newest entry. The Orca test browser does not
   paint background tabs, so its `requestAnimationFrame` never fires. The implementation must test this itself.
 
