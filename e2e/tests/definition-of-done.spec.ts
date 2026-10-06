@@ -56,7 +56,7 @@ test("every hosted SPA entry point reaches the application shell", async ({ page
     // Local has no provider, so the consent page says that rather than
     // offering a sign-in that could never complete.
     ["/oauth/consent?authorization_id=request-1", "This authorization cannot be shown"],
-    ["/agents", "Agent connections"],
+    ["/agents", "Chat in the editor"],
   ]) {
     const response = await page.goto(path);
     expect(response?.status(), `${path} did not serve the SPA`).toBe(200);
@@ -105,7 +105,7 @@ test("the agents page can be reached by navigating, not only by knowing its URL"
 }) => {
   await page.goto("/");
   await page.getByRole("link", { name: "Connect an agent" }).click();
-  await expect(page.getByRole("heading", { name: "Agent connections" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Chat in the editor" })).toBeVisible();
 
   await page.getByRole("link", { name: "← Projects" }).click();
   await expect(page.getByRole("heading", { name: "Give visual ideas a form." })).toBeVisible();

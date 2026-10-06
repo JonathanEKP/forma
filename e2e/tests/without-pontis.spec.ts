@@ -87,7 +87,7 @@ test("the base product is fully usable while Pontis is absent", async ({ page })
 
   // The page that would carry a connection status, if anything did.
   await page.getByRole("link", { name: "Connect an agent" }).click();
-  await expect(page.getByRole("heading", { name: "Agent connections" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Chat in the editor" })).toBeVisible();
   await expectNoPresenceClaim(page, "the agents page");
   await page.getByRole("link", { name: "← Projects" }).click();
 

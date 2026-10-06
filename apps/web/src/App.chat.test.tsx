@@ -285,14 +285,14 @@ describe("the chat of a window", () => {
     const originalHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
     Object.defineProperty(HTMLElement.prototype, "clientWidth", {
       configurable: true,
-      get() {
-        return this.classList.contains("editor-canvas-room") ? 800 : originalWidth?.get?.call(this) ?? 0;
+      get(this: HTMLElement) {
+        return this.classList.contains("editor-canvas-room") ? 800 : 0;
       },
     });
     Object.defineProperty(HTMLElement.prototype, "clientHeight", {
       configurable: true,
-      get() {
-        return this.classList.contains("editor-canvas-room") ? 700 : originalHeight?.get?.call(this) ?? 0;
+      get(this: HTMLElement) {
+        return this.classList.contains("editor-canvas-room") ? 700 : 0;
       },
     });
 
