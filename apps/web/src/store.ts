@@ -19,6 +19,13 @@ export interface DraftFrame {
   height: number;
 }
 
+export interface ApprovalHighlight {
+  readonly approvalId: string;
+  readonly designId: string;
+  readonly pageIds: readonly string[];
+  readonly layerIdsByPage: Readonly<Record<string, readonly string[]>>;
+}
+
 /**
  * The side panels, from Rust rather than written out again here.
  *
@@ -31,6 +38,8 @@ export interface DraftFrame {
 export type Panel = EditorPanel;
 
 interface EditorState {
+  openDesignId: string | null;
+  approvalHighlight: ApprovalHighlight | null;
   selectedPageId: string | null;
   selectedLayerId: string | null;
   zoom: number;
@@ -48,6 +57,8 @@ interface EditorState {
    */
   notice: { id: number; text: string } | null;
 
+  setOpenDesignId: (id: string | null) => void;
+  setApprovalHighlight: (highlight: ApprovalHighlight | null) => void;
   selectPage: (id: string | null) => void;
   selectLayer: (id: string | null) => void;
   setZoom: (zoom: number) => void;
@@ -62,12 +73,21 @@ export const MIN_ZOOM = 0.05;
 export const MAX_ZOOM = 4;
 
 export const useEditor = create<EditorState>((set) => ({
+  openDesignId: null,
+  approvalHighlight: null,
   selectedPageId: null,
   selectedLayerId: null,
   zoom: 1,
   panel: "properties",
   draft: null,
   notice: null,
+
+  setOpenDesignId: (openDesignId) => set((state) => ({
+    openDesignId,
+    approvalHighlight: openDesignId === state.openDesignId ? state.approvalHighlight : null,
+  })),
+
+  setApprovalHighlight: (approvalHighlight) => set({ approvalHighlight }),
 
   selectPage: (selectedPageId) =>
     // A layer belongs to one page, so it cannot stay selected across a change.

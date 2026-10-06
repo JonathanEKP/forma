@@ -24,14 +24,22 @@ export function PagesAndLayers({
   disabled,
   fontFamily,
   onClose,
+  lockedLayerIds = new Set<string>(),
 }: {
   record: DesignRecord;
   onOperations: (operations: DesignOperation[]) => void;
   disabled: boolean;
   fontFamily: string;
   onClose: () => void;
+  lockedLayerIds?: ReadonlySet<string>;
 }) {
   const { selectedPageId, selectedLayerId, selectPage, selectLayer } = useEditor();
+  const approvalHighlight = useEditor((state) => state.approvalHighlight);
+  const highlightedLayerIds = new Set(
+    approvalHighlight?.designId === record.id
+      ? Object.values(approvalHighlight.layerIdsByPage).flat()
+      : [],
+  );
   const page = record.document.pages.find((p) => p.id === selectedPageId) ?? null;
   const format = record.document.format;
 
@@ -112,18 +120,28 @@ export function PagesAndLayers({
       {page?.layers
         .slice()
         .reverse()
-        .map((layer) => (
-          <button
-            key={layer.id}
-            type="button"
-            className={`${row} ${layer.id === selectedLayerId ? active : idle}`}
-            onClick={() => selectLayer(layer.id)}
-          >
-            <Dot on={layer.id === selectedLayerId} />
-            <span className="truncate flex-1">{layer.name}</span>
-            <span className="text-faint text-[10px]">{layerKindLabel(layer)}</span>
-          </button>
-        ))}
+        .map((layer) => {
+          const selected = layer.id === selectedLayerId;
+          const highlighted = highlightedLayerIds.has(layer.id);
+          const locked = lockedLayerIds.has(layer.id);
+          return (
+            <button
+              key={layer.id}
+              type="button"
+              disabled={disabled || locked}
+              title={locked ? "This layer is read-only while an approval is pending." : undefined}
+              aria-label={locked ? `${layer.name}, read-only while an approval is pending` : undefined}
+              data-approval-highlight={highlighted ? "true" : undefined}
+              data-approval-locked={locked ? "true" : undefined}
+              className={`${row} ${selected ? active : highlighted ? "text-paper bg-signal/8 outline outline-1 outline-signal/35" : idle} ${locked ? "cursor-not-allowed opacity-70" : ""}`}
+              onClick={() => selectLayer(layer.id)}
+            >
+              <Dot on={selected || highlighted} />
+              <span className="truncate flex-1">{layer.name}</span>
+              <span className="text-faint text-[10px]">{locked ? "Read-only" : layerKindLabel(layer)}</span>
+            </button>
+          );
+        })}
         </section>
       </div>
     </aside>

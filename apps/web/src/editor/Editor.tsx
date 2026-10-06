@@ -24,7 +24,10 @@ import { findLayer, findPage } from "../types";
 import { Assets } from "./Assets";
 import { Brand } from "./Brand";
 import { Canvas } from "./Canvas";
+import { ApprovalBubble, approvalWindowTitle } from "./ApprovalBubble";
 import { ExportButton } from "./Export";
+import { approvalOperationSource, buildApprovalDetails } from "../pontis/approval-details";
+import type { Line } from "../pontis/chat";
 import { addImageOperation } from "./insert";
 import { PagesAndLayers, Panel, Properties } from "./Panels";
 import { Validation } from "./Validation";
@@ -53,7 +56,7 @@ export function Editor({
   onToggleChat?: () => void;
 }) {
   const { data: record, isLoading, error, refetch } = useDesign(designId);
-  const { selectedPageId, selectedLayerId, selectPage, panel, setPanel, zoom, setZoom } = useEditor();
+  const { selectedPageId, selectedLayerId, selectPage, selectLayer, panel, setPanel, zoom, setZoom, approvalHighlight, setApprovalHighlight, setOpenDesignId } = useEditor();
   const [activeTool, setActiveTool] = useState<RailTool | null>(() =>
     panel === "assets" || panel === "brand" ? panel : panel === "validation" ? null : "layers",
   );
@@ -62,6 +65,16 @@ export function Editor({
   const fittedOnOpen = useRef(false);
   const observedPanel = useRef(panel);
   const internalPanelChange = useRef(false);
+  const originalTitle = useRef(document.title);
+
+  useEffect(() => {
+    setOpenDesignId(designId);
+    return () => setOpenDesignId(null);
+  }, [designId, setOpenDesignId]);
+
+  useEffect(() => () => {
+    document.title = originalTitle.current;
+  }, []);
 
   const setEditorPanel = useCallback((next: typeof panel) => {
     if (panel === next) return;
@@ -177,6 +190,34 @@ export function Editor({
     brand.data?.typography.display ?? status.data?.fonts[0] ?? "Geist";
 
   const busy = apply.isPending || undo.isPending;
+
+  const pendingApprovalLines = (chat?.state.lines ?? []).filter(
+    (line): line is Extract<Line, { kind: "approval" }> => line.kind === "approval" && line.status === "pending",
+  );
+  const pendingApprovalLine = pendingApprovalLines[0];
+  const lockedLayerIds = new Set<string>();
+  if (record) {
+    for (const line of pendingApprovalLines) {
+      const source = approvalOperationSource(line.approval);
+      if (source.designId !== record.id) continue;
+      const details = buildApprovalDetails(source.operations, record);
+      Object.values(details.layerIdsByPage).forEach((ids) => ids.forEach((id) => lockedLayerIds.add(id)));
+    }
+  }
+  const activeHighlightIsPending = pendingApprovalLines.some((line) => line.approval.approvalId === approvalHighlight?.approvalId);
+
+  useEffect(() => {
+    if (approvalHighlight && (approvalHighlight.designId !== designId || !activeHighlightIsPending)) setApprovalHighlight(null);
+  }, [activeHighlightIsPending, approvalHighlight, designId, setApprovalHighlight]);
+
+  useEffect(() => {
+    if (selectedLayerId && lockedLayerIds.has(selectedLayerId)) selectLayer(null);
+  }, [lockedLayerIds, selectedLayerId, selectLayer]);
+
+  useEffect(() => {
+    if (!record) return;
+    document.title = approvalWindowTitle(record.name, chat?.pending ?? 0, chatOpen);
+  }, [chat?.pending, chatOpen, record]);
 
   useEffect(() => {
     if (!activeTool && !validationOpen) return;
@@ -372,6 +413,7 @@ export function Editor({
             record={record}
             onOperations={send}
             disabled={busy}
+            lockedLayerIds={lockedLayerIds}
             fontFamily={fontFamily}
             onClose={closePanels}
           />
@@ -400,12 +442,22 @@ export function Editor({
               svg={preview.data}
               onCommit={commitFrame}
               disabled={busy}
+              lockedLayerIds={lockedLayerIds}
             />
           ) : (
             <Centered>This design has no pages.</Centered>
           )}
 
           <ZoomControl zoom={zoom} setZoom={setZoom} />
+
+          {chat && !chatOpen && pendingApprovalLine && (
+            <ApprovalBubble
+              approval={pendingApprovalLine.approval}
+              answering={chat.answering.has(pendingApprovalLine.approval.approvalId)}
+              deviceName={chat.runtime.at === "online" || chat.runtime.at === "offline" || chat.runtime.at === "revoked" ? chat.runtime.name : undefined}
+              onReview={onToggleChat}
+            />
+          )}
 
           {chat && !chatOpen && (
             <div className="editor-agent-presence">
