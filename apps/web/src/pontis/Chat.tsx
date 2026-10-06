@@ -163,6 +163,7 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
               unconfirmed={line.kind === "approval" && chat.unconfirmed.has(line.approval.approvalId)}
               onDecide={(decision) => line.kind === "approval" && void chat.decide(line.approval.approvalId, decision)}
               onNoticeAction={(action) => action === "New session" && void startNewSession()}
+              deviceName={chat.runtime.at === "online" ? chat.runtime.name : undefined}
             />
           </li>
         ))}
@@ -337,7 +338,7 @@ function Provider({ provider }: { provider: ProviderView }) {
   );
 }
 
-function Row({ line, answering, unconfirmed, onDecide, onNoticeAction }: { line: Line; answering: boolean; unconfirmed: boolean; onDecide: (decision: "approveOnce" | "deny") => void; onNoticeAction: (action: NoticeCopy["action"]) => void }) {
+function Row({ line, answering, unconfirmed, onDecide, onNoticeAction, deviceName }: { line: Line; answering: boolean; unconfirmed: boolean; onDecide: (decision: "approveOnce" | "deny") => void; onNoticeAction: (action: NoticeCopy["action"]) => void; deviceName?: string }) {
   switch (line.kind) {
     case "person":
       return (
@@ -380,7 +381,13 @@ function Row({ line, answering, unconfirmed, onDecide, onNoticeAction }: { line:
         </div>
       );
     case "approval":
-      return <ApprovalCard approval={line.approval} status={line.status} answering={answering} unconfirmed={unconfirmed} onDecide={onDecide} />;
+      return <ApprovalCard approval={line.approval} status={line.status} answering={answering} unconfirmed={unconfirmed} onDecide={onDecide} deviceName={deviceName} />;
+    case "approval-repeat":
+      return (
+        <p className="editor-approval-repeat" role="status">
+          {line.text} <span>{line.hint}</span>
+        </p>
+      );
     case "navigation":
       return (
         <article aria-label={line.heading} className="grid min-w-0 gap-2 rounded-lg border border-edge bg-surface-2 px-3 py-2.5 text-xs [overflow-wrap:anywhere]">
@@ -452,7 +459,7 @@ function sessionComputer(chat: ChatController, deviceId: string | null): string 
   return deviceId === null ? "Not started" : "Offline";
 }
 
-const STATUS = { running: "· running", done: "· done", failed: "· failed" } as const;
+const STATUS = { running: "· running", done: "· done", failed: "· failed", not_run: "· Not run" } as const;
 
 function Label({ children }: { children: string }) {
   return <span className="mb-0.5 block text-[10px] font-semibold uppercase tracking-[0.1em] text-faint">{children}</span>;

@@ -25,6 +25,7 @@ interface Props {
   svg: string | undefined;
   onCommit: (frame: DraftFrame) => void;
   disabled: boolean;
+  lockedLayerIds?: ReadonlySet<string>;
 }
 
 interface Drag {
@@ -35,13 +36,19 @@ interface Drag {
   origin: { x: number; y: number; width: number; height: number };
 }
 
-export function Canvas({ record, page, svg, onCommit, disabled }: Props) {
+export function Canvas({ record, page, svg, onCommit, disabled, lockedLayerIds = new Set<string>() }: Props) {
   const { width, height } = record.document.format;
   const zoom = useEditor((s) => s.zoom);
   const selectedLayerId = useEditor((s) => s.selectedLayerId);
   const selectLayer = useEditor((s) => s.selectLayer);
   const draft = useEditor((s) => s.draft);
   const setDraft = useEditor((s) => s.setDraft);
+  const approvalHighlight = useEditor((s) => s.approvalHighlight);
+  const highlightedLayerIds = new Set(
+    approvalHighlight?.designId === record.id
+      ? Object.values(approvalHighlight.layerIdsByPage).flat()
+      : [],
+  );
 
   const surface = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
@@ -50,9 +57,9 @@ export function Canvas({ record, page, svg, onCommit, disabled }: Props) {
   const toCanvas = useCallback((dx: number, dy: number) => ({ dx: dx / zoom, dy: dy / zoom }), [zoom]);
 
   const begin = (event: React.PointerEvent, id: string, handle: Handle | null) => {
-    if (disabled) return;
     event.stopPropagation();
     event.preventDefault();
+    if (disabled || lockedLayerIds.has(id)) return;
 
     const layer = page.layers.find((l) => layerId(l) === id);
     if (!layer) return;
@@ -132,6 +139,8 @@ export function Canvas({ record, page, svg, onCommit, disabled }: Props) {
             const frame =
               draft?.layerId === id ? draft : layerFrame(layer);
             const selected = id === selectedLayerId;
+            const highlighted = highlightedLayerIds.has(id);
+            const locked = lockedLayerIds.has(id);
 
             return (
               <g key={id}>
@@ -141,17 +150,19 @@ export function Canvas({ record, page, svg, onCommit, disabled }: Props) {
                   width={Math.max(frame.width, 0)}
                   height={Math.max(frame.height, 0)}
                   fill="transparent"
-                  stroke={selected ? "var(--color-signal)" : "transparent"}
-                  strokeWidth={1 / zoom}
+                  stroke={selected || highlighted ? "var(--color-signal)" : "transparent"}
+                  strokeWidth={(selected ? 1 : highlighted ? 2 : 0) / zoom}
                   vectorEffect="non-scaling-stroke"
-                  className="cursor-move"
-                  style={{ pointerEvents: disabled ? "none" : "all" }}
+                  className={locked ? "cursor-not-allowed" : "cursor-move"}
+                  data-approval-highlight={highlighted ? "true" : undefined}
+                  data-approval-locked={locked ? "true" : undefined}
+                  style={{ pointerEvents: disabled || locked ? "none" : "all" }}
                   onPointerDown={(e) => begin(e, id, null)}
                 >
-                  <title>{layerName(layer)}</title>
+                  <title>{locked ? `${layerName(layer)} · Read-only while approval is pending` : layerName(layer)}</title>
                 </rect>
 
-                {selected &&
+                {selected && !locked &&
                   handlesOf(frame).map(({ handle, cx, cy, cursor }) => (
                     <rect
                       key={handle}

@@ -1,25 +1,111 @@
-/**
- * The approval card (`pontis/docs/13` § Approval panel).
- *
- * Capability, the action in words, the parameters worth reading, the risk class
- * and how many things it touches — in front of the two buttons, so the person
- * answers what is being asked rather than "Allow tool?". `approveOnce` and `deny`
- * are the only answers: a session-wide grant is not offered in PV-1 (plan §3.1),
- * and the sidecar refuses any other decision anyway.
- */
-import { RISK_LABEL, type ApprovalStatus, type ApprovalView } from "./chat";
-import type { CapabilityRisk } from "@forma/bindings/CapabilityRisk";
+/** The approval card, including its editor-only canvas cue. */
+import { useEffect, useState } from "react";
 
-const SETTLED: Record<Exclude<ApprovalStatus, "pending">, string> = {
+import type { CapabilityRisk } from "@forma/bindings/CapabilityRisk";
+import { useDesign } from "../queries";
+import { useEditor } from "../store";
+import type { ApprovalStatus, ApprovalView } from "./chat";
+import { approvalOperationSource, buildApprovalDetails, type ApprovalChip, type ApprovalDetails } from "./approval-details";
+import { ApprovalCountdown, remainingApprovalSeconds } from "./ApprovalCountdown";
+
+const SETTLED_LABEL: Record<Exclude<ApprovalStatus, "pending">, string> = {
   approved: "Approved",
   denied: "Denied",
   expired: "Expired before you answered",
   cancelled: "Cancelled",
 };
 
+const SETTLED_HINT = "Ask the agent again if you change your mind.";
+
 function riskLabel(risk: string): string {
-  return risk in RISK_LABEL ? RISK_LABEL[risk as CapabilityRisk] : risk;
+  const labels: Partial<Record<CapabilityRisk, string>> = {
+    read: "Read",
+    write: "Write",
+    destructive: "Destructive",
+    external_side_effect: "External side effect",
+    sensitive: "Sensitive",
+  };
+  return labels[risk as CapabilityRisk] ?? risk;
 }
+
+function firstQuotedName(action: string): string | null {
+  return /“([^”]+)”/u.exec(action)?.[1] ?? null;
+}
+
+function pageNames(details: ApprovalDetails, recordNameById: ReadonlyMap<string, string>): string[] {
+  return details.pageIds.flatMap((id) => {
+    const name = recordNameById.get(id);
+    return name ? [name] : [];
+  });
+}
+
+function changedDescription(approval: ApprovalView, details: ApprovalDetails, record: ReturnType<typeof useDesign>["data"]): string {
+  const names = new Map(record?.document.pages.map((page) => [page.id, page.name]) ?? []);
+  const pageLabels = pageNames(details, names);
+
+  if (details.pageCount === 1 && pageLabels.length > 0) {
+    return `Deleted page “${pageLabels[0]}”${details.layerCount > 0 ? ` and its ${details.layerCount} ${details.layerCount === 1 ? "layer" : "layers"}` : ""}`;
+  }
+  if (details.pageCount > 1 && pageLabels.length > 0) {
+    return `Deleted ${details.pageCount} pages${details.layerCount > 0 ? ` and ${details.layerCount} ${details.layerCount === 1 ? "layer" : "layers"}` : ""}`;
+  }
+  if (details.layerCount === 1) {
+    const layerChip = details.chips.find((chip) => chip.kind === "layer");
+    const name = layerChip?.label ?? firstQuotedName(approval.action);
+    return name ? `Deleted the layer “${name}”` : "Deleted the requested layer";
+  }
+  if (details.layerCount > 1) {
+    return pageLabels.length > 0
+      ? `Deleted ${details.layerCount} layers across ${pageLabels.join(" and ")}`
+      : `Deleted ${details.layerCount} layers`;
+  }
+  if (details.pageCount === 0 && /layer/iu.test(approval.action)) {
+    const name = firstQuotedName(approval.action);
+    return name ? `Deleted the layer “${name}”` : "Deleted the requested layer";
+  }
+  return details.pageCount > 0 ? `Deleted ${details.pageCount} pages` : "Completed the approved change";
+}
+
+function keptDescription(approval: ApprovalView, details: ApprovalDetails, record: ReturnType<typeof useDesign>["data"]): string {
+  const names = new Map(record?.document.pages.map((page) => [page.id, page.name]) ?? []);
+  const pageLabels = pageNames(details, names);
+  if (details.pageCount === 1 && pageLabels.length > 0) {
+    return `Page “${pageLabels[0]}”${details.layerCount > 0 ? ` and its ${details.layerCount} ${details.layerCount === 1 ? "layer" : "layers"}` : ""} were kept`;
+  }
+  if (details.layerCount === 1) {
+    const layerChip = details.chips.find((chip) => chip.kind === "layer");
+    const name = layerChip?.label ?? firstQuotedName(approval.action);
+    return name ? `“${name}” was kept` : "The requested layer was kept";
+  }
+  if (details.layerCount > 1) {
+    return pageLabels.length > 0
+      ? `All ${details.layerCount} layers across ${pageLabels.join(" and ")} were kept`
+      : `All ${details.layerCount} layers were kept`;
+  }
+  const name = firstQuotedName(approval.action);
+  if (details.pageCount === 0 && /layer/iu.test(approval.action) && name) return `“${name}” was kept`;
+  return "No changes were made";
+}
+
+function PageIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3 w-3 shrink-0 fill-none stroke-current">
+      <path d="M4 2.5h5l3 3v8H4zM9 2.5v3h3" strokeWidth="1.2" />
+    </svg>
+  );
+}
+
+function Chip({ chip }: { chip: ApprovalChip }) {
+  return (
+    <span className="editor-approval-chip">
+      {chip.kind === "page" && <PageIcon />}
+      <span>{chip.label}</span>
+      {chip.showPageSuffix && <small>{chip.pageName}</small>}
+    </span>
+  );
+}
+
+export type ApprovalCardView = ApprovalView;
 
 export function ApprovalCard({
   approval,
@@ -27,74 +113,148 @@ export function ApprovalCard({
   answering,
   unconfirmed,
   onDecide,
+  deviceName,
 }: {
-  approval: ApprovalView;
+  approval: ApprovalCardView;
   status: ApprovalStatus;
   /** An answer was sent and the Runtime has not confirmed it yet. */
   answering: boolean;
   /** The approval stayed pending after the confirmation window elapsed. */
   unconfirmed: boolean;
   onDecide: (decision: "approveOnce" | "deny") => void;
+  deviceName?: string;
 }) {
-  const heavy = approval.risk === "destructive" || approval.risk === "external_side_effect" || approval.risk === "sensitive";
+  const source = approvalOperationSource(approval);
+  const { data: record, isLoading } = useDesign(source.designId);
+  const openDesignId = useEditor((state) => state.openDesignId);
+  const approvalHighlight = useEditor((state) => state.approvalHighlight);
+  const setApprovalHighlight = useEditor((state) => state.setApprovalHighlight);
+  const selectPage = useEditor((state) => state.selectPage);
+  const selectLayer = useEditor((state) => state.selectLayer);
+  const [showAllChips, setShowAllChips] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+
+  const details = buildApprovalDetails(source.operations, record ?? null, source.reason);
+  const nameNotice = source.reason ?? (isLoading ? null : details.nameNotice);
+  const isHighlighted = approvalHighlight?.approvalId === approval.approvalId && approvalHighlight.designId === source.designId;
+  const canvasAvailable = status === "pending" && source.designId !== null && source.designId === openDesignId && record !== undefined && details.layerCount > 0;
+  const remaining = approval.expiresAt ? remainingApprovalSeconds(approval.expiresAt, now) : null;
+  const expiredLocally = remaining === 0;
+  const busy = answering;
+  const canAnswer = status === "pending" && !busy && !expiredLocally;
+  const actionHelp = expiredLocally
+    ? "This approval expired. No changes were made."
+    : "This answer applies to this request only.";
+
+  useEffect(() => {
+    if (status !== "pending" && approvalHighlight?.approvalId === approval.approvalId) setApprovalHighlight(null);
+  }, [approval.approvalId, approvalHighlight?.approvalId, setApprovalHighlight, status]);
+
+  useEffect(() => {
+    if (status !== "pending" || answering) return;
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [answering, status]);
+
+  const toggleHighlight = () => {
+    if (!source.designId || !record) return;
+    if (isHighlighted) {
+      setApprovalHighlight(null);
+      return;
+    }
+    selectLayer(null);
+    const firstPageId = details.pageIds[0];
+    if (firstPageId) selectPage(firstPageId);
+    setApprovalHighlight({
+      approvalId: approval.approvalId,
+      designId: source.designId,
+      pageIds: details.pageIds,
+      layerIdsByPage: details.layerIdsByPage,
+    });
+  };
+
+  const showChip = showAllChips ? details.allChips : details.chips;
+  const settledText = status === "approved"
+    ? `${SETTLED_LABEL[status]}. ${changedDescription(approval, details, record)}.`
+    : status === "denied" || status === "expired" || status === "cancelled"
+      ? `${SETTLED_LABEL[status]}. ${keptDescription(approval, details, record)}.`
+      : null;
 
   return (
-    <div className="rounded-lg border border-edge-strong bg-surface-2 p-3 text-xs">
-      <div className="mb-1 flex items-center gap-2">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted">Needs your approval</span>
-        <span
-          className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-            heavy ? "bg-paper text-ink" : "border border-edge-strong text-muted"
-          }`}
-        >
-          {riskLabel(approval.risk)}
-        </span>
-      </div>
-
-      <p className="text-[13px] leading-5">{approval.action}</p>
-      <code className="mt-1 block text-[11px] text-faint">{approval.capabilityId}</code>
-
-      {approval.parameters.length > 0 && (
-        <dl className="mt-2 space-y-1 border-t border-edge pt-2">
-          {approval.parameters.map((parameter) => (
-            <div key={parameter.name} className="grid grid-cols-[88px_1fr] gap-2">
-              <dt className="truncate font-mono text-[11px] text-faint">{parameter.name}</dt>
-              <dd className="break-words text-muted">{parameter.value}</dd>
-            </div>
-          ))}
-        </dl>
-      )}
-
-      <p className="mt-2 text-[11px] text-muted">
-        {approval.affected === null
-          ? "How many things this changes isn't stated."
-          : `Affects ${approval.affected} ${approval.affected === 1 ? "item" : "items"}.`}
-      </p>
-
+    <article className="editor-approval-card" aria-label="Approval request">
       {status === "pending" ? (
-        <div className="mt-3 flex gap-2">
-          <button
-            type="button"
-            disabled={answering}
-            onClick={() => onDecide("approveOnce")}
-            className="rounded-lg bg-signal px-2.5 py-1.5 text-xs font-semibold text-ink disabled:opacity-40"
-          >
-            Approve once
-          </button>
-          <button
-            type="button"
-            disabled={answering}
-            onClick={() => onDecide("deny")}
-            className="rounded-lg border border-edge bg-surface px-2.5 py-1.5 text-xs text-muted enabled:hover:text-paper disabled:opacity-40"
-          >
-            Deny
-          </button>
-          {answering && <span className="self-center text-[11px] text-faint">Sending…</span>}
-          {!answering && unconfirmed && <span className="self-center text-[11px] text-faint">Not confirmed by your device</span>}
-        </div>
+        <>
+          <header className="editor-approval-heading">
+            <span className="editor-approval-kicker">NEEDS YOUR APPROVAL</span>
+            {approval.risk === "destructive" && <span className="editor-approval-risk">DESTRUCTIVE</span>}
+            {approval.risk !== "destructive" && <span className="editor-approval-risk editor-approval-risk--quiet">{riskLabel(approval.risk).toUpperCase()}</span>}
+            <span className="editor-approval-deadline">
+              {!busy && approval.expiresAt && <ApprovalCountdown expiresAt={approval.expiresAt} now={now} className="editor-approval-countdown" />}
+            </span>
+          </header>
+
+          <h3 className="editor-approval-action">{approval.action}</h3>
+          <p className="editor-approval-count">{details.countLabel}</p>
+          {nameNotice && <p className="editor-approval-name-notice">{nameNotice}</p>}
+          {isLoading && source.operations.length > 0 && <p className="editor-approval-name-notice">Loading affected layer names…</p>}
+          {details.editSummary && <p className="editor-approval-edits">{details.editSummary}</p>}
+
+          {details.chips.length > 0 && (
+            <div className="editor-approval-chips" aria-label="Objects that will be deleted">
+              {showChip.map((chip) => <Chip key={`${chip.kind}:${chip.id}`} chip={chip} />)}
+              {details.moreCount > 0 && !showAllChips && (
+                <button type="button" className="editor-approval-more" onClick={() => setShowAllChips(true)}>
+                  +{details.moreCount} more
+                </button>
+              )}
+            </div>
+          )}
+
+          {canvasAvailable && (
+            <button type="button" aria-pressed={isHighlighted} onClick={toggleHighlight} className="editor-approval-canvas-toggle">
+              <span aria-hidden="true">◎</span>
+              Show on canvas
+            </button>
+          )}
+
+          <details className="editor-approval-details">
+            <summary>Details</summary>
+            <dl>
+              <div><dt>design_id</dt><dd>{source.designId ?? "Not provided"}</dd></div>
+              {details.rawIds.map((id, index) => (
+                <div key={`${id}:${index}`}><dt>{id === source.designId ? "design_id" : "affected id"}</dt><dd>{id}</dd></div>
+              ))}
+              <div><dt>base_version</dt><dd>{source.baseVersion ?? "Not provided"}</dd></div>
+              <div className="editor-approval-raw"><dt>raw operations</dt><dd><pre>{JSON.stringify(source.operations, null, 2)}</pre></dd></div>
+            </dl>
+          </details>
+
+          {busy ? (
+            <p className="editor-approval-sending" role="status">
+              Sending your answer… Waiting for confirmation from {deviceName ?? "your device"}.
+            </p>
+          ) : (
+            <>
+              {unconfirmed && <p className="editor-approval-unconfirmed" role="status">Not confirmed by your device</p>}
+              <div className="editor-approval-actions">
+                <button type="button" disabled={!canAnswer} aria-describedby="approval-answer-help" onClick={() => onDecide("approveOnce")} className="editor-approval-approve">
+                  Approve once
+                </button>
+                <button type="button" disabled={!canAnswer} aria-describedby="approval-answer-help" onClick={() => onDecide("deny")} className="editor-approval-deny">
+                  Deny
+                </button>
+              </div>
+              <p id="approval-answer-help" className="editor-approval-help">{actionHelp}</p>
+            </>
+          )}
+        </>
       ) : (
-        <p className="mt-3 text-[11px] font-semibold text-muted">{SETTLED[status]}</p>
+        <>
+          <p className="editor-approval-settled">{settledText}</p>
+          {status !== "approved" && <p className="editor-approval-help">{SETTLED_HINT}</p>}
+        </>
       )}
-    </div>
+    </article>
   );
 }
