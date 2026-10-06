@@ -89,17 +89,19 @@ describe("approval card states", () => {
     expect(screen.getByText("NEEDS YOUR APPROVAL")).toBeTruthy();
     expect(screen.getByText("DESTRUCTIVE")).toBeTruthy();
     expect(screen.getByText(baseApproval.action)).toBeTruthy();
-    expect(screen.getByText("Expires in 1:00")).toBeTruthy();
+    expect(screen.getByText("Expires in 1:00").classList.contains("editor-approval-countdown")).toBe(true);
     expect(screen.getByRole("button", { name: "Approve once" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Deny" })).toBeTruthy();
   });
 
-  it("counts down from expiresAt and marks under thirty seconds urgent", () => {
+  it("counts down from expiresAt and marks under thirty seconds urgent", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-10-06T12:00:00.000Z"));
     card();
 
-    act(() => vi.advanceTimersByTime(31_000));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(31_000);
+    });
 
     const countdown = screen.getByText("Expires in 0:29");
     expect(countdown.getAttribute("data-urgency")).toBe("urgent");

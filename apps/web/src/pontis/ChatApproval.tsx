@@ -190,7 +190,7 @@ export function ApprovalCard({
             {approval.risk === "destructive" && <span className="editor-approval-risk">DESTRUCTIVE</span>}
             {approval.risk !== "destructive" && <span className="editor-approval-risk editor-approval-risk--quiet">{riskLabel(approval.risk).toUpperCase()}</span>}
             <span className="editor-approval-deadline">
-              {!busy && approval.expiresAt && <ApprovalCountdown expiresAt={approval.expiresAt} now={now} />}
+              {!busy && approval.expiresAt && <ApprovalCountdown expiresAt={approval.expiresAt} now={now} className="editor-approval-countdown" />}
             </span>
           </header>
 
