@@ -449,33 +449,29 @@ describe('an action goes to the window whose chat started the session (D-2)', ()
     });
   });
 
-  it('does not hand the session to a stranger when its window closes: one other window is the only target, two are ambiguous', async () => {
+  it('refuses an action when the bound window is gone, even with one other window open', async () => {
     await sidecarWith([ORIGIN], async (sidecar) => {
       const device = await pair(sidecar, USER);
       const bound = session();
       sidecar.controlPlane.bindSessionContext({ sessionId: bound, userId: USER, deviceId: device, applicationContextId: CONTEXT });
       const chat = await connect(sidecar, 'session-user', { agentSession: bound });
-      const second = await connect(sidecar, 'session-user');
-      const third = await connect(sidecar, 'session-user');
+      const other = await connect(sidecar, 'session-user');
       try {
         chat.close();
-        await registered(sidecar, 2);
-        // Two windows left and none bound to the session: Pontis does not choose.
-        const ambiguous = await invoke(sidecar, 'ui.setZoom', { zoom: 2 }, 'inv_gone_two', USER, CONTEXT);
-        assert.equal(ambiguous.status === 'failed' ? ambiguous.error.code : '', 'ui_unavailable');
-        await assert.rejects(second.next(200));
-        await assert.rejects(third.next(200));
-
-        // One left: with a single candidate there is nothing to guess between.
-        third.close();
         await registered(sidecar, 1);
-        const only = invoke(sidecar, 'ui.setZoom', { zoom: 3 }, 'inv_gone_one', USER, CONTEXT);
-        const action = await second.next();
-        await second.ack(action.invocationId, 'handled');
-        assert.equal((await only).status, 'completed');
+        const outcome = await sidecar.agentApp.gateway.invoke({
+          userId: USER,
+          sessionId: bound,
+          applicationContextId: CONTEXT,
+          invocationId: 'inv_gone_one',
+          capabilityId: 'ui.setZoom',
+          input: { zoom: 3 },
+        });
+        assert.equal(outcome.status, 'failed');
+        assert.equal(outcome.status === 'failed' ? outcome.error.code : '', 'ui_unavailable');
+        await assert.rejects(other.next(200), 'the remaining window was never asked');
       } finally {
-        second.close();
-        third.close();
+        other.close();
       }
     });
   });
