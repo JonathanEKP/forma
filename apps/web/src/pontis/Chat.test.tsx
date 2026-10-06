@@ -4,6 +4,7 @@
  * thing, so those are what is faked.
  */
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../identity", () => ({
@@ -20,6 +21,7 @@ import { ChatPanel, ChatToggle } from "./Chat";
 import { forgetChat } from "./session-store";
 import { agentBinding, windowId } from "./window";
 import { useChat, type ChatOptions } from "./useChat";
+import { useState } from "react";
 
 const CONTEXT = "22222222-2222-4222-8222-222222222222";
 const SESSION = "ses_1";
@@ -120,12 +122,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function Harness({ enabled, offlineGraceMs, view }: { enabled: boolean; offlineGraceMs?: number; view?: ChatOptions["view"] }) {
+  const [queryClient] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } }));
   const chat = useChat({ enabled, pollMs: 20, ...(offlineGraceMs === undefined ? {} : { offlineGraceMs }), ...(view === undefined ? {} : { view }) });
   return (
-    <>
+    <QueryClientProvider client={queryClient}>
       <ChatToggle chat={chat} open onToggle={() => undefined} />
       <ChatPanel chat={chat} onClose={() => undefined} />
-    </>
+    </QueryClientProvider>
   );
 }
 
@@ -354,25 +357,24 @@ describe("a conversation", () => {
       affectedResourceCount: 1,
     });
 
-    const card = await screen.findByText("Needs your approval");
+    const card = await screen.findByText("NEEDS YOUR APPROVAL");
     const scope = within(card.closest("li") as HTMLElement);
-    expect(scope.getByText("design.applyOperations")).toBeTruthy();
     expect(scope.getByText(/Edit this design/)).toBeTruthy();
-    expect(scope.getByText("design_id")).toBeTruthy();
-    expect(scope.getByText("1 operation: remove_layer")).toBeTruthy();
-    expect(scope.getByText("destructive")).toBeTruthy();
-    expect(scope.getByText("Affects 1 item.")).toBeTruthy();
+    expect(scope.getByText("DESTRUCTIVE")).toBeTruthy();
+    expect(scope.getByText("1 layer will be deleted.")).toBeTruthy();
+    expect(scope.getByText("Details")).toBeTruthy();
 
     fireEvent.click(scope.getByRole("button", { name: "Approve once" }));
     await waitFor(() =>
       expect(backend.intents()).toContainEqual({ type: "approval.resolve", payload: { approvalId: "apr_1", decision: "approveOnce" } }),
     );
-    expect(scope.getByText("Sending…")).toBeTruthy();
+    expect(scope.getByText("Sending your answer… Waiting for confirmation from Studio laptop.")).toBeTruthy();
     // Held until the Runtime's own event says it landed, so it cannot be answered twice.
-    expect(scope.getByRole<HTMLButtonElement>("button", { name: "Deny" }).disabled).toBe(true);
+    expect(scope.queryByRole("button", { name: "Approve once" })).toBeNull();
+    expect(scope.queryByRole("button", { name: "Deny" })).toBeNull();
 
     backend.push(4, "approval.resolved", { approvalId: "apr_1", status: "approved" });
-    await screen.findByText("Approved");
+    await screen.findByText(/Approved\./u);
   });
 
   it("lets a pending approval be answered again when the device does not confirm it", async () => {
@@ -390,11 +392,11 @@ describe("a conversation", () => {
       affectedResourceCount: 1,
     });
 
-    const card = await screen.findByText("Needs your approval");
+    const card = await screen.findByText("NEEDS YOUR APPROVAL");
     const scope = within(card.closest("li") as HTMLElement);
     vi.useFakeTimers();
     fireEvent.click(scope.getByRole("button", { name: "Approve once" }));
-    expect(scope.getByText("Sending…")).toBeTruthy();
+    expect(scope.getByText("Sending your answer… Waiting for confirmation from Studio laptop.")).toBeTruthy();
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(20_000);
@@ -725,7 +727,7 @@ describe("a session that cannot be carried on", () => {
     await screen.findByText(/The session failed: the provider exited/);
     expect(screen.queryByRole("button", { name: "Approve once" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Deny" })).toBeNull();
-    expect(screen.getByText("Expired before you answered")).toBeTruthy();
+    expect(screen.getByText(/Expired before you answered\./u)).toBeTruthy();
   });
 
   it("is what a revoked device leaves behind, and the status says revoked rather than offline (F-10-2, F-10-4)", async () => {
