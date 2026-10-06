@@ -38,9 +38,12 @@ describe('the view line', () => {
     assert.equal(viewLine({}), '[forma-view] none');
   });
 
-  it('carries the id alone when the name could not be read, and no name for no design', () => {
+  it('carries a design id alone when its name could not be read', () => {
     assert.equal(viewLine({ designId: DESIGN }), `[forma-view] design=${DESIGN}`);
-    assert.equal(viewLine({ projectId: PROJECT }, 'orphan name'), `[forma-view] project=${PROJECT}`);
+  });
+
+  it('names a project when no design is open', () => {
+    assert.equal(viewLine({ projectId: PROJECT }, 'Launch'), `[forma-view] project=${PROJECT} name="Launch"`);
   });
 
   it('is one line whatever the name holds', () => {

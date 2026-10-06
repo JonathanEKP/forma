@@ -11,7 +11,7 @@ import { defineAgentApp } from '@pontis/server';
 import { capabilityCatalog } from '../../../bindings/generated/capabilityCatalog.ts';
 import { FormaBoundary } from './boundary.ts';
 import { SERVED, formaApproval, formaCapabilities, isUuid, removals } from './capabilities.ts';
-import { fakeForma } from './fake-forma.ts';
+import { fakeForma, type Answer, type Recorded } from './fake-forma.ts';
 import { GUIDANCE } from './guidance.ts';
 import { startSidecar } from './sidecar.ts';
 import { silentLog } from './log.ts';
@@ -33,6 +33,68 @@ const REQUESTED = {
   status: 'pending',
   created_at: '2026-10-01T00:00:00Z',
 };
+const PAGE_COVER = '77777777-7777-4777-8777-777777777777';
+const PAGE_BACK = '88888888-8888-4888-8888-888888888888';
+const LAYER_IDS = [
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1',
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2',
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3',
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4',
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa5',
+  'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1',
+  'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2',
+  'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3',
+  'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb4',
+] as const;
+
+function approvalDesign(overrides: { readonly name?: string; readonly headlineName?: string } = {}) {
+  const layer = (id: string, name: string) => ({ id, name, type: 'text' });
+  return {
+    id: DESIGN,
+    project_id: PROJECT,
+    name: overrides.name ?? 'ALPHA Launch cover',
+    version: 1,
+    created_at: '2026-10-01T00:00:00Z',
+    updated_at: '2026-10-01T00:00:00Z',
+    document: {
+      schema_version: 1,
+      format: { preset: 'instagram_post', width: 1080, height: 1080 },
+      pages: [
+        {
+          id: PAGE_COVER,
+          name: 'Cover',
+          layers: [
+            layer(LAYER_IDS[0], overrides.headlineName ?? 'Headline'),
+            layer(LAYER_IDS[1], 'Kicker'),
+            layer(LAYER_IDS[2], 'Tagline'),
+            layer(LAYER_IDS[3], 'Footer'),
+            layer(LAYER_IDS[4], 'Accent block'),
+          ],
+        },
+        {
+          id: PAGE_BACK,
+          name: 'Back',
+          layers: [
+            layer(LAYER_IDS[5], 'Footer'),
+            layer(LAYER_IDS[6], 'Tagline'),
+            layer(LAYER_IDS[7], 'Headline'),
+          ],
+        },
+      ],
+    },
+  };
+}
+
+function approvalFrom(outcome: unknown): Record<string, unknown> {
+  if (!isRecord(outcome) || outcome.status !== 'approval_required' || !isRecord(outcome.approval)) {
+    throw new Error('expected an approval request');
+  }
+  return outcome.approval;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 
 describe('the catalog, as registered', () => {
   it('declares exactly what the generated catalog says, for each operation Boundary F serves', () => {
@@ -124,18 +186,19 @@ describe('the catalog, as registered', () => {
 });
 
 describe('the gateway in front of Boundary F', () => {
-  async function withGateway(run: (invoke: (capabilityId: string, input: unknown, invocationId: string, approval?: ApprovalEvidence) => ReturnType<ReturnType<typeof defineAgentApp>['gateway']['invoke']>, requests: () => string[]) => Promise<void>) {
-    const forma = await fakeForma(({ path }) =>
-      path.endsWith('/operations')
-        ? { status: 200, body: { design_id: DESIGN, project_id: DESIGN, version: 2, updated_at: '2026-10-01T00:00:00Z' } }
-        : path.endsWith('/guide')
-          ? { status: 200, body: MANUAL }
-          : path.endsWith('/brand')
-            ? { status: 200, body: BRAND }
-            : path.endsWith('/asset-requests')
-              ? { status: 200, body: REQUESTED }
-              : { status: 200, body: [] },
-    );
+  async function withGateway(
+    run: (invoke: (capabilityId: string, input: unknown, invocationId: string, approval?: ApprovalEvidence) => ReturnType<ReturnType<typeof defineAgentApp>['gateway']['invoke']>, requests: () => string[]) => Promise<void>,
+    designAnswer: (request: Recorded) => Answer | Promise<Answer> = () => ({ status: 200, body: approvalDesign() }),
+  ) {
+    const forma = await fakeForma(({ path, ...request }) => {
+      const recorded = { path, ...request } as Recorded;
+      if (path.endsWith('/operations')) return { status: 200, body: { design_id: DESIGN, project_id: DESIGN, version: 2, updated_at: '2026-10-01T00:00:00Z' } };
+      if (path.startsWith('/api/v1/pontis/designs/')) return designAnswer(recorded);
+      if (path.endsWith('/guide')) return { status: 200, body: MANUAL };
+      if (path.endsWith('/brand')) return { status: 200, body: BRAND };
+      if (path.endsWith('/asset-requests')) return { status: 200, body: REQUESTED };
+      return { status: 200, body: [] };
+    });
     const app = defineAgentApp({
       id: 'forma',
       guidance: GUIDANCE,
@@ -179,7 +242,7 @@ describe('the gateway in front of Boundary F', () => {
       const pending = await invoke('design.applyOperations', input, 'inv_remove');
       assert.equal(pending.status, 'approval_required');
       assert.equal(pending.status === 'approval_required' ? pending.approval.risk : undefined, 'destructive');
-      assert.deepEqual(requests(), [], 'nothing reaches Forma before consent');
+      assert.deepEqual(requests(), [`GET /api/v1/pontis/designs/${DESIGN} `], 'only the bounded name read reaches Forma before consent');
 
       const approved = await invoke('design.applyOperations', input, 'inv_remove', {
         approvalId: 'apr_remove',
@@ -192,9 +255,160 @@ describe('the gateway in front of Boundary F', () => {
         expiresAt: new Date(Date.now() + 60_000).toISOString(),
       });
       assert.equal(approved.status, 'completed');
-      const [sent] = requests();
+      const sent = requests().at(-1);
       assert.ok(sent?.includes('"approval":{"approval_id":"apr_remove"'), sent);
     });
+  });
+
+  it('names one removed layer and its design in the approval sentence and reason', async () => {
+    await withGateway(async (invoke) => {
+      const approval = approvalFrom(await invoke(
+        'design.applyOperations',
+        { design_id: DESIGN, base_version: 1, operations: [{ op: 'remove_layer', layer_id: LAYER_IDS[0] }] },
+        'inv_named_layer',
+      ));
+      assert.equal(approval.summary, 'Delete the layer “Headline” from “ALPHA Launch cover”');
+      assert.equal(approval.reason, 'This will permanently delete the layer “Headline” from “ALPHA Launch cover”.');
+      assert.equal(approval.affectedResourceCount, 1);
+    });
+  });
+
+  it('names a removed page, its position, its layers and the design', async () => {
+    await withGateway(async (invoke) => {
+      const approval = approvalFrom(await invoke(
+        'design.applyOperations',
+        { design_id: DESIGN, base_version: 1, operations: [{ op: 'remove_page', page_id: PAGE_BACK }] },
+        'inv_named_page',
+      ));
+      assert.equal(approval.summary, 'Delete page 2 (“Back”) of “ALPHA Launch cover” and the 3 layers on it');
+      assert.equal(approval.reason, 'This will permanently delete page 2 (“Back”) and its 3 layers from “ALPHA Launch cover”.');
+      assert.equal(approval.affectedResourceCount, 4);
+    });
+  });
+
+  it('names several removed layers across pages and counts only the layers that disappear', async () => {
+    await withGateway(async (invoke) => {
+      const ids = [...LAYER_IDS.slice(0, 5), ...LAYER_IDS.slice(5, 8)];
+      const approval = approvalFrom(await invoke(
+        'design.applyOperations',
+        { design_id: DESIGN, base_version: 1, operations: ids.map((layer_id) => ({ op: 'remove_layer', layer_id })) },
+        'inv_named_many',
+      ));
+      assert.equal(approval.summary, 'Delete 8 layers across 2 pages of “ALPHA Launch cover”');
+      assert.equal(approval.reason, 'This will permanently delete 8 layers across 2 pages of “ALPHA Launch cover”.');
+      assert.equal(approval.affectedResourceCount, 8);
+    });
+  });
+
+  it('counts a deleted page, its layers and a separately removed layer', async () => {
+    await withGateway(async (invoke) => {
+      const approval = approvalFrom(await invoke(
+        'design.applyOperations',
+        {
+          design_id: DESIGN,
+          base_version: 1,
+          operations: [
+            { op: 'remove_page', page_id: PAGE_BACK },
+            { op: 'remove_layer', layer_id: LAYER_IDS[0] },
+          ],
+        },
+        'inv_mixed_removals',
+      ));
+      assert.equal(approval.affectedResourceCount, 5);
+      assert.match(String(approval.summary), /Back/u);
+      assert.match(String(approval.summary), /Headline/u);
+      assert.match(String(approval.reason), /ALPHA Launch cover/u);
+    });
+  });
+
+  it('uses the documented single-layer fallback when the design read fails', async () => {
+    await withGateway(async (invoke) => {
+      const approval = approvalFrom(await invoke(
+        'design.applyOperations',
+        { design_id: DESIGN, base_version: 1, operations: [{ op: 'remove_layer', layer_id: LAYER_IDS[0] }] },
+        'inv_name_read_failed',
+      ));
+      assert.equal(approval.summary, 'Delete 1 layer from this design');
+      assert.equal(approval.reason, "Forma couldn't load the layer's name. Details shows its id.");
+      assert.equal(approval.affectedResourceCount, 1);
+    }, () => ({ status: 403, body: { error: { code: 'FORBIDDEN', message: 'not readable' } } }));
+  });
+
+  it('uses only operation counts when a page or a batch of removals cannot be named', async () => {
+    await withGateway(async (invoke) => {
+      const page = approvalFrom(await invoke(
+        'design.applyOperations',
+        { design_id: DESIGN, base_version: 1, operations: [{ op: 'remove_page', page_id: PAGE_BACK }] },
+        'inv_page_read_failed',
+      ));
+      assert.equal(page.summary, 'Delete 1 page from this design');
+      assert.equal(page.reason, "Forma couldn't load the page's name. Details shows its id.");
+      assert.equal(page.affectedResourceCount, 1);
+
+      const layers = approvalFrom(await invoke(
+        'design.applyOperations',
+        { design_id: DESIGN, base_version: 1, operations: LAYER_IDS.slice(0, 3).map((layer_id) => ({ op: 'remove_layer', layer_id })) },
+        'inv_layers_read_failed',
+      ));
+      assert.equal(layers.summary, 'Delete 3 layers from this design');
+      assert.equal(layers.reason, "Forma couldn't load the names. Details shows the ids.");
+      assert.equal(layers.affectedResourceCount, 3);
+
+      const mixed = approvalFrom(await invoke(
+        'design.applyOperations',
+        {
+          design_id: DESIGN,
+          base_version: 1,
+          operations: [
+            { op: 'remove_page', page_id: PAGE_BACK },
+            ...LAYER_IDS.slice(0, 2).map((layer_id) => ({ op: 'remove_layer', layer_id })),
+          ],
+        },
+        'inv_mixed_read_failed',
+      ));
+      assert.equal(mixed.summary, 'Delete 1 page and 2 layers from this design');
+      assert.equal(mixed.reason, "Forma couldn't load the names. Details shows the ids.");
+      assert.equal(mixed.affectedResourceCount, 3);
+    }, () => ({ status: 403, body: { error: { code: 'FORBIDDEN', message: 'not readable' } } }));
+  });
+
+  it('uses the documented fallback when the design read exceeds its timeout', { timeout: 6_000 }, async () => {
+    await withGateway(async (invoke) => {
+      const startedAt = Date.now();
+      const approval = approvalFrom(await invoke(
+        'design.applyOperations',
+        { design_id: DESIGN, base_version: 1, operations: [{ op: 'remove_layer', layer_id: LAYER_IDS[0] }] },
+        'inv_name_read_timeout',
+      ));
+      assert.ok(Date.now() - startedAt < 5_000, 'the approval read is bounded');
+      assert.equal(approval.summary, 'Delete 1 layer from this design');
+      assert.equal(approval.reason, "Forma couldn't load the layer's name. Details shows its id.");
+    }, () => new Promise((resolve) => setTimeout(() => resolve({ status: 200, body: approvalDesign() }), 3_500)));
+  });
+
+  it('quotes, flattens and caps hostile layer and design names in plain sentence text', async () => {
+    await withGateway(async (invoke) => {
+      const approval = approvalFrom(await invoke(
+        'design.applyOperations',
+        { design_id: DESIGN, base_version: 1, operations: [{ op: 'remove_layer', layer_id: LAYER_IDS[0] }] },
+        'inv_hostile_names',
+      ));
+      const summary = String(approval.summary);
+      const reason = String(approval.reason);
+      assert.ok(!/[\r\n\u2028\u2029]/u.test(summary));
+      assert.ok(!/[\r\n\u2028\u2029]/u.test(reason));
+      assert.ok(summary.includes('“Head\\” line'), summary);
+      assert.ok(summary.includes('“Launch\\” [script] cover '), summary);
+      assert.ok(!summary.includes('x'.repeat(81)), summary);
+      assert.ok(!summary.includes('y'.repeat(81)), summary);
+      assert.ok(!summary.includes('**'), summary);
+    }, () => ({
+      status: 200,
+      body: approvalDesign({
+        name: `Launch”\n[script] cover ${'x'.repeat(100)}`,
+        headlineName: `Head”\nline ${'y'.repeat(100)}`,
+      }),
+    }));
   });
 
   it('reads the manual as an ordinary resource: no consent, no idempotency key, exactly what Forma answered', async () => {
