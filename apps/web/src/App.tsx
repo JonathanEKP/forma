@@ -74,6 +74,7 @@ function useAccess(): [Access, () => void] {
 
 export function App() {
   const [designId, setDesignId] = useState<string | null>(null);
+  const [project, setProject] = useState<{ readonly id: string; readonly name: string } | null>(null);
   const openDesignId = useRef(designId);
   openDesignId.current = designId;
   const [access, recheck] = useAccess();
@@ -108,7 +109,7 @@ export function App() {
   // editor when the agent has written to a design so the screen follows (D-7).
   const chat = useChat({
     enabled: access.at === "ready" && window.location.pathname === "/",
-    view: () => currentView(queries, openDesignId.current),
+    view: () => currentView(queries, openDesignId.current, project),
     onWrite: (write) => void followAgentWrite({ queries, openDesignId: () => openDesignId.current }, write),
   });
   // Closed by default, so it is never in the canvas's way unless it was asked for; an approval
@@ -143,7 +144,7 @@ export function App() {
     return (
       <div className="flex h-full">
         <div className="h-full min-w-0 flex-1 overflow-y-auto">
-          <Projects onOpen={openDesign} chat={chat.enabled ? <ChatToggle chat={chat} open={chatOpen} onToggle={toggleChat} /> : null} />
+          <Projects onOpen={openDesign} onProjectChange={setProject} chat={chat.enabled ? <ChatToggle chat={chat} open={chatOpen} onToggle={toggleChat} /> : null} />
         </div>
         {chat.enabled && chatOpen && <ChatPanel chat={chat} onClose={() => setChatOpen(false)} />}
       </div>
@@ -154,7 +155,10 @@ export function App() {
     <div className="h-full min-w-0">
       <Editor
         designId={designId}
-        onBack={() => setDesignId(null)}
+        onBack={() => {
+          setDesignId(null);
+          setProject(null);
+        }}
         {...(chat.enabled ? { chat, chatOpen, onToggleChat: toggleChat } : {})}
       />
     </div>

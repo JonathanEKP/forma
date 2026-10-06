@@ -7,7 +7,7 @@ import { useState, type ReactNode } from "react";
 import { Brand } from "./editor/Brand";
 import { useBrand, useCreateDesign, useCreateProject, useDesigns, useProjects, useStatus } from "./queries";
 
-export function Projects({ onOpen, chat = null }: { onOpen: (designId: string) => void; chat?: ReactNode }) {
+export function Projects({ onOpen, onProjectChange, chat = null }: { onOpen: (designId: string) => void; onProjectChange?: (project: { readonly id: string; readonly name: string } | null) => void; chat?: ReactNode }) {
   const status = useStatus();
   const projects = useProjects();
   const [projectId, setProjectId] = useState<string | null>(null);
@@ -76,7 +76,10 @@ export function Projects({ onOpen, chat = null }: { onOpen: (designId: string) =
             <button
               key={project.id}
               type="button"
-              onClick={() => setProjectId(project.id)}
+              onClick={() => {
+                setProjectId(project.id);
+                onProjectChange?.({ id: project.id, name: project.name });
+              }}
               className={`rounded-xl border px-3.5 py-3 text-left transition-colors ${
                 project.id === projectId
                   ? "border-signal/45 bg-signal/8"

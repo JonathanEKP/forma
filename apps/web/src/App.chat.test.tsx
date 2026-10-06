@@ -326,14 +326,37 @@ describe("the chat of a window", () => {
     await screen.findByText(/Studio laptop/);
     fireEvent.change(screen.getByLabelText("Message the agent"), { target: { value: "Make the headline bigger" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
-    await waitFor(() => expect(backend.intents()).toEqual([{ type: "session.start", payload: { providerId: "codex" } }]));
+    await waitFor(() => expect(backend.intents()).toEqual([{ type: "session.start", payload: { providerId: "codex", deviceId: "dev_1" } }]));
     const panel = screen.getByLabelText("Agent chat");
     expect(within(within(panel).getByRole("log")).getByText("Make the headline bigger")).toBeTruthy();
+    backend.push(1, "session.created");
+    backend.push(2, "session.started");
+    await waitFor(() => expect(backend.intents()).toContainEqual({
+      type: "session.input",
+      payload: { sessionId: SESSION, text: "Make the headline bigger", view: { designId: "d1", projectId: "p1", pageId: "pg1" } },
+    }), { timeout: 4_000 });
 
     // Back to the project list: the panel is still open and still holds the conversation.
     fireEvent.click(screen.getByRole("button", { name: "Open Projects" }));
     await screen.findByText("Launch campaign");
     expect(within(within(screen.getByLabelText("Agent chat")).getByRole("log")).getByText("Make the headline bigger")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Message the agent"), { target: { value: "Ask from the project list" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(backend.intents()).toContainEqual({
+      type: "session.input",
+      payload: { sessionId: SESSION, text: "Ask from the project list" },
+    }), { timeout: 4_000 });
+
+    fireEvent.click(screen.getByText("Launch campaign"));
+    await screen.findByText("Designs");
+    fireEvent.change(screen.getByLabelText("Message the agent"), { target: { value: "Ask from the selected project" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(backend.intents()).toContainEqual({
+      type: "session.input",
+      payload: { sessionId: SESSION, text: "Ask from the selected project", view: { projectId: "p1" } },
+    }), { timeout: 4_000 });
+    expect(within(screen.getByLabelText("Agent chat")).getByText("Project “Launch campaign”")).toBeTruthy();
 
     // And into another design.
     fireEvent.click(screen.getByText("Launch campaign"));
@@ -342,7 +365,7 @@ describe("the chat of a window", () => {
     expect(within(within(screen.getByLabelText("Agent chat")).getByRole("log")).getByText("Make the headline bigger")).toBeTruthy();
     // One session throughout: moving between designs started nothing.
     expect(backend.intents().filter((intent) => intent.type === "session.start")).toHaveLength(1);
-  });
+  }, 15_000);
 
   it("sends where the person is with each message, and shows the context as a chip", async () => {
     renderApp();

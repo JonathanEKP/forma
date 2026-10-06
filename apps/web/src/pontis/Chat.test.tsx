@@ -19,7 +19,7 @@ import { DEAD } from "./chat";
 import { ChatPanel, ChatToggle } from "./Chat";
 import { forgetChat } from "./session-store";
 import { agentBinding, windowId } from "./window";
-import { useChat } from "./useChat";
+import { useChat, type ChatOptions } from "./useChat";
 
 const CONTEXT = "22222222-2222-4222-8222-222222222222";
 const SESSION = "ses_1";
@@ -39,6 +39,7 @@ class Backend {
   unauthenticatedPaths = new Set<string>();
   cancelGate: Promise<Response> | null = null;
   startGate: Promise<Response> | null = null;
+  devicesGate: Promise<Response> | null = null;
   /** What `session.input` and `session.cancel` are answered with instead of delivery, as the sidecar's refusal code. */
   refuse: string | null = null;
   devices: unknown = {
@@ -86,7 +87,7 @@ class Backend {
       case "/agent/context":
         return json({ applicationContextId: CONTEXT });
       case "/pons/v1/devices":
-        return json(this.devices);
+        return this.devicesGate ?? json(this.devices);
       case "/pons/v1/events": {
         const after = Number(url.searchParams.get("after"));
         return json({
@@ -118,8 +119,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function Harness({ enabled, offlineGraceMs }: { enabled: boolean; offlineGraceMs?: number }) {
-  const chat = useChat({ enabled, pollMs: 20, ...(offlineGraceMs === undefined ? {} : { offlineGraceMs }) });
+function Harness({ enabled, offlineGraceMs, view }: { enabled: boolean; offlineGraceMs?: number; view?: ChatOptions["view"] }) {
+  const chat = useChat({ enabled, pollMs: 20, ...(offlineGraceMs === undefined ? {} : { offlineGraceMs }), ...(view === undefined ? {} : { view }) });
   return (
     <>
       <ChatToggle chat={chat} open onToggle={() => undefined} />
@@ -141,6 +142,7 @@ async function attach(sessionId = SESSION) {
 beforeEach(() => {
   // A tab remembers its chat across a reload; a test is not a reload of the one before it.
   sessionStorage.clear();
+  localStorage.clear();
   backend = new Backend();
   vi.stubGlobal("fetch", backend.fetch);
 });
@@ -190,9 +192,39 @@ describe("the status block", () => {
   it("says plainly when the device is offline, and will not take a message", async () => {
     backend.devices = { devices: [{ id: "d", name: "Studio laptop", online: false, revokedAt: null, runtimeVersion: "1", capabilities: [] }] };
     render(<Harness enabled />);
-    expect(await screen.findByText(/Studio laptop is offline/)).toBeTruthy();
+    const status = await screen.findByRole("region", { name: "Status" });
+    expect(within(status).getByText(/Studio laptop is offline/)).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Message the agent"), { target: { value: "hello" } });
     expect(screen.getByRole<HTMLButtonElement>("button", { name: "Send" }).disabled).toBe(true);
+  });
+
+  it("opens Run on and explains the disabled Send control when two computers have no saved choice", async () => {
+    backend.devices = twoDevices();
+    render(<Harness enabled />);
+    const runOn = await screen.findByRole("button", { name: "Run on: Choose a computer" });
+    await waitFor(() => expect(runOn.getAttribute("aria-expanded")).toBe("true"));
+    expect(screen.getByText("Choose a computer to run the agent.")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Message the agent"), { target: { value: "hello" } });
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Send" }).disabled).toBe(true);
+    expect(backend.intents()).toEqual([]);
+  });
+
+  it("uses the last computer chosen in localStorage while multiple computers are online", async () => {
+    backend.devices = twoDevices();
+    localStorage.setItem("forma.chat.device", "dev_2");
+    render(<Harness enabled />);
+    await screen.findByRole("button", { name: "Run on: Home desktop" });
+    fireEvent.change(screen.getByLabelText("Message the agent"), { target: { value: "hello" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(backend.intents()).toContainEqual({ type: "session.start", payload: { providerId: "codex", deviceId: "dev_2" } }));
+  });
+
+  it("automatically uses the only online computer and includes its id in session.start", async () => {
+    render(<Harness enabled />);
+    await screen.findByText(/Studio laptop/);
+    fireEvent.change(screen.getByLabelText("Message the agent"), { target: { value: "hello" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(backend.intents()).toContainEqual({ type: "session.start", payload: { providerId: "codex", deviceId: "dev_1" } }));
   });
 
   it("says to sign in again when the context and device routes return 401", async () => {
@@ -200,7 +232,8 @@ describe("the status block", () => {
     backend.unauthenticatedPaths.add("/pons/v1/devices");
     render(<Harness enabled />);
 
-    expect(await screen.findByText("Your sign-in has expired. Sign in again.")).toBeTruthy();
+    const status = await screen.findByRole("region", { name: "Status" });
+    expect(within(status).getByText("Your sign-in has expired. Sign in again.")).toBeTruthy();
   });
 });
 
@@ -221,12 +254,18 @@ describe("a conversation", () => {
     await screen.findByText(/Studio laptop/);
   }
 
+  it("keeps Send disabled while empty and tells the person what the control needs", async () => {
+    await ready();
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Send" }).disabled).toBe(true);
+    expect(screen.getByText("Write a message to send.")).toBeTruthy();
+  });
+
   it("starts a session, waits for it to be live, then sends the text — and shows what comes back as five kinds of line", async () => {
     await ready();
     fireEvent.change(screen.getByLabelText("Message the agent"), { target: { value: "Raise the headline" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
-    await waitFor(() => expect(backend.intents()).toEqual([{ type: "session.start", payload: { providerId: "codex" } }]));
+    await waitFor(() => expect(backend.intents()).toEqual([{ type: "session.start", payload: { providerId: "codex", deviceId: "dev_1" } }]));
     // Nothing is sent as input while the provider is not up.
     await act(() => new Promise((resolve) => setTimeout(resolve, 60)));
     expect(backend.intents()).toHaveLength(1);
@@ -235,7 +274,7 @@ describe("a conversation", () => {
     backend.push(2, "session.started");
     await waitFor(() =>
       expect(backend.intents()).toEqual([
-        { type: "session.start", payload: { providerId: "codex" } },
+        { type: "session.start", payload: { providerId: "codex", deviceId: "dev_1" } },
         { type: "session.input", payload: { sessionId: SESSION, text: "Raise the headline" } },
       ]),
     );
@@ -260,7 +299,7 @@ describe("a conversation", () => {
     await screen.findByText(/Studio laptop/);
     fireEvent.change(screen.getByLabelText("Message the agent"), { target: { value: text } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
-    await waitFor(() => expect(backend.intents()).toEqual([{ type: "session.start", payload: { providerId: "codex" } }]));
+    await waitFor(() => expect(backend.intents()).toEqual([{ type: "session.start", payload: { providerId: "codex", deviceId: "dev_1" } }]));
     expect(sessionStorage.getItem("forma.chat.draft")).toBe(text);
 
     first.unmount();
@@ -268,15 +307,15 @@ describe("a conversation", () => {
     render(<Harness enabled />);
     const draft = await screen.findByRole<HTMLTextAreaElement>("textbox", { name: "Message the agent" });
     expect(draft.value).toBe(text);
-    expect(backend.intents()).toEqual([{ type: "session.start", payload: { providerId: "codex" } }]);
+    expect(backend.intents()).toEqual([{ type: "session.start", payload: { providerId: "codex", deviceId: "dev_1" } }]);
 
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
-    await waitFor(() => expect(backend.intents()).toEqual([{ type: "session.start", payload: { providerId: "codex" } }, { type: "session.start", payload: { providerId: "codex" } }]));
+    await waitFor(() => expect(backend.intents()).toEqual([{ type: "session.start", payload: { providerId: "codex", deviceId: "dev_1" } }, { type: "session.start", payload: { providerId: "codex", deviceId: "dev_1" } }]));
     backend.push(1, "session.created");
     backend.push(2, "session.started");
     await waitFor(() => expect(backend.intents()).toEqual([
-      { type: "session.start", payload: { providerId: "codex" } },
-      { type: "session.start", payload: { providerId: "codex" } },
+      { type: "session.start", payload: { providerId: "codex", deviceId: "dev_1" } },
+      { type: "session.start", payload: { providerId: "codex", deviceId: "dev_1" } },
       { type: "session.input", payload: { sessionId: SESSION, text } },
     ]));
     await waitFor(() => expect(sessionStorage.getItem("forma.chat.draft")).toBeNull());
@@ -386,6 +425,7 @@ describe("a conversation", () => {
     fireEvent.change(box, { target: { value: "wait until this turn ends" } });
 
     expect(screen.getByRole<HTMLButtonElement>("button", { name: "Send" }).disabled).toBe(true);
+    expect(screen.getByText("The agent is working. Stop it to send now.")).toBeTruthy();
     expect(screen.getByRole<HTMLButtonElement>("button", { name: "Stop" }).disabled).toBe(false);
     fireEvent.keyDown(box, { key: "Enter", shiftKey: false });
     expect(backend.intents().filter((intent) => (intent as { type: string }).type === "session.input")).toHaveLength(1);
@@ -406,6 +446,7 @@ describe("a conversation", () => {
     finish(new Response(JSON.stringify({ delivered: true }), { status: 200 }));
 
     await screen.findByText("You stopped the agent.");
+    expect(screen.getByRole("region", { name: "Session information" }).getAttribute("data-tone")).toBe("info");
     expect(screen.getAllByText("You stopped the agent.")).toHaveLength(1);
   });
 
@@ -415,7 +456,58 @@ describe("a conversation", () => {
     fireEvent.change(screen.getByLabelText("Message the agent"), { target: { value: "try again" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
-    expect(await screen.findByText("Your sign-in has expired. Sign in again.")).toBeTruthy();
+    expect(await screen.findByText("Your sign-in has expired.")).toBeTruthy();
+    expect(screen.getByText("Sign in again, then start a new session.")).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Session needs you" }).getAttribute("data-tone")).toBe("needs-you");
+  });
+
+  it("shows the project context chip and sends only the selected project id", async () => {
+    await inSession(() => render(<Harness enabled view={() => ({ ids: { projectId: "project-1" }, chip: { project: "Launch" } })} />));
+    expect(screen.getByText("Project “Launch”")).toBeTruthy();
+    expect(backend.intents()).toContainEqual({ type: "session.input", payload: { sessionId: SESSION, text: "work on it", view: { projectId: "project-1" } } });
+  });
+
+  it("renders UI outcomes as article cards with identifiers inside Details", async () => {
+    await inSession();
+    backend.push(3, "capability.requested", { invocationId: "select", capabilityId: "ui.selectLayer", input: { design_id: "design-123", layer_id: "layer-456" } });
+    backend.push(4, "capability.completed", { invocationId: "select", capabilityId: "ui.selectLayer", result: { outcome: "handled", detail: "Selected “Headline”" } });
+
+    const card = await screen.findByRole("article", { name: "Moved your view" });
+    expect(card.parentElement?.tagName).toBe("LI");
+    expect(card.querySelector("div")).toBeNull();
+    expect(within(card).getByRole("heading", { name: "Moved your view" })).toBeTruthy();
+    expect(within(card).getByText("Selected “Headline”").closest("details")).toBeNull();
+    const details = card.querySelector("details");
+    expect(details?.textContent).toContain("design-123");
+    expect(details?.textContent).toContain("layer-456");
+    expect(card.querySelector("ul")?.textContent).not.toMatch(/design-123|layer-456/);
+  });
+
+  it("shows session information in an anchored popover without a backdrop", async () => {
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: "Session information" }));
+    const popover = screen.getByRole("region", { name: "Session information" });
+    expect(popover.textContent).toContain("This window's session");
+    expect(popover.textContent).toContain("Started");
+    expect(popover.querySelector("[aria-modal], dialog")).toBeNull();
+    expect(document.querySelector("[aria-modal], dialog")).toBeNull();
+  });
+
+  it("offers Jump to latest only after the transcript is scrolled up, and follows the newest line after the jump", async () => {
+    await inSession();
+    const transcript = screen.getByRole("log");
+    Object.defineProperty(transcript, "scrollHeight", { configurable: true, value: 600 });
+    Object.defineProperty(transcript, "clientHeight", { configurable: true, value: 120 });
+    transcript.scrollTop = 0;
+    fireEvent.scroll(transcript);
+    expect(screen.getByRole("button", { name: "Jump to latest" })).toBeTruthy();
+
+    backend.push(3, "agent.output.completed", { turnId: "latest", text: "The newest reply." });
+    await screen.findByText("The newest reply.");
+    expect(transcript.scrollTop).toBe(0);
+    fireEvent.click(screen.getByRole("button", { name: "Jump to latest" }));
+    expect(transcript.scrollTop).toBe(600);
+    expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
   });
 
   it("keeps an oversized UTF-8 draft and refuses to send it", async () => {
@@ -570,6 +662,28 @@ const oneDevice = (overrides: Record<string, unknown> = {}) => ({
   ],
 });
 
+const twoDevices = () => ({
+  devices: [
+    {
+      id: "dev_1",
+      name: "Studio laptop",
+      online: true,
+      revokedAt: null,
+      runtimeVersion: "0.1.0",
+      capabilities: [{ providerId: "codex", installed: true, compatible: true, authenticated: true, authMode: "subscription" }],
+    },
+    {
+      id: "dev_2",
+      name: "Home desktop",
+      online: true,
+      revokedAt: null,
+      runtimeVersion: "0.1.1",
+      lastSeenAt: "2026-10-06T19:45:00Z",
+      capabilities: [{ providerId: "codex", installed: true, compatible: true, authenticated: true, authMode: "subscription" }],
+    },
+  ],
+});
+
 describe("a session that cannot be carried on", () => {
   it("says why in plain words, offers a new session and keeps the history above it — instead of answering every message with the same refusal (F-chat-5)", async () => {
     await inSession();
@@ -582,8 +696,9 @@ describe("a session that cannot be carried on", () => {
     fireEvent.change(screen.getByLabelText("Message the agent"), { target: { value: "and again" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
-    const ended = await screen.findByRole("region", { name: "Session ended" });
-    expect(within(ended).getByText(DEAD.notAuthorized)).toBeTruthy();
+    const ended = await screen.findByRole("region", { name: "Session stopped" });
+    expect(within(ended).getByText(DEAD.notAuthorized.happened)).toBeTruthy();
+    expect(ended.getAttribute("data-tone")).toBe("stopped");
     // Not wedged: no "working", the box does not take a message, and nothing started by itself.
     expect(screen.queryByText("The agent is working…")).toBeNull();
     expect(screen.getByRole<HTMLButtonElement>("button", { name: "Send" }).disabled).toBe(true);
@@ -592,7 +707,8 @@ describe("a session that cannot be carried on", () => {
     backend.refuse = null;
     fireEvent.click(within(ended).getByRole("button", { name: "New session" }));
     await waitFor(() => expect(backend.intents().filter((intent) => (intent as { type: string }).type === "session.start")).toHaveLength(2));
-    await waitFor(() => expect(screen.queryByRole("region", { name: "Session ended" })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Session stopped" })).toBeNull());
+    expect(document.activeElement).toBe(screen.getByLabelText("Message the agent"));
     // The old conversation is still there, above a divider.
     const kinds = screen.getAllByRole("listitem").map((item) => item.getAttribute("data-kind"));
     expect(kinds).toEqual(expect.arrayContaining(["person", "agent"]));
@@ -619,7 +735,7 @@ describe("a session that cannot be carried on", () => {
     backend.devices = oneDevice({ online: false, revokedAt: "2026-10-04T00:00:00Z" });
     // The device list is read on presence frames and every ten seconds; a presence frame is the quick way.
     act(() => liveFeed.publish({ type: "device.revoked", payload: {} }));
-    expect(await screen.findByText(DEAD.revoked)).toBeTruthy();
+    expect(await screen.findByText(DEAD.revoked.happened)).toBeTruthy();
     // Said by the status line (and again by the button's hint): revoked, not offline.
     expect(screen.getAllByText(/Studio laptop was revoked/).length).toBeGreaterThan(0);
     expect(screen.queryByText(/is offline/)).toBeNull();
@@ -647,11 +763,11 @@ describe("a session that cannot be carried on", () => {
     };
     act(() => liveFeed.publish({ type: "device.revoked", payload: {} }));
 
-    const ended = await screen.findByRole("region", { name: "Session ended" });
-    expect(within(ended).getByText(DEAD.revoked)).toBeTruthy();
-    expect(within(ended).getByRole("button", { name: "New session" })).toBeTruthy();
+    const ended = await screen.findByRole("region", { name: "Session stopped" });
+    expect(within(ended).getByText(DEAD.revoked.happened)).toBeTruthy();
+    expect(within(ended).getByRole("link", { name: "Open Agents page" })).toBeTruthy();
     expect(screen.getAllByText(/Studio laptop was revoked/).length).toBeGreaterThan(0);
-    expect(screen.queryByText(DEAD.offline)).toBeNull();
+    expect(screen.queryByText(DEAD.offline.happened)).toBeNull();
   });
 
   it("judges the session device as revoked even when another device is online", async () => {
@@ -663,8 +779,8 @@ describe("a session that cannot be carried on", () => {
       ],
     };
     act(() => liveFeed.publish({ type: "device.revoked", payload: {} }));
-    expect(await screen.findByText(DEAD.revoked)).toBeTruthy();
-    expect(screen.queryByText(DEAD.replaced)).toBeNull();
+    expect(await screen.findByText(DEAD.revoked.happened)).toBeTruthy();
+    expect(screen.queryByText(DEAD.replaced.happened)).toBeNull();
   });
 
   it("treats a session device missing from the device list as revoked", async () => {
@@ -673,10 +789,10 @@ describe("a session that cannot be carried on", () => {
       devices: [{ id: "dev_2", name: "Other laptop", online: true, revokedAt: null, capabilities: [] }],
     };
     act(() => liveFeed.publish({ type: "device.online", payload: {} }));
-    expect(await screen.findByText(DEAD.revoked)).toBeTruthy();
+    expect(await screen.findByText(DEAD.revoked.happened)).toBeTruthy();
   });
 
-  it("is what a Runtime that has been replaced by another device leaves behind (F-chat-5)", async () => {
+  it("keeps a session on its own offline computer when another computer is online", async () => {
     await inSession();
     backend.devices = {
       devices: [
@@ -685,26 +801,65 @@ describe("a session that cannot be carried on", () => {
       ],
     };
     act(() => liveFeed.publish({ type: "device.online", payload: {} }));
-    expect(await screen.findByText(DEAD.replaced)).toBeTruthy();
+    expect(await screen.findByText(DEAD.offline.happened)).toBeTruthy();
+    expect(backend.intents().filter((intent) => (intent as { type: string }).type === "session.start")).toHaveLength(1);
   });
 
-  it("is a turn whose Runtime stayed offline past the grace, and not one that came back in time", async () => {
+  it("stops this session when its computer goes offline and does not switch it when another is online", async () => {
     await inSession(() => render(<Harness enabled offlineGraceMs={600} />));
-    backend.push(3, "turn.started");
-    await screen.findByText("The agent is working…");
     backend.devices = oneDevice({ online: false });
     act(() => liveFeed.publish({ type: "device.offline", payload: {} }));
-    await screen.findByText(/is offline/);
-    backend.devices = oneDevice();
+    expect(await screen.findByText(DEAD.offline.happened)).toBeTruthy();
+    backend.devices = { devices: [
+      { id: "dev_1", name: "Studio laptop", online: false, revokedAt: null, capabilities: [] },
+      { id: "dev_2", name: "Home desktop", online: true, revokedAt: null, capabilities: [{ providerId: "codex", installed: true, compatible: true, authenticated: true, authMode: "subscription" }] },
+    ] };
     act(() => liveFeed.publish({ type: "device.online", payload: {} }));
-    await screen.findByText(/· online · Runtime/);
-    // Longer than the grace: had the offline spell not been cleared by coming back, it would have ended the turn by now.
-    await act(() => new Promise((resolve) => setTimeout(resolve, 800)));
-    expect(screen.queryByText(DEAD.offline)).toBeNull();
+    expect(await screen.findByText(DEAD.offline.happened)).toBeTruthy();
+    expect(backend.intents().filter((intent) => (intent as { type: string }).type === "session.start")).toHaveLength(1);
+  });
 
-    backend.devices = oneDevice({ online: false });
+  it("starts on a newly chosen computer after the prior session's computer went offline", async () => {
+    await inSession();
+    backend.devices = { devices: [
+      { id: "dev_1", name: "Studio laptop", online: false, revokedAt: null, capabilities: [] },
+      { id: "dev_2", name: "Home desktop", online: true, revokedAt: null, capabilities: [{ providerId: "codex", installed: true, compatible: true, authenticated: true, authMode: "subscription" }] },
+      { id: "dev_3", name: "Office desktop", online: true, revokedAt: null, capabilities: [{ providerId: "codex", installed: true, compatible: true, authenticated: true, authMode: "subscription" }] },
+    ] };
     act(() => liveFeed.publish({ type: "device.offline", payload: {} }));
-    expect(await screen.findByText(DEAD.offline)).toBeTruthy();
+
+    const ended = await screen.findByRole("region", { name: "Session stopped" });
+    await screen.findByRole("region", { name: "Run on computer" });
+    fireEvent.click(screen.getByRole("button", { name: /Office desktop Online/ }));
+    expect(localStorage.getItem("forma.chat.device")).toBe("dev_3");
+    let releaseDevices!: () => void;
+    backend.devicesGate = new Promise((resolve) => {
+      releaseDevices = () => resolve(new Response(JSON.stringify(backend.devices)));
+    });
+    fireEvent.click(within(ended).getByRole("button", { name: "New session" }));
+
+    await waitFor(() => expect(backend.intents().filter((intent) => (intent as { type: string }).type === "session.start")).toHaveLength(2));
+    expect(backend.intents()).toContainEqual({ type: "session.start", payload: { providerId: "codex", deviceId: "dev_3" } });
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 50)));
+    const stillStopped = screen.queryByRole("region", { name: "Session stopped" });
+    releaseDevices();
+    expect(stillStopped).toBeNull();
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Session stopped" })).toBeNull());
+    expect(document.activeElement).toBe(screen.getByLabelText("Message the agent"));
+  });
+
+  it("starts a fresh session on the chosen computer and leaves the earlier transcript above a named divider", async () => {
+    await inSession();
+    backend.devices = twoDevices();
+    act(() => liveFeed.publish({ type: "device.online", payload: {} }));
+    fireEvent.click(await screen.findByRole("button", { name: "Run on: Studio laptop" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Home desktop Online/ }));
+
+    await waitFor(() => expect(backend.intents().filter((intent) => (intent as { type: string }).type === "session.start")).toHaveLength(2));
+    expect(backend.intents()).toContainEqual({ type: "session.start", payload: { providerId: "codex", deviceId: "dev_2" } });
+    expect(screen.getByRole("separator").textContent).toMatch(/^New session on Home desktop · \d{2}:\d{2}$/);
+    expect(document.activeElement).toBe(screen.getByLabelText("Message the agent"));
+    expect(localStorage.getItem("forma.chat.device")).toBe("dev_2");
   });
 
   it("is what Stop becomes when the Runtime cannot even be told: the turn ends rather than staying 'working' (F-10-2)", async () => {
@@ -712,7 +867,7 @@ describe("a session that cannot be carried on", () => {
     backend.push(3, "turn.started");
     backend.refuse = "runtime_offline";
     fireEvent.click(await screen.findByRole("button", { name: "Stop" }));
-    expect(await screen.findByText(DEAD.stopWhileOffline)).toBeTruthy();
+    expect(await screen.findByText(DEAD.stopWhileOffline.happened)).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
   });
 
@@ -721,12 +876,12 @@ describe("a session that cannot be carried on", () => {
     backend.refuse = "not_authorized";
     fireEvent.change(screen.getByLabelText("Message the agent"), { target: { value: "again" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
-    await screen.findByText(DEAD.notAuthorized);
+    await screen.findByText(DEAD.notAuthorized.happened);
     cleanup();
 
     backend.refuse = null;
     render(<Harness enabled />);
-    expect(await screen.findByText(DEAD.notAuthorized)).toBeTruthy();
+    expect(await screen.findByText(DEAD.notAuthorized.happened)).toBeTruthy();
     expect(screen.getByText("work on it")).toBeTruthy();
     expect(backend.intents().filter((intent) => (intent as { type: string }).type === "session.start")).toHaveLength(1);
   });
@@ -736,7 +891,8 @@ describe("a session that cannot be carried on", () => {
     backend.push(3, "turn.started");
     fireEvent.click(await screen.findByRole("button", { name: "Stop" }));
     await screen.findByText("You stopped the agent.");
-    expect(screen.queryByRole("region", { name: "Session ended" })).toBeNull();
+    expect(screen.getByRole("region", { name: "Session information" }).getAttribute("data-tone")).toBe("info");
+    expect(screen.queryByRole("region", { name: "Session stopped" })).toBeNull();
 
     fireEvent.change(screen.getByLabelText("Message the agent"), { target: { value: "continue here" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -778,7 +934,7 @@ describe("a window's session", () => {
     await inSession();
     await waitFor(() => expect(agentBinding.get()).toBe(SESSION));
     backend.push(3, "session.failed", { error: { message: "gone" } });
-    await screen.findByRole("region", { name: "Session ended" });
+    await screen.findByRole("region", { name: "Session stopped" });
     expect(agentBinding.get()).toBeNull();
   });
 
@@ -805,7 +961,7 @@ describe("a window's session", () => {
     await act(() => new Promise((resolve) => setTimeout(resolve, 150)));
     expect(screen.queryByText("Said to the original.")).toBeNull();
     expect(screen.queryByText("work on it")).toBeNull();
-    expect(screen.queryByRole("region", { name: "Session ended" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Session stopped" })).toBeNull();
     expect(agentBinding.get()).toBeNull();
     // Its first message starts a conversation of its own, not a line into the original's.
     fireEvent.change(screen.getByLabelText("Message the agent"), { target: { value: "mine" } });

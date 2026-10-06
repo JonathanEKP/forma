@@ -14,8 +14,14 @@ import { useEditor } from "../store";
 import { layerId } from "../types";
 import type { ViewChip, ViewIds } from "./chat";
 
-export function currentView(queries: QueryClient, designId: string | null): { ids: ViewIds; chip?: ViewChip } {
-  if (designId === null) return { ids: {} };
+export function currentView(
+  queries: QueryClient,
+  designId: string | null,
+  project?: { readonly id: string; readonly name: string } | null,
+): { ids: ViewIds; chip?: ViewChip } {
+  if (designId === null) {
+    return project ? { ids: { projectId: project.id }, chip: { project: project.name } } : { ids: {} };
+  }
   const record = queries.getQueryData<DesignRecord>(keys.design(designId));
   const { selectedPageId, selectedLayerId } = useEditor.getState();
   const page = record?.document.pages.find((candidate) => candidate.id === selectedPageId);
