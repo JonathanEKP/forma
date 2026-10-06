@@ -39,6 +39,7 @@ class Backend {
   unauthenticatedPaths = new Set<string>();
   cancelGate: Promise<Response> | null = null;
   startGate: Promise<Response> | null = null;
+  devicesGate: Promise<Response> | null = null;
   /** What `session.input` and `session.cancel` are answered with instead of delivery, as the sidecar's refusal code. */
   refuse: string | null = null;
   devices: unknown = {
@@ -86,7 +87,7 @@ class Backend {
       case "/agent/context":
         return json({ applicationContextId: CONTEXT });
       case "/pons/v1/devices":
-        return json(this.devices);
+        return this.devicesGate ?? json(this.devices);
       case "/pons/v1/events": {
         const after = Number(url.searchParams.get("after"));
         return json({
@@ -816,6 +817,35 @@ describe("a session that cannot be carried on", () => {
     act(() => liveFeed.publish({ type: "device.online", payload: {} }));
     expect(await screen.findByText(DEAD.offline.happened)).toBeTruthy();
     expect(backend.intents().filter((intent) => (intent as { type: string }).type === "session.start")).toHaveLength(1);
+  });
+
+  it("starts on a newly chosen computer after the prior session's computer went offline", async () => {
+    await inSession();
+    backend.devices = { devices: [
+      { id: "dev_1", name: "Studio laptop", online: false, revokedAt: null, capabilities: [] },
+      { id: "dev_2", name: "Home desktop", online: true, revokedAt: null, capabilities: [{ providerId: "codex", installed: true, compatible: true, authenticated: true, authMode: "subscription" }] },
+      { id: "dev_3", name: "Office desktop", online: true, revokedAt: null, capabilities: [{ providerId: "codex", installed: true, compatible: true, authenticated: true, authMode: "subscription" }] },
+    ] };
+    act(() => liveFeed.publish({ type: "device.offline", payload: {} }));
+
+    const ended = await screen.findByRole("region", { name: "Session stopped" });
+    await screen.findByRole("region", { name: "Run on computer" });
+    fireEvent.click(screen.getByRole("button", { name: /Office desktop Online/ }));
+    expect(localStorage.getItem("forma.chat.device")).toBe("dev_3");
+    let releaseDevices!: () => void;
+    backend.devicesGate = new Promise((resolve) => {
+      releaseDevices = () => resolve(new Response(JSON.stringify(backend.devices)));
+    });
+    fireEvent.click(within(ended).getByRole("button", { name: "New session" }));
+
+    await waitFor(() => expect(backend.intents().filter((intent) => (intent as { type: string }).type === "session.start")).toHaveLength(2));
+    expect(backend.intents()).toContainEqual({ type: "session.start", payload: { providerId: "codex", deviceId: "dev_3" } });
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 50)));
+    const stillStopped = screen.queryByRole("region", { name: "Session stopped" });
+    releaseDevices();
+    expect(stillStopped).toBeNull();
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Session stopped" })).toBeNull());
+    expect(document.activeElement).toBe(screen.getByLabelText("Message the agent"));
   });
 
   it("starts a fresh session on the chosen computer and leaves the earlier transcript above a named divider", async () => {

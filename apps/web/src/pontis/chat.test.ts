@@ -246,11 +246,11 @@ describe("runtime status", () => {
     expect(runtimeView({ devices: [other, sessionDevice] }, "dev_session")).toMatchObject({
       at: "online",
       deviceId: "dev_other",
-      sessionDevice: { at: "revoked", name: "Session laptop" },
+      sessionDevice: { id: "dev_session", at: "revoked", name: "Session laptop" },
     });
     expect(runtimeView({ devices: [other] }, "dev_session")).toMatchObject({
       at: "online",
-      sessionDevice: { at: "missing", name: "your device" },
+      sessionDevice: { id: "dev_session", at: "missing", name: "your device" },
     });
   });
 });
