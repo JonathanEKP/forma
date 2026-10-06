@@ -213,7 +213,7 @@ export interface RuntimeDevice {
 
 export type RuntimeView = RuntimeStatus & {
   /** What happened to the device this window's session was using, if it is known. */
-  readonly sessionDevice?: { readonly at: "online" | "offline" | "revoked" | "missing"; readonly name: string };
+  readonly sessionDevice?: { readonly id: string; readonly at: "online" | "offline" | "revoked" | "missing"; readonly name: string };
 };
 
 function providerView(raw: unknown): ProviderView | null {
@@ -258,8 +258,9 @@ export function runtimeView(body: unknown, sessionDeviceId?: string | null): Run
     sessionDeviceId === undefined || sessionDeviceId === null
       ? undefined
       : sessionDevice === undefined
-        ? { at: "missing" as const, name: "your device" }
+        ? { id: sessionDeviceId, at: "missing" as const, name: "your device" }
         : {
+            id: sessionDeviceId,
             at: typeof sessionDevice.revokedAt === "string" ? "revoked" : sessionDevice.online === true ? "online" : "offline",
             name: typeof sessionDevice.name === "string" ? sessionDevice.name : "your device",
           };

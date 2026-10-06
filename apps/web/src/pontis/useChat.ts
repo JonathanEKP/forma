@@ -406,7 +406,9 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
   const sessionEnded = session === null || session.status === "ended" || state.dead !== null;
   useEffect(() => {
     if (!enabled || sessionEnded) return;
-    const sessionDevice = "sessionDevice" in runtime ? runtime.sessionDevice : undefined;
+    // A device read can finish just as a new session switches computers. Do not
+    // apply the prior session's offline status to the newly chosen computer.
+    const sessionDevice = "sessionDevice" in runtime && runtime.sessionDevice?.id === deviceId ? runtime.sessionDevice : undefined;
     if (sessionDevice?.at === "revoked" || sessionDevice?.at === "missing") return die(DEAD.revoked);
     if (runtime.at === "revoked") return die(DEAD.revoked);
     if (runtime.at === "none") return die(DEAD.none);
