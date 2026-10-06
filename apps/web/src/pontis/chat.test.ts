@@ -102,8 +102,8 @@ describe("failures are said in words", () => {
   });
 
   it("maps the sidecar's refusals", async () => {
-    for (const code of ["runtime_offline", "ambiguous_device", "not_authorized", "not_authenticated"] as const) {
-      const { agent } = client(() => json({ error: code }, code === "runtime_offline" || code === "ambiguous_device" ? 409 : 403));
+    for (const code of ["runtime_offline", "device_choice_required", "device_offline", "not_authorized", "not_authenticated"] as const) {
+      const { agent } = client(() => json({ error: code }, code === "runtime_offline" || code === "device_choice_required" || code === "device_offline" ? 409 : 403));
       expect(await agent.input(SESSION, "hi")).toMatchObject({ ok: false, failure: { reason: code } });
     }
   });
@@ -112,7 +112,7 @@ describe("failures are said in words", () => {
     for (const action of ["intent", "context", "devices"] as const) {
       const { agent } = client(() => json({ error: { code: "unauthenticated" } }, 401));
       const answer = action === "intent" ? await agent.input(SESSION, "hi") : action === "context" ? await agent.context() : await agent.devices();
-      expect(answer).toMatchObject({ ok: false, failure: { reason: "not_authenticated", message: "Your sign-in has expired. Sign in again." } });
+      expect(answer).toMatchObject({ ok: false, failure: { reason: "not_authenticated", message: "Your sign-in has expired." } });
     }
   });
 
@@ -198,7 +198,13 @@ describe("runtime status", () => {
 
   it("distinguishes offline, ambiguous, revoked and none", () => {
     expect(runtimeView({ devices: [device({ online: false })] })).toEqual({ at: "offline", name: "Studio laptop" });
-    expect(runtimeView({ devices: [device(), device({ id: "dev_2" })] })).toEqual({ at: "ambiguous" });
+    expect(runtimeView({ devices: [device(), device({ id: "dev_2", name: "Home laptop" })] })).toMatchObject({
+      at: "ambiguous",
+      devices: [
+        { id: "dev_1", name: "Studio laptop", presence: "Online" },
+        { id: "dev_2", name: "Home laptop", presence: "Online" },
+      ],
+    });
     // Revoked is not offline (F-10-4): it never comes back, so the advice differs.
     expect(runtimeView({ devices: [device({ revokedAt: "2026-10-01T00:00:00Z" })] })).toEqual({ at: "revoked", name: "Studio laptop" });
     expect(runtimeView({ devices: [] })).toEqual({ at: "none" });
@@ -321,7 +327,7 @@ describe("the transcript keeps the five kinds of line apart", () => {
     );
     expect(state.lines.map((line) => line.kind)).toEqual(["agent", "capability", "result", "navigation", "approval"]);
     expect(state.lines[1]).toMatchObject({ kind: "capability", status: "done" });
-    expect(state.lines[3]).toMatchObject({ kind: "navigation", status: "done", text: expect.stringContaining("Headline") as string });
+    expect(state.lines[3]).toMatchObject({ kind: "navigation", status: "done", heading: "Moved your view", summaries: ["Selected “Headline”"] });
     expect(state.working).toBe(true);
     expect(pendingApprovals(state)).toHaveLength(1);
   });
@@ -345,7 +351,49 @@ describe("the transcript keeps the five kinds of line apart", () => {
       ev(3, "capability.failed", { invocationId: "i1", capabilityId: "ui.setZoom", error: { code: "ui_unavailable", message: "no window" } }),
     );
     expect(state.lines).toHaveLength(1);
-    expect(state.lines[0]).toMatchObject({ kind: "navigation", status: "failed", text: expect.stringContaining("ui_unavailable") as string });
+    expect(state.lines[0]).toMatchObject({
+      kind: "navigation",
+      heading: "Not confirmed by this window",
+      summaries: ["Nothing confirmed this action in time.", "Your view may not have changed. Check it before asking again."],
+      status: "failed",
+    });
+  });
+
+  it("gives each UI action outcome its own heading and keeps identifiers in Details", () => {
+    const handled = fold(
+      mine(),
+      ev(1, "session.created"),
+      ev(2, "capability.requested", { invocationId: "open", capabilityId: "ui.openDesign", input: { design_id: "design-123" } }),
+      ev(3, "capability.completed", { invocationId: "open", capabilityId: "ui.openDesign", result: { outcome: "handled", detail: "Opened “ALPHA Square post”" } }),
+    ).lines[0];
+    expect(handled).toMatchObject({ kind: "navigation", heading: "Moved your view", summaries: ["Opened “ALPHA Square post”"] });
+    if (handled?.kind !== "navigation") throw new Error("expected action card");
+    expect(handled.summaries.join(" ")).not.toContain("design-123");
+    expect(handled.details).toContain("design-123");
+
+    const rejected = fold(
+      mine(),
+      ev(1, "session.created"),
+      ev(2, "capability.requested", { invocationId: "select", capabilityId: "ui.selectLayer", input: { design_id: "design-123", layer_id: "layer-456" } }),
+      ev(3, "capability.failed", { invocationId: "select", capabilityId: "ui.selectLayer", error: { code: "ui_action_rejected", message: "open a design first" } }),
+    ).lines[0];
+    expect(rejected).toMatchObject({ kind: "navigation", heading: "Couldn't move your view", summaries: ["Open a design first."] });
+
+    const unsupported = fold(
+      mine(),
+      ev(1, "session.created"),
+      ev(2, "capability.requested", { invocationId: "zoom", capabilityId: "ui.setZoom", input: { zoom: 5 } }),
+      ev(3, "capability.failed", { invocationId: "zoom", capabilityId: "ui.setZoom", error: { code: "validation_error", message: "zoom is outside the allowed range" } }),
+    ).lines[0];
+    expect(unsupported).toMatchObject({ kind: "navigation", heading: "The agent asked for something Forma can't do", summaries: ["Zoom is limited to 400%."] });
+
+    const schemaRefusal = fold(
+      mine(),
+      ev(1, "session.created"),
+      ev(2, "capability.requested", { invocationId: "bad-read", capabilityId: "design.get", input: { design_id: "bad-id" } }),
+      ev(3, "capability.failed", { invocationId: "bad-read", capabilityId: "design.get", error: { code: "validation_error", message: "design id is not valid" } }),
+    ).lines.at(-1);
+    expect(schemaRefusal).toMatchObject({ kind: "refusal", heading: "The agent asked for something Forma can't do", summary: "That request doesn't match what Forma supports." });
   });
 
   it("an approval is resolved by its event, and a cancelled one is no longer pending", () => {
@@ -363,7 +411,7 @@ describe("the transcript keeps the five kinds of line apart", () => {
   it("failures end the turn and say why", () => {
     const state = fold(mine(), ev(1, "session.created"), ev(2, "turn.started"), ev(3, "turn.failed", { error: { code: "provider_exited", message: "the provider exited" } }));
     expect(state.working).toBe(false);
-    expect(state.lines.at(-1)).toMatchObject({ kind: "notice", tone: "error", text: expect.stringContaining("the provider exited") as string });
+    expect(state.lines.at(-1)).toMatchObject({ kind: "notice", notice: { tone: "needs-you", happened: expect.stringContaining("the provider exited") as string } });
   });
 
   it("ignores a type it does not know", () => {
@@ -511,6 +559,7 @@ describe("what the person said", () => {
       text: "make it bigger",
       chip: { design: 'ALPHA "cover"', page: "page", layer: "layer" },
     });
+    expect(splitViewLine('[forma-view] project=p name="Launch"\nmake it brighter')).toEqual({ text: "make it brighter", chip: { project: "Launch" } });
     expect(splitViewLine("[forma-view] none\nhello")).toEqual({ text: "hello" });
     expect(splitViewLine("hello\n[forma-view] design=x")).toEqual({ text: "hello\n[forma-view] design=x" });
   });
@@ -560,8 +609,8 @@ describe("a session that cannot be carried on", () => {
     );
 
   it("leaves the working state, and turns a pending approval into an expired one with no way to answer it", () => {
-    const state = chatReducer(waiting(), { type: "dead", reason: DEAD.revoked });
-    expect(state.dead).toEqual({ reason: DEAD.revoked });
+    const state = chatReducer(waiting(), { type: "dead", notice: DEAD.revoked });
+    expect(state.dead).toEqual(DEAD.revoked);
     expect(state.working).toBe(false);
     expect(state.session?.status).toBe("ended");
     expect(pendingApprovals(state)).toHaveLength(0);
@@ -571,7 +620,7 @@ describe("a session that cannot be carried on", () => {
   });
 
   it("is not brought back by what the session says afterwards", () => {
-    const state = fold(chatReducer(waiting(), { type: "dead", reason: DEAD.offline }), ev(6, "session.started"), ev(7, "turn.started"), ev(8, "approval.requested", { approvalId: "a2", invocationId: "k", capabilityId: "design.applyOperations", risk: "write", humanSummary: "Edit" }));
+    const state = fold(chatReducer(waiting(), { type: "dead", notice: DEAD.offline }), ev(6, "session.started"), ev(7, "turn.started"), ev(8, "approval.requested", { approvalId: "a2", invocationId: "k", capabilityId: "design.applyOperations", risk: "write", humanSummary: "Edit" }));
     expect(state.working).toBe(false);
     expect(state.session?.status).toBe("ended");
     expect(pendingApprovals(state)).toHaveLength(0);
@@ -579,23 +628,23 @@ describe("a session that cannot be carried on", () => {
 
   it("is what a failed, completed or remotely stopped session becomes, each with what to do next", () => {
     const base = fold(mine(), ev(1, "session.created"), ev(2, "session.started"));
-    expect(fold(base, ev(3, "session.failed", { error: { message: "the provider exited" } })).dead?.reason).toMatch(/failed: the provider exited.*new one/);
-    expect(fold(base, ev(3, "session.completed")).dead?.reason).toMatch(/ended.*new one/);
-    expect(fold(base, ev(3, "session.cancelled")).dead?.reason).toMatch(/another window/);
+    expect(fold(base, ev(3, "session.failed", { error: { message: "the provider exited" } })).dead?.happened).toMatch(/failed: the provider exited/);
+    expect(fold(base, ev(3, "session.completed")).dead?.next).toMatch(/new one/);
+    expect(fold(base, ev(3, "session.cancelled")).dead?.happened).toMatch(/another window/);
     // This window's own Stop already said so.
     expect(fold(chatReducer(base, { type: "stopped", id: "l1" }), ev(3, "session.cancelled")).dead).toBeNull();
   });
 
   it("is remembered, so a reload does not forget that the session is over", () => {
-    const kept = remember(chatReducer(waiting(), { type: "dead", reason: DEAD.notAuthorized }));
+    const kept = remember(chatReducer(waiting(), { type: "dead", notice: DEAD.notAuthorized }));
     expect(kept?.dead).toBe(DEAD.notAuthorized);
     const reloaded = chatReducer(emptyChat, { type: "restore", remembered: kept! });
-    expect(reloaded.dead).toEqual({ reason: DEAD.notAuthorized });
+    expect(reloaded.dead).toEqual(DEAD.notAuthorized);
     expect(reloaded.session?.id).toBe(SESSION);
   });
 
   it("keeps the old history above a divider when a new session starts, and expires what was waiting", () => {
-    const dead = chatReducer(fold(waiting(), REPLY(6, "Working on it.")), { type: "dead", reason: DEAD.replaced });
+    const dead = chatReducer(fold(waiting(), REPLY(6, "Working on it.")), { type: "dead", notice: DEAD.replaced });
     const next = chatReducer(dead, { type: "started", sessionId: "ses_2", id: "l9" });
     expect(next.dead).toBeNull();
     expect(next.session).toEqual({ id: "ses_2", status: "starting" });
@@ -610,9 +659,10 @@ describe("a session that cannot be carried on", () => {
   it("is what an expired delegation becomes: said as an expiry, with the way on (F-30-5)", () => {
     const base = fold(mine(), ev(1, "session.created"), ev(2, "session.started"), ev(3, "turn.started"), ev(4, "capability.requested", { invocationId: "i", capabilityId: "project.list", input: {} }));
     const state = fold(base, ev(5, "capability.failed", { invocationId: "i", capabilityId: "project.list", error: { category: "auth", code: "delegation_expired", message: "the remote application delegation has expired" } }));
-    expect(state.dead).toEqual({ reason: DEAD.expired });
+    expect(state.dead).toEqual(DEAD.expired);
     expect(state.working).toBe(false);
-    expect(DEAD.expired).toMatch(/expired.*Start a new session/);
+    expect(DEAD.expired.happened).toMatch(/expired/);
+    expect(DEAD.expired.next).toMatch(/Start a new session/);
     // Any other failure is just a failure: the session carries on.
     const other = fold(base, ev(5, "capability.failed", { invocationId: "i", capabilityId: "project.list", error: { code: "timeout", message: "slow" } }));
     expect(other.dead).toBeNull();
