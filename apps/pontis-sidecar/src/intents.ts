@@ -20,6 +20,7 @@ import type { FormaBoundary } from './boundary.ts';
 import { isUuid, specOf } from './capabilities.ts';
 import type { Log } from './log.ts';
 import type { Person, ResolvePerson } from './person.ts';
+import { authoritativeApprovalDevice, authoritativeSessionDevice } from './windows.ts';
 
 export const INTENT_PATH = '/agent/intent';
 export const CONTEXT_PATH = '/agent/context';
@@ -173,24 +174,56 @@ export function createIntentRoute(options: {
       intent.payload.text = `${viewLine(view, name)}\n${intent.payload.text}`;
     }
 
-    const online = (await options.controlPlane.listDevices(person.userId)).filter(
-      (device) => !device.revokedAt && options.devices.isOnline(device.id),
-    );
-    if (online.length !== 1) {
-      return reply(response, 409, { error: online.length === 0 ? 'runtime_offline' : 'ambiguous_device' });
+    const requestPayload = payloadRecord(body);
+    let deviceId: string | undefined;
+    if (intent.type === 'session.start') {
+      const owned = (await options.controlPlane.listDevices(person.userId)).filter((device) => device.userId === person.userId);
+      const online = owned.filter((device) => !device.revokedAt && options.devices.isOnline(device.id));
+      const choiceWasNamed = requestPayload !== undefined && Object.hasOwn(requestPayload, 'deviceId');
+      if (choiceWasNamed) {
+        const chosen = typeof requestPayload.deviceId === 'string' ? owned.find((device) => device.id === requestPayload.deviceId) : undefined;
+        if (!chosen || chosen.revokedAt || !options.devices.isOnline(chosen.id)) {
+          return reply(response, 409, { error: 'device_offline' });
+        }
+        deviceId = chosen.id;
+      } else {
+        if (online.length === 0) return reply(response, 409, { error: 'runtime_offline' });
+        if (online.length > 1) return reply(response, 409, { error: 'device_choice_required' });
+        deviceId = online[0]?.id;
+      }
+    } else if (intent.type === 'approval.resolve') {
+      const approvalId = isRecord(intent.payload) && isNonEmpty(intent.payload.approvalId) ? intent.payload.approvalId : undefined;
+      const binding = approvalId ? await authoritativeApprovalDevice(options.controlPlane, person, approvalId) : undefined;
+      if (!binding || binding.applicationContextId !== person.applicationContextId || binding.device.revokedAt || !options.devices.isOnline(binding.device.id)) {
+        return reply(response, 409, { error: 'device_offline' });
+      }
+      deviceId = binding.device.id;
+    } else {
+      const sessionId = requestPayload && isNonEmpty(requestPayload.sessionId) ? requestPayload.sessionId : undefined;
+      const binding = sessionId ? await authoritativeSessionDevice(options.controlPlane, person, sessionId) : undefined;
+      if (!binding || binding.applicationContextId !== person.applicationContextId || binding.device.revokedAt || !options.devices.isOnline(binding.device.id)) {
+        return reply(response, 409, { error: 'device_offline' });
+      }
+      deviceId = binding.device.id;
     }
-    const [device] = online;
-    if (!device) return reply(response, 409, { error: 'runtime_offline' });
+    if (!deviceId) return reply(response, 409, { error: 'runtime_offline' });
     const delivery = await options.devices.sendIntentForContext(person, {
       protocol: PONS_PROTOCOL_VERSION,
       messageId: `msg_${randomUUID().replaceAll('-', '')}`,
       type: intent.type,
-      deviceId: device.id,
+      deviceId,
       sentAt: new Date().toISOString(),
       payload: intent.payload,
     });
     options.log('intent', { type: intent.type, delivered: delivery.delivered, authorized: delivery.authorized });
-    if (!delivery.authorized) return reply(response, 403, { error: 'not_authorized' });
+    if (!delivery.authorized) {
+      const selected = (await options.controlPlane.listDevices(person.userId)).find((device) => device.id === deviceId && device.userId === person.userId);
+      if (!selected || selected.revokedAt || !options.devices.isOnline(deviceId)) {
+        return reply(response, 409, { error: 'device_offline' });
+      }
+      return reply(response, 403, { error: 'not_authorized' });
+    }
+    if (!delivery.delivered) return reply(response, 409, { error: 'device_offline' });
     return reply(response, 200, {
       delivered: delivery.delivered,
       ...(intent.type === 'session.start' ? { sessionId: intent.sessionId } : {}),
@@ -262,6 +295,10 @@ function rebuild(body: unknown, person: Person): Rebuilt | undefined {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function payloadRecord(body: unknown): Record<string, unknown> | undefined {
+  return isRecord(body) && isRecord(body.payload) ? body.payload : undefined;
 }
 
 function isNonEmpty(value: unknown): value is string {
