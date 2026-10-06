@@ -125,6 +125,7 @@ export function App() {
     case "/oauth/consent":
       return <Consent />;
     case "/agents":
+    case "/agents/mcp":
       return <Agents />;
     case "/":
       break;

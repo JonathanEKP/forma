@@ -69,7 +69,7 @@ function renderAgents() {
 
 describe("connected applications", () => {
   beforeEach(() => {
-    window.history.pushState({}, "", "/agents");
+    window.history.pushState({}, "", "/agents/mcp");
     provider.grants = [
       {
         client: { id: "client-claude", name: "Claude", uri: "https://claude.ai", logo_uri: "" },
@@ -92,16 +92,17 @@ describe("connected applications", () => {
 
     // Scoped to the section: "Claude" also names a host in the setup guidance
     // above, and a bare text match would pass on the wrong element.
-    await waitFor(() => expect(screen.getByText(/connected 2026-08-31/)).toBeTruthy());
-    expect(screen.getByText("Disconnect")).toBeTruthy();
+    await waitFor(() => expect(screen.getByText(/connected 31 Aug/)).toBeTruthy());
+    expect(screen.getByRole("button", { name: "Disconnect Claude" })).toBeTruthy();
   });
 
   it("disconnects by the client the provider named", async () => {
     vi.stubGlobal("fetch", server(true));
     renderAgents();
 
-    await waitFor(() => expect(screen.getByText("Disconnect")).toBeTruthy());
-    fireEvent.click(screen.getByText("Disconnect"));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Disconnect Claude" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Disconnect Claude" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm disconnect Claude, connected 31 Aug" }));
 
     await waitFor(() => expect(provider.revoked).toEqual(["client-claude"]));
     await waitFor(() => expect(screen.getByText(/No applications connected/)).toBeTruthy());
@@ -112,12 +113,13 @@ describe("connected applications", () => {
     vi.stubGlobal("fetch", server(true));
     renderAgents();
 
-    await waitFor(() => expect(screen.getByText("Disconnect")).toBeTruthy());
-    fireEvent.click(screen.getByText("Disconnect"));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Disconnect Claude" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Disconnect Claude" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm disconnect Claude, connected 31 Aug" }));
 
     await waitFor(() => expect(screen.getByText(/the provider refused/)).toBeTruthy());
     // Still listed, because it is still connected.
-    expect(screen.getByText(/connected 2026-08-31/)).toBeTruthy();
+    expect(screen.getByText(/connected 31 Aug/)).toBeTruthy();
     expect(provider.revoked).toEqual([]);
   });
 
@@ -127,7 +129,7 @@ describe("connected applications", () => {
 
     // The page itself is reachable; the section for something impossible is not
     // drawn empty, which would read as a connection that failed.
-    await waitFor(() => expect(screen.getByText(/Agent connections/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Use Forma from your AI app" })).toBeTruthy());
     expect(screen.queryByText(/Connected applications/)).toBeNull();
   });
 });

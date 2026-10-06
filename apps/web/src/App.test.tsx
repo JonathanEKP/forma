@@ -115,7 +115,8 @@ describe("public entry points", () => {
 
   it.each([
     ["/login", "Sign in to Forma"],
-    ["/agents", "Agent connections"],
+    ["/agents", "Chat in the editor"],
+    ["/agents/mcp", "Use Forma from your AI app"],
   ])("renders %s without starting the editor", (path, heading) => {
     window.history.replaceState({}, "", path);
     renderApp();
