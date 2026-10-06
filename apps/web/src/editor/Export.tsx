@@ -59,17 +59,18 @@ export function ExportButton({
         type="button"
         disabled={disabled}
         onClick={() => setOpen((was) => !was)}
-        className={`rounded-lg border px-2.5 py-1.5 text-xs disabled:opacity-40 ${
-          open
-            ? "border-signal bg-signal font-semibold text-ink"
-            : "border-edge bg-surface-2 text-muted hover:text-paper"
-        }`}
+        aria-expanded={open}
+        aria-controls="editor-export-options"
+        className="editor-export-button rounded-lg px-4 py-2 text-xs font-semibold disabled:opacity-40"
       >
         Export
       </button>
 
       {open && (
         <div
+          id="editor-export-options"
+          role="region"
+          aria-label="Export options"
           className="absolute right-0 top-[38px] z-20 w-64 rounded-xl border border-edge
                      bg-surface p-3 shadow-lg"
         >

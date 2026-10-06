@@ -94,7 +94,7 @@ export function Canvas({ record, page, svg, onCommit, disabled }: Props) {
 
   return (
     <div
-      className="flex-1 overflow-auto scroll-thin bg-canvas grid place-items-center p-10"
+      className="editor-canvas-scroll flex-1 min-w-0 overflow-auto scroll-thin grid place-items-center p-6"
       onPointerDown={() => selectLayer(null)}
     >
       <div

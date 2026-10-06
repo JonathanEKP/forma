@@ -19,7 +19,6 @@ vi.mock("./identity", () => ({
 }));
 
 import { App } from "./App";
-import { windowId } from "./pontis/window";
 import { useEditor } from "./store";
 
 const CONTEXT = "22222222-2222-4222-8222-222222222222";
@@ -153,7 +152,7 @@ async function openDesign(name: string) {
 
 beforeEach(() => {
   sessionStorage.clear();
-  useEditor.setState({ selectedPageId: null, selectedLayerId: null, draft: null, notice: null });
+  useEditor.setState({ selectedPageId: null, selectedLayerId: null, zoom: 1, panel: "properties", draft: null, notice: null });
   backend = new Backend();
   vi.stubGlobal("fetch", backend.fetch);
 });
@@ -172,7 +171,7 @@ describe("where there is no agent", () => {
     });
     renderApp();
     await screen.findByText(/No projects yet/);
-    expect(screen.queryByRole("button", { name: /Agent/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Agent" })).toBeNull();
     expect(backend.calls.some((call) => call.path === "/agent/context" || call.path === "/pons/v1/events")).toBe(false);
   });
 });
@@ -182,47 +181,165 @@ describe("the chat of a window", () => {
     renderApp();
     await openDesign("Cover");
     expect(screen.queryByLabelText("Agent chat")).toBeNull();
-    fireEvent.click(await screen.findByRole("button", { name: /Agent/ }));
+    fireEvent.focus(await screen.findByRole("textbox", { name: "Ask the agent…" }));
     expect(screen.getByLabelText("Agent chat")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(screen.queryByLabelText("Agent chat")).toBeNull();
   });
 
-  it("badges the toggle with an approval that arrives while the panel is shut", async () => {
-    // A window whose chat has a session — it was reattached to it after a reload.
-    sessionStorage.setItem(
-      "forma.chat",
-      JSON.stringify({ context: CONTEXT, window: await windowId(), remembered: { sessionId: SESSION, deviceId: null, dead: null, said: [] } }),
-    );
+  it("keeps the Calm composer in the canvas and removes the old Agent toggle", async () => {
     renderApp();
     await openDesign("Cover");
-    await screen.findByRole("button", { name: /Agent/ });
+    expect(await screen.findByRole("textbox", { name: "Ask the agent…" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Agent" })).toBeNull();
+  });
+
+  it("keeps editor chrome off the projects view until a design is open", async () => {
+    renderApp();
+    expect(await screen.findByText("Launch campaign")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^(Undo|Redo|Export)$/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Valid|issues/ })).toBeNull();
+  });
+
+  it("opens one rail flyout at a time, closes it from its icon or Escape", async () => {
+    renderApp();
+    await openDesign("Cover");
+
+    const layers = screen.getByRole("button", { name: "Layers & pages" });
+    const assets = screen.getByRole("button", { name: "Assets" });
+    expect(layers.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("complementary", { name: "Layers & pages" })).toBeTruthy();
+    fireEvent.click(layers);
+    expect(screen.queryByRole("complementary", { name: "Layers & pages" })).toBeNull();
+    expect(layers.getAttribute("aria-pressed")).toBe("false");
+
+    fireEvent.click(layers);
+    expect(screen.getByRole("complementary", { name: "Layers & pages" })).toBeTruthy();
+    expect(layers.getAttribute("aria-pressed")).toBe("true");
+
+    fireEvent.click(assets);
+    expect(screen.queryByRole("complementary", { name: "Layers & pages" })).toBeNull();
+    expect(screen.getByRole("complementary", { name: "Assets" })).toBeTruthy();
+    expect(assets.getAttribute("aria-pressed")).toBe("true");
+    expect(layers.getAttribute("aria-pressed")).toBe("false");
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("complementary", { name: "Assets" })).toBeNull();
+    expect(assets.getAttribute("aria-pressed")).toBe("false");
+
+    fireEvent.click(assets);
+    fireEvent.click(screen.getByRole("button", { name: "Close Assets" }));
+    expect(screen.queryByRole("complementary", { name: "Assets" })).toBeNull();
+
+    fireEvent.click(assets);
+    fireEvent.click(assets);
+    expect(screen.queryByRole("complementary", { name: "Assets" })).toBeNull();
+  });
+
+  it("opens validation as a popover without modal markup", async () => {
+    renderApp();
+    await openDesign("Cover");
+    fireEvent.click(screen.getByRole("button", { name: /Open validation:/ }));
+
+    expect(screen.getByRole("region", { name: "Validation" })).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.querySelector('[aria-modal="true"]')).toBeNull();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("region", { name: "Validation" })).toBeNull();
+  });
+
+  it("shows Properties only while a layer is selected", async () => {
+    renderApp();
+    await openDesign("Cover");
+    expect(screen.queryByRole("complementary", { name: "Properties" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /Headline/ }));
+    expect(screen.getByRole("complementary", { name: "Properties" })).toBeTruthy();
+    expect(within(screen.getByRole("complementary", { name: "Properties" })).getByText(/POSITION/)).toBeTruthy();
+
+    act(() => useEditor.getState().selectLayer(null));
+    expect(screen.queryByRole("complementary", { name: "Properties" })).toBeNull();
+  });
+
+  it("shows the actual zoom percentage and keeps it through an agent write", async () => {
+    renderApp();
+    await openDesign("Cover");
+
+    fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+    expect(screen.getByLabelText("Canvas zoom 125 percent")).toBeTruthy();
+    await waitFor(() => expect(backend.calls.some((call) => call.path === "/pons/v1/events")).toBe(true));
+    backend.designs.d1.version = 2;
     backend.push(1, "session.created");
-    backend.push(2, "approval.requested", { approvalId: "apr_1", invocationId: "i", capabilityId: "design.applyOperations", risk: "write", humanSummary: "Edit", importantArguments: [], affectedResourceCount: 1 });
-    expect(await screen.findByLabelText("1 waiting for your approval", {}, { timeout: 4_000 })).toBeTruthy();
+    backend.push(2, "capability.completed", {
+      invocationId: "i2",
+      capabilityId: "design.applyOperations",
+      result: { design_id: "d1", project_id: "p1", version: 2, updated_at: "now" },
+    });
+    expect(await screen.findByText("The agent updated the design (v2)", {}, { timeout: 4_000 })).toBeTruthy();
+    expect(screen.getByLabelText("Canvas zoom 125 percent")).toBeTruthy();
+  });
+
+  it("fits the artboard to the available canvas once when a design opens", async () => {
+    const originalWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
+    const originalHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.classList.contains("editor-canvas-room") ? 800 : 0;
+      },
+    });
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.classList.contains("editor-canvas-room") ? 700 : 0;
+      },
+    });
+
+    try {
+      renderApp();
+      await openDesign("Cover");
+      expect(screen.getByLabelText("Canvas zoom 51 percent")).toBeTruthy();
+    } finally {
+      if (originalWidth) Object.defineProperty(HTMLElement.prototype, "clientWidth", originalWidth);
+      else Reflect.deleteProperty(HTMLElement.prototype, "clientWidth");
+      if (originalHeight) Object.defineProperty(HTMLElement.prototype, "clientHeight", originalHeight);
+      else Reflect.deleteProperty(HTMLElement.prototype, "clientHeight");
+    }
+  });
+
+  it("expands the floating composer into the dock and focuses its composer", async () => {
+    renderApp();
+    await openDesign("Cover");
+    const collapsed = screen.getByRole("textbox", { name: "Ask the agent…" });
+    fireEvent.focus(collapsed);
+
+    expect(await screen.findByLabelText("Agent chat")).toBeTruthy();
+    const composer = screen.getByRole("textbox", { name: "Message the agent" });
+    await waitFor(() => expect(document.activeElement).toBe(composer));
   });
 
   it("outlives the design it began in: back to the projects and into another design, the conversation is still there", async () => {
     renderApp();
     await openDesign("Cover");
-    fireEvent.click(await screen.findByRole("button", { name: /Agent/ }));
+    fireEvent.focus(await screen.findByRole("textbox", { name: "Ask the agent…" }));
     await screen.findByText(/Studio laptop/);
     fireEvent.change(screen.getByLabelText("Message the agent"), { target: { value: "Make the headline bigger" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     await waitFor(() => expect(backend.intents()).toEqual([{ type: "session.start", payload: { providerId: "codex" } }]));
     const panel = screen.getByLabelText("Agent chat");
-    expect(within(panel).getByText("Make the headline bigger")).toBeTruthy();
+    expect(within(within(panel).getByRole("log")).getByText("Make the headline bigger")).toBeTruthy();
 
     // Back to the project list: the panel is still open and still holds the conversation.
-    fireEvent.click(screen.getByRole("button", { name: "← Projects" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open Projects" }));
     await screen.findByText("Launch campaign");
-    expect(within(screen.getByLabelText("Agent chat")).getByText("Make the headline bigger")).toBeTruthy();
+    expect(within(within(screen.getByLabelText("Agent chat")).getByRole("log")).getByText("Make the headline bigger")).toBeTruthy();
 
     // And into another design.
     fireEvent.click(screen.getByText("Launch campaign"));
     fireEvent.click(await screen.findByText("Square post"));
     await screen.findByText("Square post", { selector: "span" });
-    expect(within(screen.getByLabelText("Agent chat")).getByText("Make the headline bigger")).toBeTruthy();
+    expect(within(within(screen.getByLabelText("Agent chat")).getByRole("log")).getByText("Make the headline bigger")).toBeTruthy();
     // One session throughout: moving between designs started nothing.
     expect(backend.intents().filter((intent) => intent.type === "session.start")).toHaveLength(1);
   });
@@ -232,7 +349,7 @@ describe("the chat of a window", () => {
     await openDesign("Cover");
     await waitFor(() => expect(useEditor.getState().selectedPageId).toBe("pg1"));
     act(() => useEditor.getState().selectLayer("ly1"));
-    fireEvent.click(await screen.findByRole("button", { name: /Agent/ }));
+    fireEvent.focus(await screen.findByRole("textbox", { name: "Ask the agent…" }));
     await screen.findByText(/Studio laptop/);
 
     backend.push(1, "session.created");
@@ -254,7 +371,7 @@ describe("the chat of a window", () => {
   it("re-attaches to its own session after a reload, with what the person said and the chip they said it with", async () => {
     const first = renderApp();
     await openDesign("Cover");
-    fireEvent.click(await screen.findByRole("button", { name: /Agent/ }));
+    fireEvent.focus(await screen.findByRole("textbox", { name: "Ask the agent…" }));
     await screen.findByText(/Studio laptop/);
     fireEvent.change(screen.getByLabelText("Message the agent"), { target: { value: "hello there" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -271,7 +388,7 @@ describe("the chat of a window", () => {
     first.unmount();
     renderApp();
     await openDesign("Cover");
-    fireEvent.click(await screen.findByRole("button", { name: /Agent/ }));
+    fireEvent.focus(await screen.findByRole("textbox", { name: "Ask the agent…" }));
     await screen.findByText("Hi.", {}, { timeout: 4_000 });
     const lines = screen.getAllByRole("listitem").map((item) => item.getAttribute("data-kind"));
     expect(lines.slice(0, 2)).toEqual(["person", "agent"]);
@@ -348,7 +465,7 @@ describe("when the agent writes to the open design", () => {
     written(2);
     await screen.findByText("The agent updated the design (v2)", {}, { timeout: 4_000 });
     // The list was read when the project was opened, at v1; it must not be served as it was.
-    fireEvent.click(screen.getByRole("button", { name: "← Projects" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open Projects" }));
     fireEvent.click(await screen.findByText("Launch campaign"));
     expect(await screen.findByText(/v2 · 1 page/)).toBeTruthy();
   });

@@ -139,20 +139,24 @@ export function App() {
   if (access.at === "anonymous") return <SignIn />;
   if (access.at === "accountless") return <Onboard onReady={recheck} />;
 
-  return (
-    <div className="flex h-full">
-      <div className="h-full min-w-0 flex-1 overflow-y-auto">
-        {designId === null ? (
+  if (designId === null) {
+    return (
+      <div className="flex h-full">
+        <div className="h-full min-w-0 flex-1 overflow-y-auto">
           <Projects onOpen={openDesign} chat={chat.enabled ? <ChatToggle chat={chat} open={chatOpen} onToggle={toggleChat} /> : null} />
-        ) : (
-          <Editor
-            designId={designId}
-            onBack={() => setDesignId(null)}
-            {...(chat.enabled ? { chat, chatOpen, onToggleChat: toggleChat } : {})}
-          />
-        )}
+        </div>
+        {chat.enabled && chatOpen && <ChatPanel chat={chat} onClose={() => setChatOpen(false)} />}
       </div>
-      {chat.enabled && chatOpen && <ChatPanel chat={chat} onClose={() => setChatOpen(false)} />}
+    );
+  }
+
+  return (
+    <div className="h-full min-w-0">
+      <Editor
+        designId={designId}
+        onBack={() => setDesignId(null)}
+        {...(chat.enabled ? { chat, chatOpen, onToggleChat: toggleChat } : {})}
+      />
     </div>
   );
 }

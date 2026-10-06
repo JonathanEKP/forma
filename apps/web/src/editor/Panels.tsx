@@ -23,48 +23,60 @@ export function PagesAndLayers({
   onOperations,
   disabled,
   fontFamily,
+  onClose,
 }: {
   record: DesignRecord;
   onOperations: (operations: DesignOperation[]) => void;
   disabled: boolean;
   fontFamily: string;
+  onClose: () => void;
 }) {
   const { selectedPageId, selectedLayerId, selectPage, selectLayer } = useEditor();
   const page = record.document.pages.find((p) => p.id === selectedPageId) ?? null;
   const format = record.document.format;
 
   return (
-    <aside className="w-56 shrink-0 border-r border-edge bg-surface overflow-y-auto scroll-thin p-1.5">
-      <div className="flex items-center justify-between">
-        <div className={label}>Pages</div>
-        <button
-          type="button"
-          disabled={disabled}
-          title="Add a page"
-          className="mr-1.5 rounded px-1.5 text-xs text-faint hover:text-paper disabled:opacity-40"
-          onClick={() =>
-            onOperations([addPageOperation(`Page ${record.document.pages.length + 1}`)])
-          }
-        >
-          +
+    <aside className="editor-pane editor-flyout-pane w-64 shrink-0 overflow-y-auto scroll-thin" aria-label="Layers & pages">
+      <header className="editor-pane-heading">
+        <div className="text-[11px] font-medium text-paper">Layers &amp; pages</div>
+        <button type="button" className="editor-close-button" onClick={onClose} aria-label="Close Layers & pages">
+          ×
         </button>
-      </div>
-      {record.document.pages.map((p, index) => (
-        <button
-          key={p.id}
-          type="button"
-          className={`${row} ${p.id === selectedPageId ? active : idle}`}
-          onClick={() => selectPage(p.id)}
-        >
-          <Dot on={p.id === selectedPageId} />
-          <span className="tabular-nums text-faint">
-            {String(index + 1).padStart(2, "0")}
-          </span>
-          <span className="truncate">{p.name}</span>
-        </button>
-      ))}
+      </header>
+      <div className="px-3 pb-3">
+        <section className="mb-5">
+          <label htmlFor="current-page" className={label}>Page</label>
+          <div className="flex items-center gap-2">
+            <select
+              id="current-page"
+              aria-label="Current page"
+              value={selectedPageId ?? ""}
+              onChange={(event) => selectPage(event.target.value)}
+              className="editor-page-select min-w-0 flex-1"
+            >
+              {record.document.pages.map((p, index) => (
+                <option key={p.id} value={p.id}>
+                  {String(index + 1).padStart(2, "0")} {p.name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              disabled={disabled}
+              title="Add a page"
+              aria-label="Add a page"
+              className="editor-icon-button"
+              onClick={() =>
+                onOperations([addPageOperation(`Page ${record.document.pages.length + 1}`)])
+              }
+            >
+              +
+            </button>
+          </div>
+        </section>
 
-      <div className={label}>Layers</div>
+        <section aria-label="Layers">
+          <div className={label}>Layers</div>
 
       {/* Without these there is no way to build a piece by hand, which is what
           Phase 6 has to prove. They send the same typed operations an agent
@@ -112,6 +124,8 @@ export function PagesAndLayers({
             <span className="text-faint text-[10px]">{layerKindLabel(layer)}</span>
           </button>
         ))}
+        </section>
+      </div>
     </aside>
   );
 }
@@ -252,14 +266,26 @@ function TextProperties({
 export function Panel({
   title,
   children,
+  onClose,
 }: {
   title: string;
   children: React.ReactNode;
+  onClose?: () => void;
 }) {
   return (
-    <aside className="w-64 shrink-0 border-l border-edge bg-surface overflow-y-auto scroll-thin p-1.5">
-      <div className={label}>{title}</div>
-      <div className="px-1">{children}</div>
+    <aside
+      className={`editor-pane ${onClose ? "editor-flyout-pane" : "editor-properties-pane"} w-64 shrink-0 overflow-y-auto scroll-thin`}
+      aria-label={title}
+    >
+      <header className="editor-pane-heading">
+        <div className={label}>{title}</div>
+        {onClose && (
+          <button type="button" className="editor-close-button" onClick={onClose} aria-label={`Close ${title}`}>
+            ×
+          </button>
+        )}
+      </header>
+      <div className="px-3 pb-4">{children}</div>
     </aside>
   );
 }
