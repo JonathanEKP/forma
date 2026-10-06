@@ -273,6 +273,25 @@ describe('the gateway in front of Boundary F', () => {
     });
   });
 
+ it('keeps straight quotes, curly quotes and backslashes literal in the approval sentence', async () => {
+    const layerName = String.raw`Say "hi" “there” \path`;
+    await withGateway(async (invoke) => {
+      const approval = approvalFrom(await invoke(
+        'design.applyOperations',
+        { design_id: DESIGN, base_version: 1, operations: [{ op: 'remove_layer', layer_id: LAYER_IDS[0] }] },
+        'inv_quoted_name',
+      ));
+      assert.equal(
+        approval.summary,
+        String.raw`Delete the layer “Say "hi" “there” \path” from “ALPHA Launch cover”`,
+      );
+      assert.equal(
+        approval.reason,
+        String.raw`This will permanently delete the layer “Say "hi" “there” \path” from “ALPHA Launch cover”.`,
+      );
+    }, () => ({ status: 200, body: approvalDesign({ headlineName: layerName }) }));
+  });
+
   it('names a removed page, its position, its layers and the design', async () => {
     await withGateway(async (invoke) => {
       const approval = approvalFrom(await invoke(
@@ -397,8 +416,8 @@ describe('the gateway in front of Boundary F', () => {
       const reason = String(approval.reason);
       assert.ok(!/[\r\n\u2028\u2029]/u.test(summary));
       assert.ok(!/[\r\n\u2028\u2029]/u.test(reason));
-      assert.ok(summary.includes('“Head\\” line'), summary);
-      assert.ok(summary.includes('“Launch\\” [script] cover '), summary);
+      assert.ok(summary.includes('“Head” line'), summary);
+      assert.ok(summary.includes('“Launch” [script] cover '), summary);
       assert.ok(!summary.includes('x'.repeat(81)), summary);
       assert.ok(!summary.includes('y'.repeat(81)), summary);
       assert.ok(!summary.includes('**'), summary);

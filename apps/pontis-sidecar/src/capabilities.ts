@@ -228,12 +228,7 @@ function safeName(name: unknown): string | undefined {
     .replace(/\s+/gu, ' ')
     .trim();
   if (!flattened) return undefined;
-  const capped = [...flattened].slice(0, MAX_APPROVAL_NAME_CHARS).join('');
-  return capped
-    .replaceAll('\\', '\\\\')
-    .replaceAll('“', '\\“')
-    .replaceAll('”', '\\”')
-    .replaceAll('"', '\\"');
+  return [...flattened].slice(0, MAX_APPROVAL_NAME_CHARS).join('');
 }
 
 function quotedApprovalName(name: string | undefined): string | undefined {
