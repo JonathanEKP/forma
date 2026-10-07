@@ -20,6 +20,7 @@ import {
   chatReducer,
   createAgentClient,
   DEAD,
+  deviceOfflineNotice,
   emptyChat,
   OFFLINE_GRACE_MS,
   pendingApprovals,
@@ -312,6 +313,15 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
   const rememberedOnline = computers.find((device) => device.id === preferredDeviceId);
   const selectedComputerId = activeDeviceId ?? (computers.length === 1 ? computers[0]?.id ?? null : rememberedOnline?.id ?? null);
   const needsComputerChoice = computers.length > 1 && selectedComputerId === null;
+  const offlineNotice = useCallback(() => {
+    const sessionDevice = "sessionDevice" in runtime && runtime.sessionDevice?.id === state.deviceId ? runtime.sessionDevice : undefined;
+    const computerName = sessionDevice?.name
+      ?? (runtime.at === "offline" ? runtime.name : runtime.at === "online" && runtime.deviceId === state.deviceId ? runtime.name : "Your computer");
+    const anotherComputerOnline = runtime.at === "online"
+      ? runtime.deviceId !== null && runtime.deviceId !== state.deviceId
+      : runtime.at === "ambiguous" && runtime.devices.some((device) => device.id !== state.deviceId);
+    return deviceOfflineNotice(computerName, anotherComputerOnline);
+  }, [runtime, state.deviceId]);
 
   // The live path: what the sidecar fans out to this window while the agent
   // works. A frame with a sequence goes to the reader, which applies it only if
@@ -370,10 +380,10 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
   const refused = useCallback(
     (failure: Failure) => {
       if (failure.reason === "not_authorized") die(DEAD.notAuthorized);
-      else if (failure.reason === "device_offline") die(DEAD.offline);
+      else if (failure.reason === "device_offline") die(offlineNotice());
       else notice(failure.notice);
     },
-    [die, notice],
+    [die, notice, offlineNotice],
   );
 
   // A message typed before the session is live waits for `session.started`: the
@@ -415,15 +425,15 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
     if (sessionDevice?.at === "revoked" || sessionDevice?.at === "missing") return die(DEAD.revoked);
     if (runtime.at === "revoked") return die(DEAD.revoked);
     if (runtime.at === "none") return die(DEAD.none);
-    if (sessionDevice?.at === "offline") return die(DEAD.offline);
+    if (sessionDevice?.at === "offline") return die(offlineNotice());
     if (runtime.at === "online" && runtime.deviceId !== null && deviceId !== null && runtime.deviceId !== deviceId) {
       return die(DEAD.replaced);
     }
     if (runtime.at === "offline" && working) {
-      const timer = setTimeout(() => die(DEAD.offline), offlineGraceMs);
+      const timer = setTimeout(() => die(offlineNotice()), offlineGraceMs);
       return () => clearTimeout(timer);
     }
-  }, [enabled, sessionEnded, runtime, deviceId, working, die, offlineGraceMs]);
+  }, [enabled, sessionEnded, runtime, deviceId, working, die, offlineNotice, offlineGraceMs]);
 
   const targetComputer = computers.find((device) => device.id === selectedComputerId);
   const blocked = needsComputerChoice
@@ -520,13 +530,12 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
       // If the Runtime cannot be told, the turn may still be running. End the local chat so it
       // does not offer a message against a turn the person cannot stop.
       else if (answer.failure.reason === "not_authorized") die(DEAD.notAuthorized);
-      else if (answer.failure.reason === "runtime_offline") die(DEAD.stopWhileOffline);
-      else if (answer.failure.reason === "device_offline") die(DEAD.offline);
+      else if (answer.failure.reason === "runtime_offline" || answer.failure.reason === "device_offline") die(offlineNotice());
       else notice(answer.failure.notice);
     } finally {
       if (stopPending.current === sessionId) stopPending.current = null;
     }
-  }, [agent, session, state.working, notice, localId, die]);
+  }, [agent, session, state.working, notice, localId, die, offlineNotice]);
 
   const decide = useCallback(
     async (approvalId: string, decision: Decision) => {
@@ -562,10 +571,10 @@ export function useChat({ enabled, client, pollMs, offlineGraceMs = OFFLINE_GRAC
         next.delete(approvalId);
         return next;
       });
-      if (answer.failure.reason === "device_offline") die(DEAD.offline);
+      if (answer.failure.reason === "device_offline") die(offlineNotice());
       else notice(answer.failure.notice);
     },
-    [agent, notice, die],
+    [agent, notice, die, offlineNotice],
   );
 
   return {

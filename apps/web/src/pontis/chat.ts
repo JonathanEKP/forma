@@ -39,6 +39,15 @@ export interface NoticeCopy {
   readonly action?: NoticeAction;
 }
 
+export function deviceOfflineNotice(computerName: string, anotherComputerOnline: boolean): NoticeCopy {
+  return {
+    tone: "stopped",
+    happened: `${computerName} went offline during this turn.`,
+    next: `Start it on your computer, then begin a new session.${anotherComputerOnline ? " To use another online computer, choose it below first." : ""}`,
+    action: "New session",
+  };
+}
+
 export type FailureReason =
   | "unreachable"
   | "runtime_offline"
@@ -442,6 +451,7 @@ export interface ViewChip {
   readonly project?: string;
   readonly design?: string;
   readonly page?: string;
+  readonly pageNumber?: number;
   readonly layer?: string;
 }
 
@@ -791,7 +801,11 @@ function applyEvent(state: ChatState, event: DurableEvent): ChatState {
 
   switch (event.type) {
     case "session.started":
-      return state.session.status === "ended" ? state : status("live");
+      if (state.session.status !== "starting") return state;
+      return {
+        ...status("live"),
+        lines: [...state.lines, { kind: "notice", id, notice: { tone: "info", happened: "Your session is ready.", next: "Send a message when you are ready." } }],
+      };
     case "session.completed":
       return die(state, DEAD.completed);
     case "session.cancelled":

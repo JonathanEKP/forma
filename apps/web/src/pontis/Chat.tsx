@@ -171,6 +171,7 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
   // A live session already has its device; the block only matters for starting one. A dead one
   // is not carried on at all: the person starts another, from the button, on purpose.
   const cannot = chat.dead !== null || chat.needsComputerChoice || chat.blocked !== null;
+  const signInNotice = knownSignInNotice(chat.runtime);
   const body = JSON.stringify({
     type: "session.input",
     payload: { sessionId: state.session?.id ?? `ses_${"0".repeat(32)}`, text: draft.trim() },
@@ -179,6 +180,9 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
   const sizeWithHeadroom = encodedBytes + VIEW_LINE_HEADROOM_BYTES;
   const overLimit = sizeWithHeadroom > MAX_MESSAGE_BODY_BYTES;
   const nearLimit = sizeWithHeadroom >= MAX_MESSAGE_BODY_BYTES * SHOW_LIMIT_AT;
+  const composerState = state.working
+    ? "The agent is working. Stop it to send now."
+    : chat.dead?.next ?? chat.blocked ?? (overLimit ? "Shorten the message to send it." : "Ready");
 
   const submit = () => {
     const text = draft.trim();
@@ -199,30 +203,48 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
 
   return (
     <aside aria-label="Agent chat" className="flex w-[340px] min-w-0 shrink-0 flex-col border-l border-edge bg-surface">
-      <header className="flex items-center gap-2 border-b border-edge px-4 py-3">
-        <h2 className="text-[13px] font-medium">Agent</h2>
-        <div className="flex-1" />
-        <div ref={sessionInfo} className="relative">
-          <button ref={sessionInfoButton} type="button" aria-label="Session information" aria-expanded={sessionInfoOpen} onClick={() => setSessionInfoOpen((open) => !open)} className="text-xs text-muted hover:text-paper">
-            Info
-          </button>
+      <header className="grid gap-2 border-b border-edge px-4 py-3">
+        <div className="flex items-center gap-2">
+          <h2 className="text-[13px] font-medium">Agent</h2>
+          <div className="flex-1" />
+          <div ref={sessionInfo} className="relative">
+            <button
+              ref={sessionInfoButton}
+              type="button"
+              aria-label="Session info"
+              aria-expanded={sessionInfoOpen}
+              aria-controls="agent-session-info"
+              title="Session info"
+              onClick={() => setSessionInfoOpen((open) => !open)}
+              className="grid h-8 w-8 place-items-center rounded text-muted hover:bg-surface-2 hover:text-paper"
+            >
+              <svg aria-hidden="true" viewBox="0 0 16 16" className="h-4 w-4 fill-none stroke-current" strokeWidth="1.25">
+                <circle cx="8" cy="8" r="6" />
+                <path d="M8 7v4M8 5h.01" />
+              </svg>
+            </button>
           {sessionInfoOpen && (
-            <section aria-label="Session information" className="absolute right-0 top-full z-10 mt-2 w-56 rounded-lg border border-edge bg-surface-2 p-3 text-[11px] text-muted shadow-xl">
-              <p><span className="text-faint">Computer</span><br />{sessionComputer(chat, state.deviceId)}</p>
-              <p className="mt-2"><span className="text-faint">Started</span><br />{state.startedAt ? new Date(state.startedAt).toLocaleString() : "Not started"}</p>
-              <p className="mt-2 text-paper">This window&apos;s session</p>
-            </section>
-          )}
+              <section id="agent-session-info" role="region" aria-label="Session info" className="absolute right-0 top-full z-10 mt-2 grid w-64 gap-3 rounded-lg border border-edge bg-surface-2 p-3 text-[11px] text-muted shadow-xl">
+                <p><span className="text-faint">Computer</span><br />{sessionComputer(chat, state.deviceId)}</p>
+                <p><span className="text-faint">Started</span><br />{state.startedAt ? new Date(state.startedAt).toLocaleString() : "Not started"}</p>
+                <p className="font-mono text-[10px] text-paper">This window&apos;s session</p>
+                <div className="border-t border-edge pt-3"><Device runtime={chat.runtime} /></div>
+              </section>
+            )}
+          </div>
+          <button type="button" aria-label="New session" title="New session" onClick={() => void startNewSession()} className="grid h-8 w-8 place-items-center rounded text-muted hover:bg-surface-2 hover:text-paper">
+            <svg aria-hidden="true" viewBox="0 0 16 16" className="h-4 w-4 fill-none stroke-current" strokeWidth="1.25">
+              <path d="M8 3v10M3 8h10" />
+            </svg>
+          </button>
+          <button type="button" aria-label="Close" title="Close chat" onClick={onClose} className="grid h-8 w-8 place-items-center rounded text-muted hover:bg-surface-2 hover:text-paper">
+            <svg aria-hidden="true" viewBox="0 0 16 16" className="h-4 w-4 fill-none stroke-current" strokeWidth="1.25">
+              <path d="m4 4 8 8M12 4l-8 8" />
+            </svg>
+          </button>
         </div>
-        <button type="button" onClick={() => void startNewSession()} className="text-xs text-muted hover:text-paper">
-          New session
-        </button>
-        <button type="button" onClick={onClose} className="text-xs text-muted hover:text-paper">
-          Close
-        </button>
+        <Status connection={chat.connection} runtime={chat.runtime} computer={sessionComputer(chat, state.deviceId)} />
       </header>
-
-      <Status connection={chat.connection} live={chat.live} runtime={chat.runtime} />
 
       <div className="chat-transcript-shell">
         <ol ref={log} onScroll={onTranscriptScroll} role="log" aria-live="polite" tabIndex={0} className={`chat-transcript min-h-0 min-w-0 flex-1 space-y-2.5 overflow-y-auto overflow-x-hidden px-4 py-3 [overflow-wrap:anywhere] ${transcriptScrolling ? "is-scrolling" : ""}`}>
@@ -255,6 +277,11 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
               The agent is working…
             </li>
           )}
+          {signInNotice && chat.dead === null && (
+            <li data-kind="notice">
+              <SessionNotice notice={signInNotice} onAction={() => undefined} />
+            </li>
+          )}
           {chat.dead !== null && (
             <li data-kind="notice">
               <SessionNotice notice={chat.dead} onAction={(action) => action === "New session" && void startNewSession()} />
@@ -280,66 +307,73 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
 
       <footer className="border-t border-edge p-3">
         {contextChip && (
-          <div role="status" aria-label="Current message context" className="mb-2 flex min-w-0 items-center gap-2 rounded border border-edge px-2 py-1 text-[10px] text-faint">
-            <span className="shrink-0 uppercase tracking-[0.1em]">Current view</span>
-            <span className="min-w-0 truncate text-muted">{viewChipText(contextChip)}</span>
+          <div role="status" aria-label="Current message context" className="mb-2 flex min-w-0 items-center gap-2 px-1 py-1 text-xs text-muted">
+            <ContextGlyph />
+            <span className="min-w-0 truncate">{viewChipText(contextChip)}</span>
           </div>
         )}
-        <textarea
-          ref={composer}
-          value={draft}
-          onChange={(event) => changeDraft(event.target.value)}
-          onKeyDown={onKey}
-          rows={2}
-          aria-label="Message the agent"
-          placeholder={chat.dead !== null ? "Start a new session to carry on" : cannot ? (chat.blocked ?? "") : "Message the agent"}
-          className="w-full resize-none rounded-lg border border-edge bg-surface-2 px-2.5 py-2 text-xs placeholder:text-faint focus:border-edge-strong focus:outline-none"
-        />
-        {nearLimit && (
-          <p role={overLimit ? "alert" : "status"} className={`mt-1 text-[11px] ${overLimit ? "text-danger" : "text-muted"}`}>
-            {overLimit ? "That message is too long (max 64 KB)." : `Message size ${Math.ceil(encodedBytes / 1024)} KB; maximum 64 KB.`}
-          </p>
-        )}
-        <div className="mt-2 flex items-center gap-2">
-          <button
-            type="button"
-            onClick={submit}
-            aria-describedby="send-reason"
-            disabled={draft.trim().length === 0 || cannot || state.working || overLimit}
-            className="rounded-lg bg-signal px-2.5 py-1.5 text-xs font-semibold text-ink disabled:opacity-40"
-          >
-            Send
-          </button>
-          {state.working && (
-            <button
-              type="button"
-              onClick={() => void chat.stop()}
-              className="rounded-lg border border-edge bg-surface-2 px-2.5 py-1.5 text-xs text-muted hover:text-paper"
-            >
-              Stop
-            </button>
+        <div className="rounded-lg border border-edge bg-surface-2 p-3">
+          <label htmlFor="agent-message" className="block text-xs text-muted">Message the agent</label>
+          <textarea
+            id="agent-message"
+            ref={composer}
+            value={draft}
+            onChange={(event) => changeDraft(event.target.value)}
+            onKeyDown={onKey}
+            rows={2}
+            aria-label="Message the agent"
+            aria-describedby="composer-hint"
+            placeholder="Ask for a change…"
+            className="w-full resize-y border-0 bg-transparent px-0 py-2 text-xs placeholder:text-faint focus:outline-none"
+          />
+          {nearLimit && (
+            <p role={overLimit ? "alert" : "status"} className={`mt-1 text-[11px] ${overLimit ? "text-danger" : "text-muted"}`}>
+              {overLimit ? "That message is too long (max 64 KB)." : `Message size ${Math.ceil(encodedBytes / 1024)} KB; maximum 64 KB.`}
+            </p>
           )}
-          {chat.computers.length >= 2 && (
-            <div className="relative ml-auto">
-              <button type="button" aria-expanded={runOnOpen} aria-haspopup="true" onClick={() => setRunOnOpen((open) => !open)} className="rounded-lg border border-edge px-2.5 py-1.5 text-xs text-muted hover:text-paper">
-                Run on: {chat.computers.find((computer) => computer.id === chat.selectedComputerId)?.name ?? "Choose a computer"}
-              </button>
-              {runOnOpen && (
-                <section aria-label="Run on computer" className="absolute bottom-full right-0 z-10 mb-2 w-64 rounded-lg border border-edge bg-surface-2 p-2 shadow-xl">
-                  {chat.computers.map((computer) => (
-                    <button key={computer.id} type="button" aria-pressed={chat.selectedComputerId === computer.id} onClick={() => { void (async () => { await chat.chooseComputer(computer.id); setRunOnOpen(false); composer.current?.focus(); })(); }} className="flex w-full flex-col items-start rounded px-2 py-2 text-left text-xs hover:bg-surface">
-                      <span className="text-paper">{computer.name}</span>
-                      <span className="text-[10px] text-faint">{computer.presence} · Runtime {computer.runtimeVersion}</span>
-                    </button>
-                  ))}
-                </section>
+          <div className="mt-1 flex items-center justify-between gap-2">
+            <p id="send-reason" role="status" className="min-w-0 text-[11px] text-faint">{composerState}</p>
+            <div className="flex shrink-0 items-center gap-2">
+              {state.working && (
+                <button
+                  type="button"
+                  onClick={() => void chat.stop()}
+                  className="rounded-lg border border-edge px-2.5 py-1.5 text-xs text-muted hover:text-paper"
+                >
+                  Stop
+                </button>
               )}
+              {(chat.computers.length >= 2 || (chat.dead !== null && chat.computers.length > 0)) && (
+                <div className="relative">
+                  <button type="button" aria-expanded={runOnOpen} aria-haspopup="true" onClick={() => setRunOnOpen((open) => !open)} className="rounded-lg border border-edge px-2.5 py-1.5 text-xs text-muted hover:text-paper">
+                    Run on: {chat.computers.find((computer) => computer.id === chat.selectedComputerId)?.name ?? "Choose a computer"}
+                  </button>
+                  {runOnOpen && (
+                    <section aria-label="Run on computer" className="absolute bottom-full right-0 z-10 mb-2 w-64 rounded-lg border border-edge bg-surface-2 p-2 shadow-xl">
+                      {chat.computers.map((computer) => (
+                        <button key={computer.id} type="button" aria-pressed={chat.selectedComputerId === computer.id} onClick={() => { void (async () => { await chat.chooseComputer(computer.id); setRunOnOpen(false); composer.current?.focus(); })(); }} className="flex w-full flex-col items-start rounded px-2 py-2 text-left text-xs hover:bg-surface">
+                          <span className="text-paper">{computer.name}</span>
+                          <span className="text-[10px] text-faint">{computer.presence} · Runtime {computer.runtimeVersion}</span>
+                        </button>
+                      ))}
+                    </section>
+                  )}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={submit}
+                aria-label="Send"
+                aria-describedby="send-reason"
+                disabled={draft.trim().length === 0 || cannot || state.working || overLimit}
+                className="rounded-lg bg-signal px-2.5 py-1.5 text-xs font-semibold text-ink disabled:opacity-40"
+              >
+                Send ↑
+              </button>
             </div>
-          )}
+          </div>
         </div>
-        <p id="send-reason" role="status" className="mt-1.5 text-[11px] text-faint">
-          {state.working ? "The agent is working. Stop it to send now." : chat.dead?.next ?? chat.blocked ?? (draft.trim().length === 0 ? "Write a message to send." : overLimit ? "Shorten the message to send it." : "")}
-        </p>
+        <p id="composer-hint" className="mt-2 text-[11px] text-faint">Only this window&apos;s view is shared.</p>
       </footer>
     </aside>
   );
@@ -352,19 +386,28 @@ const CONNECTION: Record<Connection, { dot: string; text: string }> = {
   gap: { dot: "bg-faint", text: "The history has a hole Forma can't read past. Some of it may be missing." },
 };
 
-/**
- * Runtime, device, provider and how it is signed in: the first thing a person
- * wants to know before trusting a conversation to it.
- */
-function Status({ connection, live, runtime }: { connection: Connection; live: boolean; runtime: Runtime }) {
+/** The quiet connection line and per-window session label beneath the title. */
+function Status({ connection, runtime, computer }: { connection: Connection; runtime: Runtime; computer: string }) {
   const link = CONNECTION[connection];
+  const status = runtime.at === "offline"
+    ? "Offline"
+    : runtime.at === "revoked"
+      ? "Revoked"
+      : runtime.at === "ambiguous"
+        ? "Choose a computer"
+        : runtime.at === "none"
+          ? "No computer paired"
+          : runtime.at === "unauthenticated"
+            ? "Sign-in expired"
+            : connection === "live" ? "Connected" : link.text;
   return (
-    <section aria-label="Status" className="space-y-1.5 border-b border-edge px-4 py-3 text-[11px] text-muted">
-      <div className="flex items-center gap-2">
-        <span className={`h-[7px] w-[7px] rounded-full ${link.dot}`} />
-        <span>{connection === "live" && live ? "Connected · live" : link.text}</span>
+    <section aria-label="Status" className="grid gap-1 text-[11px] text-muted">
+      <div className="flex min-w-0 items-center gap-2">
+        <span aria-hidden="true" className={`h-[4px] w-[4px] shrink-0 rounded-full ${link.dot}`} />
+        <span className="shrink-0">{status}</span>
+        {computer !== "Not started" && <span className="min-w-0 truncate text-right">{computer}</span>}
       </div>
-      <Device runtime={runtime} />
+      <p className="font-mono text-[10px] text-faint">This window&apos;s session</p>
     </section>
   );
 }
@@ -535,7 +578,20 @@ function viewChipParts(chip: ViewChip): string[] {
 }
 
 function viewChipText(chip: ViewChip): string {
-  return viewChipParts(chip).join(" · ");
+  if (chip.project !== undefined) return `Project “${chip.project}”`;
+  return [
+    chip.design === undefined ? undefined : `“${chip.design}”`,
+    chip.pageNumber === undefined ? undefined : `page ${chip.pageNumber}`,
+    chip.layer === undefined ? undefined : `“${chip.layer}” selected`,
+  ].filter((part): part is string => part !== undefined).join(" · ");
+}
+
+function ContextGlyph() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16" className="h-4 w-4 shrink-0 fill-none stroke-current" strokeWidth="1.25">
+      <path d="m2 5 6-3 6 3-6 3-6-3Zm0 3 6 3 6-3M2 11l6 3 6-3" />
+    </svg>
+  );
 }
 
 function SessionNotice({ notice, onAction }: { notice: NoticeCopy; onAction: (action: NoticeCopy["action"]) => void }) {
@@ -557,7 +613,29 @@ function sessionComputer(chat: ChatController, deviceId: string | null): string 
   const selected = chat.computers.find((computer) => computer.id === deviceId);
   if (selected) return selected.name;
   if ("sessionDevice" in chat.runtime && chat.runtime.sessionDevice) return chat.runtime.sessionDevice.name;
+  if (chat.runtime.at === "online" || chat.runtime.at === "offline" || chat.runtime.at === "revoked") return chat.runtime.name;
+  if (chat.runtime.at === "ambiguous") return "Choose a computer";
   return deviceId === null ? "Not started" : "Offline";
+}
+
+function knownSignInNotice(runtime: Runtime): NoticeCopy | null {
+  if (runtime.at === "unauthenticated") {
+    return {
+      tone: "needs-you",
+      happened: "Your sign-in has expired.",
+      next: "Sign in again, then start a new session.",
+      action: "Sign in again",
+    };
+  }
+  if (runtime.at === "online" && runtime.provider?.unusableBecause === "not signed in on this device") {
+    return {
+      tone: "needs-you",
+      happened: `${runtime.provider.id} is not signed in on this device.`,
+      next: "Choose a computer with an available provider.",
+      action: "Open Agents page",
+    };
+  }
+  return null;
 }
 
 const STATUS = { running: "· running", done: "· done", failed: "· failed", not_run: "· Not run" } as const;

@@ -12,6 +12,7 @@ import {
   chatReducer,
   createAgentClient,
   DEAD,
+  deviceOfflineNotice,
   emptyChat,
   pendingApprovals,
   remember,
@@ -255,6 +256,23 @@ describe("runtime status", () => {
   });
 });
 
+describe("offline session notice", () => {
+  it("names the computer and mentions another online computer only when one is available", () => {
+    expect(deviceOfflineNotice("Studio laptop", false)).toEqual({
+      tone: "stopped",
+      happened: "Studio laptop went offline during this turn.",
+      next: "Start it on your computer, then begin a new session.",
+      action: "New session",
+    });
+    expect(deviceOfflineNotice("Studio laptop", true)).toEqual({
+      tone: "stopped",
+      happened: "Studio laptop went offline during this turn.",
+      next: "Start it on your computer, then begin a new session. To use another online computer, choose it below first.",
+      action: "New session",
+    });
+  });
+});
+
 describe("an approval card", () => {
   const request = {
     approvalId: "apr_1",
@@ -316,6 +334,20 @@ const ev = (sequence: number, type: string, payload: Record<string, unknown> = {
 
 const fold = (state: ChatState, ...events: DurableEvent[]) => chatReducer(state, { type: "events", events });
 
+describe("session readiness", () => {
+  it("adds the ready notice once when the session starts", () => {
+    const attached = chatReducer(emptyChat, { type: "started", sessionId: SESSION, id: "local-start", deviceId: "dev_1" });
+    const state = fold(attached, ev(1, "session.created"), ev(2, "session.started"), ev(3, "session.started"));
+
+    expect(state.session).toEqual({ id: SESSION, status: "live" });
+    expect(state.lines.filter((line) => line.kind === "notice")).toEqual([{
+      kind: "notice",
+      id: "e2",
+      notice: { tone: "info", happened: "Your session is ready.", next: "Send a message when you are ready." },
+    }]);
+  });
+});
+
 describe("the transcript keeps the five kinds of line apart", () => {
   it("agent output, capability execution, its result, an approval request and a navigation", () => {
     const state = fold(
@@ -330,9 +362,9 @@ describe("the transcript keeps the five kinds of line apart", () => {
       ev(8, "capability.completed", { invocationId: "i2", capabilityId: "ui.selectLayer", result: { outcome: "handled", detail: "Headline" } }),
       ev(9, "approval.requested", { approvalId: "a1", invocationId: "i3", capabilityId: "design.applyOperations", risk: "write", humanSummary: "Edit", importantArguments: [], affectedResourceCount: 1 }),
     );
-    expect(state.lines.map((line) => line.kind)).toEqual(["agent", "capability", "result", "navigation", "approval"]);
-    expect(state.lines[1]).toMatchObject({ kind: "capability", status: "done" });
-    expect(state.lines[3]).toMatchObject({ kind: "navigation", status: "done", heading: "Moved your view", summaries: ["Selected “Headline”"] });
+    expect(state.lines.map((line) => line.kind)).toEqual(["notice", "agent", "capability", "result", "navigation", "approval"]);
+    expect(state.lines[2]).toMatchObject({ kind: "capability", status: "done" });
+    expect(state.lines[4]).toMatchObject({ kind: "navigation", status: "done", heading: "Moved your view", summaries: ["Selected “Headline”"] });
     expect(state.working).toBe(true);
     expect(pendingApprovals(state)).toHaveLength(1);
   });
@@ -441,7 +473,10 @@ describe("the transcript keeps the five kinds of line apart", () => {
     state = chatReducer(state, { type: "started", sessionId: "mine", id: "l2" });
     state = fold(state, ev(1, "session.created", {}, "old"), ev(2, "agent.output.completed", { text: "stale" }, "old"), ev(3, "session.created", {}, "mine"), ev(4, "session.started", {}, "mine"));
     expect(state.session).toEqual({ id: "mine", status: "live" });
-    expect(state.lines).toEqual([{ kind: "person", id: "l1", text: "hello" }]);
+    expect(state.lines).toEqual([
+      { kind: "person", id: "l1", text: "hello" },
+      { kind: "notice", id: "e4", notice: { tone: "info", happened: "Your session is ready.", next: "Send a message when you are ready." } },
+    ]);
   });
 
   it("stopping ends the turn on the person's word without ending the session", () => {
@@ -460,19 +495,22 @@ describe("the reply as it streams", () => {
     const state = live(live(open(), "Raising "), "the headline");
     expect(state.streaming).toEqual({ turnId: "t1", text: "Raising the headline" });
     expect(state.working).toBe(true);
-    expect(state.lines).toEqual([]);
+    expect(state.lines).toEqual([{ kind: "notice", id: "e2", notice: { tone: "info", happened: "Your session is ready.", next: "Send a message when you are ready." } }]);
   });
 
   it("is replaced, not extended, by the completed text — the final text is the whole of it", () => {
     const state = fold(live(live(open(), "Raising "), "the head"), ev(4, "agent.output.completed", { turnId: "t1", text: "Raising the headline to 96pt." }));
     expect(state.streaming).toBeNull();
-    expect(state.lines).toEqual([{ kind: "agent", id: "e4", text: "Raising the headline to 96pt." }]);
+    expect(state.lines).toEqual([
+      { kind: "notice", id: "e2", notice: { tone: "info", happened: "Your session is ready.", next: "Send a message when you are ready." } },
+      { kind: "agent", id: "e4", text: "Raising the headline to 96pt." },
+    ]);
   });
 
   it("ignores a delta that lands after its own completion, which the two routes allow", () => {
     const state = live(fold(open(), ev(4, "agent.output.completed", { turnId: "t1", text: "Done." })), " Done.");
     expect(state.streaming).toBeNull();
-    expect(state.lines).toHaveLength(1);
+    expect(state.lines).toHaveLength(2);
   });
 
   it("starts the next turn's text fresh", () => {
@@ -544,12 +582,13 @@ describe("what the person said", () => {
     let reloaded = chatReducer(emptyChat, { type: "restore", remembered: kept! });
     reloaded = fold(reloaded, ev(1, "session.created"), ev(2, "session.started"), ev(3, "turn.started"), REPLY(4, "one"), ev(5, "turn.completed"), ev(6, "turn.started"), REPLY(7, "two"), ev(8, "turn.completed"));
     expect(reloaded.lines.map((line) => (line.kind === "person" || line.kind === "agent" ? `${line.kind}:${line.text}` : line.kind))).toEqual([
+      "notice",
       "person:first",
       "agent:one",
       "person:second",
       "agent:two",
     ]);
-    expect(reloaded.lines[0]).toMatchObject({ chip: { design: "Cover" } });
+    expect(reloaded.lines[1]).toMatchObject({ chip: { design: "Cover" } });
   });
 
   it("keeps a message sent while the session was still starting with that session", () => {
@@ -579,7 +618,10 @@ describe("starting a session", () => {
     expect(state.lines).toEqual([{ kind: "person", id: "l1", text: "hello" }]);
     expect(state.session).toBeNull();
     state = chatReducer(state, { type: "started", sessionId: "mine", id: "l2" });
-    expect(state.lines).toEqual([{ kind: "person", id: "l1", text: "hello" }]);
+    expect(state.lines).toEqual([
+      { kind: "person", id: "l1", text: "hello" },
+      { kind: "notice", id: "e2", notice: { tone: "info", happened: "Your session is ready.", next: "Send a message when you are ready." } },
+    ]);
     expect(state.session).toEqual({ id: "mine", status: "live" });
     expect(state.owned).toBe("mine");
   });
