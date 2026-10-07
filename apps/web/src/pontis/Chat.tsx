@@ -54,6 +54,7 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
   const sessionInfoButton = useRef<HTMLButtonElement>(null);
   const followsLatest = useRef(true);
   const [showJump, setShowJump] = useState(false);
+  const [hasNewEntries, setHasNewEntries] = useState(false);
   const [sessionInfoOpen, setSessionInfoOpen] = useState(false);
   const [runOnOpen, setRunOnOpen] = useState(chat.needsComputerChoice);
   const { state } = chat;
@@ -86,12 +87,15 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
   // Follow new entries only while the person is already at the end of the transcript.
   useEffect(() => {
     const transcript = log.current;
-    if (!transcript || !followsLatest.current) {
+    if (!transcript) return;
+    if (!followsLatest.current) {
       setShowJump(true);
+      setHasNewEntries(true);
       return;
     }
     transcript.scrollTop = transcript.scrollHeight;
     setShowJump(false);
+    setHasNewEntries(false);
   }, [state.lines.length, state.working, state.streaming?.text, chat.dead]);
 
   // Approval cards can gain their named layer chips after the design query resolves.
@@ -119,6 +123,7 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
     const atLatest = transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight < 32;
     followsLatest.current = atLatest;
     setShowJump(!atLatest);
+    if (atLatest) setHasNewEntries(false);
   };
   const jumpToLatest = () => {
     const transcript = log.current;
@@ -126,6 +131,7 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
     followsLatest.current = true;
     transcript.scrollTop = transcript.scrollHeight;
     setShowJump(false);
+    setHasNewEntries(false);
   };
   const startNewSession = async () => {
     await chat.newSession();
@@ -190,48 +196,57 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
 
       <Status connection={chat.connection} live={chat.live} runtime={chat.runtime} />
 
-      <ol ref={log} onScroll={onTranscriptScroll} role="log" aria-live="polite" tabIndex={0} className="min-h-0 min-w-0 flex-1 space-y-2.5 overflow-y-auto overflow-x-hidden px-4 py-3 [overflow-wrap:anywhere]">
-        {state.lines.length === 0 && (
-          <li className="text-xs leading-5 text-faint">
-            Ask the agent to work on this design. It acts through the same operations you do, and it asks before changing anything
-            that matters.
-          </li>
-        )}
-        {state.lines.map((line) => (
-          <li key={line.id} data-kind={line.kind}>
-            <Row
-              line={line}
-              answering={line.kind === "approval" && chat.answering.has(line.approval.approvalId)}
-              unconfirmed={line.kind === "approval" && chat.unconfirmed.has(line.approval.approvalId)}
-              onDecide={(decision) => line.kind === "approval" && void chat.decide(line.approval.approvalId, decision)}
-              onNoticeAction={(action) => action === "New session" && void startNewSession()}
-              deviceName={chat.runtime.at === "online" ? chat.runtime.name : undefined}
-            />
-          </li>
-        ))}
-        {state.streaming && (
-          // The reply as it arrives. Replaced, not extended, by the final text.
-          <li data-kind="agent" data-streaming="true">
-            <Row line={{ kind: "agent", id: "streaming", text: state.streaming.text }} answering={false} unconfirmed={false} onDecide={() => undefined} onNoticeAction={() => undefined} />
-          </li>
-        )}
-        {state.working && !state.streaming && (
-          <li data-kind="working" className="text-xs text-faint">
-            The agent is working…
-          </li>
-        )}
-        {chat.dead !== null && (
-          <li data-kind="notice">
-            <SessionNotice notice={chat.dead} onAction={(action) => action === "New session" && void startNewSession()} />
-          </li>
-        )}
-      </ol>
+      <div className="chat-transcript-shell">
+        <ol ref={log} onScroll={onTranscriptScroll} role="log" aria-live="polite" tabIndex={0} className="chat-transcript min-h-0 min-w-0 flex-1 space-y-2.5 overflow-y-auto overflow-x-hidden px-4 py-3 [overflow-wrap:anywhere]">
+          {state.lines.length === 0 && (
+            <li className="text-xs leading-5 text-faint">
+              Ask the agent to work on this design. It acts through the same operations you do, and it asks before changing anything
+              that matters.
+            </li>
+          )}
+          {state.lines.map((line) => (
+            <li key={line.id} data-kind={line.kind}>
+              <Row
+                line={line}
+                answering={line.kind === "approval" && chat.answering.has(line.approval.approvalId)}
+                unconfirmed={line.kind === "approval" && chat.unconfirmed.has(line.approval.approvalId)}
+                onDecide={(decision) => line.kind === "approval" && void chat.decide(line.approval.approvalId, decision)}
+                onNoticeAction={(action) => action === "New session" && void startNewSession()}
+                deviceName={chat.runtime.at === "online" ? chat.runtime.name : undefined}
+              />
+            </li>
+          ))}
+          {state.streaming && (
+            // The reply as it arrives. Replaced, not extended, by the final text.
+            <li data-kind="agent" data-streaming="true">
+              <Row line={{ kind: "agent", id: "streaming", text: state.streaming.text }} answering={false} unconfirmed={false} onDecide={() => undefined} onNoticeAction={() => undefined} />
+            </li>
+          )}
+          {state.working && !state.streaming && (
+            <li data-kind="working" className="text-xs text-faint">
+              The agent is working…
+            </li>
+          )}
+          {chat.dead !== null && (
+            <li data-kind="notice">
+              <SessionNotice notice={chat.dead} onAction={(action) => action === "New session" && void startNewSession()} />
+            </li>
+          )}
+        </ol>
 
-      {showJump && (
-        <button type="button" onClick={jumpToLatest} className="mx-auto my-1 rounded-lg border border-edge bg-surface-2 px-3 py-1.5 text-xs text-paper">
-          Jump to latest
+        <button
+          type="button"
+          onClick={jumpToLatest}
+          aria-label="Jump to latest"
+          aria-hidden={!showJump}
+          disabled={!showJump}
+          tabIndex={showJump ? 0 : -1}
+          className={`chat-jump-latest ${showJump ? "is-visible" : ""}`}
+        >
+          <span aria-hidden="true">↓</span>
+          {hasNewEntries && <span data-new-entry-indicator aria-hidden="true" className="chat-new-entry-dot" />}
         </button>
-      )}
+      </div>
 
       <footer className="border-t border-edge p-3">
         {contextChip && (

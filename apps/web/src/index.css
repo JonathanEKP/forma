@@ -92,6 +92,46 @@ samp {
   scrollbar-color: var(--color-edge-strong) transparent;
 }
 
+.chat-transcript-shell {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex: 1;
+}
+
+.chat-transcript {
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color 150ms ease;
+}
+
+.chat-transcript:hover,
+.chat-transcript:focus-visible,
+.chat-transcript:active {
+  scrollbar-color: rgb(244 241 234 / 46%) transparent;
+}
+
+.chat-transcript::-webkit-scrollbar {
+  width: 4px;
+}
+
+.chat-transcript::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-transcript::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: transparent;
+  transition: background-color 150ms ease;
+}
+
+.chat-transcript:hover::-webkit-scrollbar-thumb,
+.chat-transcript:focus-visible::-webkit-scrollbar-thumb,
+.chat-transcript:active::-webkit-scrollbar-thumb {
+  background: rgb(244 241 234 / 46%);
+}
+
 /* The Calm editor uses tone to name each region, with the artboard as the
    brightest surface and the surrounding tools kept quiet. */
 .editor-root {
@@ -837,5 +877,57 @@ samp {
 
   .editor-docked-chat > aside {
     width: 100%;
+  }
+}
+
+.chat-jump-latest {
+  position: absolute;
+  right: 20px;
+  bottom: 16px;
+  z-index: 1;
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 1px solid var(--color-edge-strong);
+  border-radius: 999px;
+  background: var(--color-surface-2);
+  color: var(--color-paper);
+  font-size: 18px;
+  line-height: 1;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 25%);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(4px);
+  transition: opacity 150ms ease, transform 150ms ease, visibility 150ms linear;
+}
+
+.chat-jump-latest.is-visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.chat-jump-latest:focus-visible {
+  outline: 2px solid var(--color-signal);
+  outline-offset: 2px;
+}
+
+.chat-new-entry-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--color-surface-2);
+  border-radius: 50%;
+  background: var(--color-signal);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-jump-latest {
+    transition: none;
   }
 }
