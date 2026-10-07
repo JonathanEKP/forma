@@ -472,7 +472,8 @@ describe("the chat of a window", () => {
     fireEvent.focus(await screen.findByRole("textbox", { name: "Ask the agent…" }));
     await screen.findByText("Hi.", {}, { timeout: 4_000 });
     const lines = screen.getAllByRole("listitem").map((item) => item.getAttribute("data-kind"));
-    expect(lines.slice(0, 2)).toEqual(["person", "agent"]);
+    expect(lines.slice(0, 3)).toEqual(["person", "notice", "agent"]);
+    expect(within(screen.getByLabelText("Agent chat")).getByText("Your session is ready.")).toBeTruthy();
     expect(within(screen.getByLabelText("Agent chat")).getByText("hello there")).toBeTruthy();
     expect(within(screen.getByLabelText("Agent chat")).getByLabelText(/Sent with: Cover/)).toBeTruthy();
     // It went back to its own session and started no other.
