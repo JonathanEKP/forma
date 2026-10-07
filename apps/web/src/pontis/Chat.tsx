@@ -54,6 +54,7 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
   const sessionInfoButton = useRef<HTMLButtonElement>(null);
   const followsLatest = useRef(true);
   const [showJump, setShowJump] = useState(false);
+  const [renderJump, setRenderJump] = useState(false);
   const [hasNewEntries, setHasNewEntries] = useState(false);
   const [transcriptScrolling, setTranscriptScrolling] = useState(false);
   const scrollIdleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -118,6 +119,21 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
     observer.observe(transcript, { childList: true, subtree: true, characterData: true });
     return () => observer.disconnect();
   }, []);
+
+  useEffect(() => {
+    if (showJump) {
+      setRenderJump(true);
+      return;
+    }
+    if (!renderJump) return;
+    const prefersReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    if (prefersReducedMotion || document.visibilityState === "hidden") {
+      setRenderJump(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setRenderJump(false), 180);
+    return () => window.clearTimeout(timer);
+  }, [renderJump, showJump]);
 
   useEffect(() => () => {
     if (scrollIdleTimer.current !== null) window.clearTimeout(scrollIdleTimer.current);
@@ -246,18 +262,20 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
           )}
         </ol>
 
-        <button
-          type="button"
-          onClick={jumpToLatest}
-          aria-label="Jump to latest"
-          aria-hidden={!showJump}
-          disabled={!showJump}
-          tabIndex={showJump ? 0 : -1}
-          className={`chat-jump-latest ${showJump ? "is-visible" : ""}`}
-        >
-          <span aria-hidden="true">↓</span>
-          {hasNewEntries && <span data-new-entry-indicator aria-hidden="true" className="chat-new-entry-dot" />}
-        </button>
+        {renderJump && (
+          <button
+            type="button"
+            onClick={jumpToLatest}
+            aria-label="Jump to latest"
+            aria-hidden={!showJump}
+            disabled={!showJump}
+            tabIndex={showJump ? 0 : -1}
+            className={`chat-jump-latest ${showJump ? "is-visible" : ""}`}
+          >
+            <span aria-hidden="true">↓</span>
+            {hasNewEntries && <span data-new-entry-indicator aria-hidden="true" className="chat-new-entry-dot" />}
+          </button>
+        )}
       </div>
 
       <footer className="border-t border-edge p-3">

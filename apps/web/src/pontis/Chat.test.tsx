@@ -614,6 +614,30 @@ describe("a conversation", () => {
     expect(jump.querySelector("[data-new-entry-indicator]")).toBeTruthy();
   });
 
+  it("removes the jump button after its exit fade", async () => {
+    await inSession();
+    const transcript = screen.getByRole("log");
+    Object.defineProperty(transcript, "scrollHeight", { configurable: true, value: 600 });
+    Object.defineProperty(transcript, "clientHeight", { configurable: true, value: 120 });
+    transcript.scrollTop = 0;
+    fireEvent.scroll(transcript);
+    const jump = screen.getByRole("button", { name: "Jump to latest" });
+    vi.useFakeTimers();
+
+    try {
+      fireEvent.click(jump);
+      expect(jump.isConnected).toBe(true);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(180);
+      });
+
+      expect(jump.isConnected).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("shows the transcript scrollbar while scrolling, then fades it after scrolling stops", async () => {
     await inSession();
     const transcript = screen.getByRole("log");
