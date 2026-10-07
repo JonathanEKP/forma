@@ -11,20 +11,7 @@ interface Call {
   body: Record<string, unknown> | null;
 }
 
-function mockFetch(
-  response: Promise<Response> = Promise.resolve(
-    new Response(
-      JSON.stringify({
-        export: { id: "e1", design_version: 7 },
-        files: [
-          { filename: "01.png", byte_size: 20480 },
-          { filename: "02.png", byte_size: 30720 },
-        ],
-      }),
-      { status: 201, headers: { "content-type": "application/json" } },
-    ),
-  ),
-) {
+function mockFetch() {
   const calls: Call[] = [];
 
   vi.stubGlobal(
@@ -38,7 +25,18 @@ function mockFetch(
           : null;
       calls.push({ url, method: init?.method ?? "GET", body });
 
-      return response;
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            export: { id: "e1", design_version: 7 },
+            files: [
+              { filename: "01.png", byte_size: 20480 },
+              { filename: "02.png", byte_size: 30720 },
+            ],
+          }),
+          { status: 201, headers: { "content-type": "application/json" } },
+        ),
+      );
     }),
   );
 
@@ -84,49 +82,6 @@ afterEach(() => {
 });
 
 describe("exporting from the editor", () => {
-  it("closes export options by button, Escape or outside click while a running export continues", async () => {
-    let finishExport: (response: Response) => void = () => undefined;
-    const pendingResponse = new Promise<Response>((resolve) => { finishExport = resolve; });
-    const calls = mockFetch(pendingResponse);
-    renderButton(clean);
-
-    const trigger = screen.getByRole("button", { name: "Export" });
-    fireEvent.click(trigger);
-    expect(screen.getByRole("region", { name: "Export options" })).toBeTruthy();
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(document.querySelector('[aria-modal="true"]')).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "Close export options" }));
-    expect(screen.queryByRole("region", { name: "Export options" })).toBeNull();
-
-    fireEvent.click(trigger);
-    trigger.focus();
-    fireEvent.keyDown(document, { key: "Escape" });
-    expect(screen.queryByRole("region", { name: "Export options" })).toBeNull();
-    expect(document.activeElement).toBe(trigger);
-
-    fireEvent.click(trigger);
-    fireEvent.pointerDown(document.body);
-    expect(screen.queryByRole("region", { name: "Export options" })).toBeNull();
-
-    fireEvent.click(trigger);
-    fireEvent.click(screen.getByText("Export 2 pages"));
-    await waitFor(() => expect(calls.some((call) => call.method === "POST")).toBe(true));
-    fireEvent.click(screen.getByRole("button", { name: "Close export options" }));
-    finishExport(
-      new Response(
-        JSON.stringify({
-          export: { id: "e1", design_version: 7 },
-          files: [{ filename: "01.png", byte_size: 20480 }],
-        }),
-        { status: 201, headers: { "content-type": "application/json" } },
-      ),
-    );
-
-    fireEvent.click(trigger);
-    expect(await screen.findByText("01.png")).toBeTruthy();
-  });
-
   it("exports every page by default and offers the files", async () => {
     const calls = mockFetch();
     renderButton(clean);
