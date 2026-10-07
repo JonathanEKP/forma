@@ -25,6 +25,7 @@ interface Props {
   svg: string | undefined;
   onCommit: (frame: DraftFrame) => void;
   disabled: boolean;
+  onSelectLayer: () => void;
   lockedLayerIds?: ReadonlySet<string>;
 }
 
@@ -36,7 +37,7 @@ interface Drag {
   origin: { x: number; y: number; width: number; height: number };
 }
 
-export function Canvas({ record, page, svg, onCommit, disabled, lockedLayerIds = new Set<string>() }: Props) {
+export function Canvas({ record, page, svg, onCommit, disabled, onSelectLayer, lockedLayerIds = new Set<string>() }: Props) {
   const { width, height } = record.document.format;
   const zoom = useEditor((s) => s.zoom);
   const selectedLayerId = useEditor((s) => s.selectedLayerId);
@@ -65,6 +66,7 @@ export function Canvas({ record, page, svg, onCommit, disabled, lockedLayerIds =
     if (!layer) return;
 
     selectLayer(id);
+    onSelectLayer();
     (event.target as Element).setPointerCapture(event.pointerId);
 
     setDrag({
@@ -99,89 +101,101 @@ export function Canvas({ record, page, svg, onCommit, disabled, lockedLayerIds =
     setDraft(null);
   };
 
+  const pageNumber = record.document.pages.findIndex((candidate) => candidate.id === page.id) + 1;
+  const selectedLayer = page.layers.find((layer) => layer.id === selectedLayerId);
+  const status = selectedLayer
+    ? `${layerName(selectedLayer)} selected · page ${pageNumber}`
+    : "Select a layer to inspect it.";
+
   return (
-    <div
-      className="editor-canvas-scroll flex-1 min-w-0 overflow-auto scroll-thin grid place-items-center p-6"
-      onPointerDown={() => selectLayer(null)}
-    >
-      <div
-        ref={surface}
-        className="relative shadow-2xl shrink-0"
-        style={{ width: width * zoom, height: height * zoom }}
-        onPointerMove={move}
-        onPointerUp={end}
-        onPointerCancel={end}
-      >
-        {/*
-          The backend's SVG, scaled by zoom. It is inert: every pointer event
-          belongs to the overlay, so a click never lands on a glyph path.
-        */}
-        <div
-          className="absolute inset-0 pointer-events-none bg-paper"
-          style={{
-            width,
-            height,
-            transform: `scale(${zoom})`,
-            transformOrigin: "top left",
-          }}
-          // The SVG comes from our own backend, which built it from the
-          // document rather than from anything a user typed as markup.
-          dangerouslySetInnerHTML={svg ? { __html: svg } : undefined}
-        />
-
-        <svg
-          className="absolute inset-0 h-full w-full"
-          viewBox={`0 0 ${width} ${height}`}
-          preserveAspectRatio="none"
-        >
-          {page.layers.map((layer) => {
-            const id = layerId(layer);
-            const frame =
-              draft?.layerId === id ? draft : layerFrame(layer);
-            const selected = id === selectedLayerId;
-            const highlighted = highlightedLayerIds.has(id);
-            const locked = lockedLayerIds.has(id);
-
-            return (
-              <g key={id}>
-                <rect
-                  x={frame.x}
-                  y={frame.y}
-                  width={Math.max(frame.width, 0)}
-                  height={Math.max(frame.height, 0)}
-                  fill="transparent"
-                  stroke={selected || highlighted ? "var(--color-signal)" : "transparent"}
-                  strokeWidth={(selected ? 1 : highlighted ? 2 : 0) / zoom}
-                  vectorEffect="non-scaling-stroke"
-                  className={locked ? "cursor-not-allowed" : "cursor-move"}
-                  data-approval-highlight={highlighted ? "true" : undefined}
-                  data-approval-locked={locked ? "true" : undefined}
-                  style={{ pointerEvents: disabled || locked ? "none" : "all" }}
-                  onPointerDown={(e) => begin(e, id, null)}
-                >
-                  <title>{locked ? `${layerName(layer)} · Read-only while approval is pending` : layerName(layer)}</title>
-                </rect>
-
-                {selected && !locked &&
-                  handlesOf(frame).map(({ handle, cx, cy, cursor }) => (
-                    <rect
-                      key={handle}
-                      x={cx - HANDLE / (2 * zoom)}
-                      y={cy - HANDLE / (2 * zoom)}
-                      width={HANDLE / zoom}
-                      height={HANDLE / zoom}
-                      fill="var(--color-signal)"
-                      stroke="var(--color-paper)"
-                      strokeWidth={1.5 / zoom}
-                      style={{ cursor, pointerEvents: disabled ? "none" : "all" }}
-                      onPointerDown={(e) => begin(e, id, handle)}
-                    />
-                  ))}
-              </g>
-            );
-          })}
-        </svg>
+    <div className="editor-canvas-stage">
+      <div className="editor-canvas-caption">
+        {String(pageNumber).padStart(2, "0")} {page.name} / {width} × {height}
       </div>
+      <div
+        className="editor-canvas-scroll min-w-0 min-h-0 overflow-auto scroll-thin grid place-items-center p-6"
+        onPointerDown={() => selectLayer(null)}
+      >
+        <div
+          ref={surface}
+          className="relative shadow-2xl shrink-0"
+          style={{ width: width * zoom, height: height * zoom }}
+          onPointerMove={move}
+          onPointerUp={end}
+          onPointerCancel={end}
+        >
+          {/*
+            The backend's SVG, scaled by zoom. It is inert: every pointer event
+            belongs to the overlay, so a click never lands on a glyph path.
+          */}
+          <div
+            className="absolute inset-0 pointer-events-none bg-paper"
+            style={{
+              width,
+              height,
+              transform: `scale(${zoom})`,
+              transformOrigin: "top left",
+            }}
+            // The SVG comes from our own backend, which built it from the
+            // document rather than from anything a user typed as markup.
+            dangerouslySetInnerHTML={svg ? { __html: svg } : undefined}
+          />
+
+          <svg
+            className="absolute inset-0 h-full w-full"
+            viewBox={`0 0 ${width} ${height}`}
+            preserveAspectRatio="none"
+          >
+            {page.layers.map((layer) => {
+              const id = layerId(layer);
+              const frame =
+                draft?.layerId === id ? draft : layerFrame(layer);
+              const selected = id === selectedLayerId;
+              const highlighted = highlightedLayerIds.has(id);
+              const locked = lockedLayerIds.has(id);
+
+              return (
+                <g key={id}>
+                  <rect
+                    x={frame.x}
+                    y={frame.y}
+                    width={Math.max(frame.width, 0)}
+                    height={Math.max(frame.height, 0)}
+                    fill="transparent"
+                    stroke={selected || highlighted ? "var(--color-signal)" : "transparent"}
+                    strokeWidth={(selected ? 1 : highlighted ? 2 : 0) / zoom}
+                    vectorEffect="non-scaling-stroke"
+                    className={locked ? "cursor-not-allowed" : "cursor-move"}
+                    data-approval-highlight={highlighted ? "true" : undefined}
+                    data-approval-locked={locked ? "true" : undefined}
+                    style={{ pointerEvents: disabled || locked ? "none" : "all" }}
+                    onPointerDown={(e) => begin(e, id, null)}
+                  >
+                    <title>{locked ? `${layerName(layer)} · Read-only while approval is pending` : layerName(layer)}</title>
+                  </rect>
+
+                  {selected && !locked &&
+                    handlesOf(frame).map(({ handle, cx, cy, cursor }) => (
+                      <rect
+                        key={handle}
+                        x={cx - HANDLE / (2 * zoom)}
+                        y={cy - HANDLE / (2 * zoom)}
+                        width={HANDLE / zoom}
+                        height={HANDLE / zoom}
+                        fill="var(--color-signal)"
+                        stroke="var(--color-paper)"
+                        strokeWidth={1.5 / zoom}
+                        style={{ cursor, pointerEvents: disabled ? "none" : "all" }}
+                        onPointerDown={(e) => begin(e, id, handle)}
+                      />
+                    ))}
+                </g>
+              );
+            })}
+          </svg>
+        </div>
+      </div>
+      <div className="editor-canvas-status">{status}</div>
     </div>
   );
 }

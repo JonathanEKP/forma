@@ -10,7 +10,7 @@
  * saw even after the design moves on.
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   ApiError,
@@ -23,12 +23,16 @@ import { useCreateExport } from "../queries";
 
 export function ExportButton({
   designId,
+  designName,
+  format,
   pageId,
   pageCount,
   report,
   disabled,
 }: {
   designId: string;
+  designName: string;
+  format: { width: number; height: number };
   pageId: string | null;
   pageCount: number;
   report: ValidationReport | undefined;
@@ -39,11 +43,38 @@ export function ExportButton({
   const [scale, setScale] = useState(1);
   const [result, setResult] = useState<ExportResult | null>(null);
   const create = useCreateExport(designId);
+  const root = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setOpen(false);
+      trigger.current?.focus();
+    };
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (root.current && event.target instanceof Node && !root.current.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener("keydown", closeOnEscape);
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape);
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+    };
+  }, [open]);
 
   // Section 42: errors are the ones that mean the design is broken. The editor
   // says so and still lets a person decide, which is the difference between a
   // human and the agent — the skill tells the agent to fix them first.
   const errors = report?.issues.filter((issue) => issue.severity === "error") ?? [];
+  const orientation =
+    format.width === format.height ? "square" : format.width > format.height ? "landscape" : "portrait";
 
   const run = () => {
     setResult(null);
@@ -54,8 +85,9 @@ export function ExportButton({
   };
 
   return (
-    <div className="relative">
+    <div ref={root} className="relative">
       <button
+        ref={trigger}
         type="button"
         disabled={disabled}
         onClick={() => setOpen((was) => !was)}
@@ -71,9 +103,28 @@ export function ExportButton({
           id="editor-export-options"
           role="region"
           aria-label="Export options"
-          className="absolute right-0 top-[38px] z-20 w-64 rounded-xl border border-edge
-                     bg-surface p-3 shadow-lg"
+          className="editor-export-popover absolute right-0 top-[38px] z-20 w-64 rounded-xl border border-edge
+                     bg-surface p-4 shadow-lg"
         >
+          <header className="editor-export-heading">
+            <h2>Export</h2>
+            <button
+              type="button"
+              className="editor-close-button"
+              onClick={() => {
+                setOpen(false);
+                trigger.current?.focus();
+              }}
+              aria-label="Close Export"
+            >
+              ×
+            </button>
+          </header>
+          <div className="editor-export-design">
+            <span className="truncate">{designName}</span>
+            <span>{format.width} × {format.height} · {orientation}</span>
+          </div>
+
           {errors.length > 0 && (
             <div className="mb-2.5 rounded-lg border border-signal/45 bg-signal/6 px-2.5 py-2 text-[11px] leading-snug">
               <strong className="font-semibold">

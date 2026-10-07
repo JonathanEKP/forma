@@ -51,10 +51,10 @@ function McpConnections() {
   };
 
   return (
-    <main className="mx-auto w-full max-w-4xl px-6 py-12">
+    <main className="mcp-page mx-auto w-full">
       <ConnectionHeader title="Use Forma from your AI app" page="mcp" />
 
-      <div className="mb-8 max-w-2xl space-y-2 text-sm leading-6">
+      <div className="mcp-intro mb-8 space-y-2 text-sm leading-6">
         <p className="text-paper">MCP is a standard way for an AI app to use tools in another app.</p>
         <p className="text-muted">Your AI app can create and edit designs in your Forma workspace, and you see them here.</p>
         <p className="text-muted">
@@ -62,28 +62,28 @@ function McpConnections() {
         </p>
       </div>
 
-      <section className="mb-6 rounded-xl border border-edge bg-surface p-5" aria-labelledby="mcp-url-heading">
+      <section className="mcp-section" aria-labelledby="mcp-url-heading">
         <h2 id="mcp-url-heading" className="text-base font-medium text-paper">Your MCP URL</h2>
         <p className="mt-2 text-sm leading-6 text-muted">Use the same URL in each app you want to connect.</p>
         <CopyableUrl url={mcpUrl} />
       </section>
 
-      <section className="mb-6 rounded-xl border border-edge bg-surface p-5" aria-labelledby="pick-app-heading">
+      <section className="mcp-section" aria-labelledby="pick-app-heading">
         <h2 id="pick-app-heading" className="text-base font-medium text-paper">Pick your app</h2>
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <article className="rounded-lg border border-edge bg-surface-2 p-4">
+        <div className="mcp-host-cards mt-4 grid gap-4 md:grid-cols-2">
+          <article className="mcp-host-card rounded-lg border border-edge bg-surface-2 p-6">
             <h3 className="text-sm font-medium text-paper">Claude</h3>
             <p className="mt-2 text-sm leading-6 text-muted">
               Add a custom connector and paste the URL. Claude completes the authorization in your browser. <strong className="font-medium text-paper">Do not paste a token</strong> — it does not need one.
             </p>
           </article>
-          <article className="rounded-lg border border-edge bg-surface-2 p-4">
+          <article className="mcp-host-card rounded-lg border border-edge bg-surface-2 p-6">
             <h3 className="text-sm font-medium text-paper">ChatGPT and Codex</h3>
             <p className="mt-2 text-sm leading-6 text-muted">
               Connect through the provider&apos;s own MCP app flow, with the same URL. These hosts accept OAuth or nothing at all, so a personal access token will not work there.
             </p>
           </article>
-          <article className="rounded-lg border border-edge bg-surface-2 p-4 md:col-span-2">
+          <article className="mcp-host-card rounded-lg border border-edge bg-surface-2 p-6 md:col-span-2">
             <h3 className="text-sm font-medium text-paper">Codex CLI · Claude Code · Gemini CLI</h3>
             <p className="mt-2 text-sm leading-6 text-muted">
               Command-line hosts cannot open a browser for you. Create a personal access token below and give it to them as a bearer credential.
@@ -93,7 +93,7 @@ function McpConnections() {
       </section>
 
       {grants.available && (
-        <section className="mb-6 rounded-xl border border-edge bg-surface p-5" aria-labelledby="connected-apps-heading">
+        <section className="mcp-section" aria-labelledby="connected-apps-heading">
           <h2 id="connected-apps-heading" className="text-base font-medium text-paper">Connected applications</h2>
           <p className="mt-2 text-sm leading-6 text-muted">
             Applications you have authorized. Disconnecting one ends its access immediately, and leaves your other connections and access tokens working.
@@ -128,7 +128,7 @@ function McpConnections() {
         </section>
       )}
 
-      <section className="rounded-xl border border-edge bg-surface p-5" aria-labelledby="tokens-heading">
+      <section className="mcp-section" aria-labelledby="tokens-heading">
         <h2 id="tokens-heading" className="text-base font-medium text-paper">Personal access tokens</h2>
         <p className="mt-2 text-sm leading-6 text-muted">
           Command-line hosts cannot open a browser for you. Create a named token for the tool or computer that will use it. Revoking one token does not disconnect any other client.
@@ -423,8 +423,8 @@ function CopyableUrl({ url }: { url: string }) {
   }
 
   return (
-    <div className="mt-4 flex items-center gap-2">
-      <code className="min-w-0 flex-1 break-all rounded-lg bg-surface-2 px-3 py-2 font-mono text-xs text-paper">
+    <div className="mcp-url-row mt-4 flex items-center gap-2">
+      <code className="mcp-url min-w-0 flex-1 break-all font-mono text-xs text-paper">
         {url}
       </code>
       <button
