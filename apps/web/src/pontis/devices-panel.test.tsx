@@ -266,16 +266,23 @@ describe("the device panel on the Agents page", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create a pairing code for the named computer" }));
     expect(await screen.findByText("Waiting for the pairing…")).toBeTruthy();
 
+    // The test can run across UTC midnight; derive the displayed date from its timestamp.
+    const pairedAt = new Date((pairingCreatedAt ?? Date.now()) + 1).toISOString();
+    const pairedDate = new Intl.DateTimeFormat("en-GB", {
+      day: "numeric",
+      month: "short",
+      timeZone: "UTC",
+    }).format(new Date(pairedAt));
     devices = [record({
       id: "dev_new",
       name: "Office Mac",
-      pairedAt: new Date((pairingCreatedAt ?? Date.now()) + 1).toISOString(),
+      pairedAt,
       online: false,
       capabilities: [],
     })];
     act(() => liveFeed.publish({ type: "device.paired", payload: {} }));
 
-    const device = await screen.findByRole("article", { name: "Office Mac, paired 6 Oct" });
+    const device = await screen.findByRole("article", { name: `Office Mac, paired ${pairedDate}` });
     expect(within(device).getByText("Paired. Waiting for it to start…")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Install Pontis on that computer." })).toBeNull();
     expect(within(device).getByText("pontis run")).toBeTruthy();

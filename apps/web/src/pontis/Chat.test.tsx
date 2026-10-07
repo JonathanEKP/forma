@@ -595,6 +595,68 @@ describe("a conversation", () => {
     expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
   });
 
+  it("shows Jump to latest as a floating arrow and marks entries that arrive while scrolled up", async () => {
+    await inSession();
+    const transcript = screen.getByRole("log");
+    Object.defineProperty(transcript, "scrollHeight", { configurable: true, value: 600 });
+    Object.defineProperty(transcript, "clientHeight", { configurable: true, value: 120 });
+    transcript.scrollTop = 0;
+    fireEvent.scroll(transcript);
+
+    const jump = screen.getByRole("button", { name: "Jump to latest" });
+    expect(jump.textContent).toBe("↓");
+    expect(jump.classList.contains("chat-jump-latest")).toBe(true);
+    expect(jump.parentElement?.classList.contains("chat-transcript-shell")).toBe(true);
+    expect(jump.querySelector("[data-new-entry-indicator]")).toBeNull();
+
+    backend.push(3, "agent.output.completed", { turnId: "latest", text: "A new entry arrived." });
+    await screen.findByText("A new entry arrived.");
+    expect(jump.querySelector("[data-new-entry-indicator]")).toBeTruthy();
+  });
+
+  it("removes the jump button after its exit fade", async () => {
+    await inSession();
+    const transcript = screen.getByRole("log");
+    Object.defineProperty(transcript, "scrollHeight", { configurable: true, value: 600 });
+    Object.defineProperty(transcript, "clientHeight", { configurable: true, value: 120 });
+    transcript.scrollTop = 0;
+    fireEvent.scroll(transcript);
+    const jump = screen.getByRole("button", { name: "Jump to latest" });
+    vi.useFakeTimers();
+
+    try {
+      fireEvent.click(jump);
+      expect(jump.isConnected).toBe(true);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(180);
+      });
+
+      expect(jump.isConnected).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows the transcript scrollbar while scrolling, then fades it after scrolling stops", async () => {
+    await inSession();
+    const transcript = screen.getByRole("log");
+    vi.useFakeTimers();
+
+    try {
+      fireEvent.scroll(transcript);
+      expect(transcript.classList.contains("is-scrolling")).toBe(true);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(700);
+      });
+
+      expect(transcript.classList.contains("is-scrolling")).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("follows replies and approval details that grow after the approval event", async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
     await inSession(() => render(<Harness enabled queryClient={queryClient} />));
