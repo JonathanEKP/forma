@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ExportButton } from "./Export";
@@ -50,13 +50,16 @@ function renderButton(report?: ValidationReport) {
 
   render(
     <QueryClientProvider client={client}>
-      <ExportButton
-        designId="d1"
-        pageId="p1"
-        pageCount={2}
-        report={report}
-        disabled={false}
-      />
+      <>
+        <button type="button">Outside</button>
+        <ExportButton
+          designId="d1"
+          pageId="p1"
+          pageCount={2}
+          report={report}
+          disabled={false}
+        />
+      </>
     </QueryClientProvider>,
   );
 }
@@ -152,5 +155,76 @@ describe("exporting from the editor", () => {
     fireEvent.click(screen.getByText("Export"));
     expect(screen.queryByText(/validation error/)).toBeNull();
     expect(screen.getByText("Export 2 pages")).toBeTruthy();
+  });
+
+  it("shows the design and its dimensions, and closes without a modal", () => {
+    mockFetch();
+    renderButton(clean);
+
+    fireEvent.click(screen.getByText("Export"));
+    expect(screen.getByRole("heading", { name: "Export" })).toBeTruthy();
+    expect(screen.getByText("Cover")).toBeTruthy();
+    expect(screen.getByText("1080 × 1440 · portrait")).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close Export" }));
+    expect(screen.queryByRole("region", { name: "Export options" })).toBeNull();
+  });
+
+  it("closes on Escape and returns focus to Export", () => {
+    mockFetch();
+    renderButton(clean);
+
+    const trigger = screen.getByRole("button", { name: "Export" });
+    fireEvent.click(trigger);
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(screen.queryByRole("region", { name: "Export options" })).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("closes when the person clicks outside the popover", () => {
+    mockFetch();
+    renderButton(clean);
+
+    fireEvent.click(screen.getByText("Export"));
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Outside" }));
+
+    expect(screen.queryByRole("region", { name: "Export options" })).toBeNull();
+  });
+
+  it("keeps an export running after its popover closes", async () => {
+    let finish: ((response: Response) => void) | undefined;
+    const calls: Call[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        const body = typeof init?.body === "string" ? (JSON.parse(init.body) as Record<string, unknown>) : null;
+        calls.push({ url, method: init?.method ?? "GET", body });
+        return new Promise<Response>((resolve) => {
+          finish = resolve;
+        });
+      }),
+    );
+    renderButton(clean);
+
+    fireEvent.click(screen.getByText("Export"));
+    fireEvent.click(screen.getByText("Export 2 pages"));
+    await waitFor(() => expect(calls.some((call) => call.method === "POST")).toBe(true));
+    fireEvent.click(screen.getByRole("button", { name: "Close Export" }));
+    expect(screen.queryByRole("region", { name: "Export options" })).toBeNull();
+
+    await act(async () => {
+      finish?.(
+        new Response(
+          JSON.stringify({ export: { id: "e1", design_version: 7 }, files: [{ filename: "01.png", byte_size: 20480 }] }),
+          { status: 201, headers: { "content-type": "application/json" } },
+        ),
+      );
+    });
+
+    fireEvent.click(screen.getByText("Export"));
+    expect(await screen.findByText("01.png")).toBeTruthy();
   });
 });

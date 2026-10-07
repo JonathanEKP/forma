@@ -202,6 +202,22 @@ describe("agent credentials", () => {
     expect(screen.queryByRole("heading", { name: "Devices" })).toBeNull();
   });
 
+  it("uses the wider MCP column, divided sections, and bordered URL row", () => {
+    window.history.replaceState({}, "", "/agents/mcp");
+    renderAgents();
+
+    const page = screen.getByRole("main");
+    expect(page.classList.contains("mcp-page")).toBe(true);
+    for (const title of ["Your MCP URL", "Pick your app", "Personal access tokens"]) {
+      const section = screen.getByRole("heading", { name: title }).closest("section");
+      expect(section?.classList.contains("mcp-section")).toBe(true);
+      expect(section?.classList.contains("border")).toBe(false);
+    }
+
+    const copy = screen.getByRole("button", { name: "Copy your MCP URL" });
+    expect(copy.parentElement?.classList.contains("mcp-url-row")).toBe(true);
+  });
+
   it("disconnects an authorized application inline", async () => {
     agentState.hosted = true;
     agentState.grants = [{ client: { id: "claude", name: "Claude" }, granted_at: "2026-10-04T12:00:00.000Z" }];

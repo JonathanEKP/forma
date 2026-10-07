@@ -255,11 +255,65 @@ describe("the chat of a window", () => {
     expect(screen.queryByRole("complementary", { name: "Properties" })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: /Headline/ }));
-    expect(screen.getByRole("complementary", { name: "Properties" })).toBeTruthy();
-    expect(within(screen.getByRole("complementary", { name: "Properties" })).getByText(/POSITION/)).toBeTruthy();
+    const panel = screen.getByRole("complementary", { name: "Properties" });
+    expect(panel).toBeTruthy();
+    expect(within(panel).getByText("Page 1 · Text")).toBeTruthy();
+    expect(within(panel).getByText("X", { exact: true })).toBeTruthy();
+    expect(within(panel).getByText("Y", { exact: true })).toBeTruthy();
+    expect(within(panel).getByText("Width", { exact: true })).toBeTruthy();
+    expect(within(panel).getByText("Height", { exact: true })).toBeTruthy();
+    expect(within(panel).getByLabelText("Text")).toBeTruthy();
+    expect(within(panel).getByText("Font size", { exact: true })).toBeTruthy();
 
     act(() => useEditor.getState().selectLayer(null));
     expect(screen.queryByRole("complementary", { name: "Properties" })).toBeNull();
+  });
+
+  it("closes Properties without clearing selection and reopens when the selected layer is clicked", async () => {
+    renderApp();
+    await openDesign("Cover");
+
+    const headline = screen.getByRole("button", { name: /Headline/ });
+    fireEvent.click(headline);
+    fireEvent.click(screen.getByRole("button", { name: "Close Properties" }));
+    expect(screen.queryByRole("complementary", { name: "Properties" })).toBeNull();
+    expect(useEditor.getState().selectedLayerId).toBe("ly1");
+
+    fireEvent.click(headline);
+    expect(screen.getByRole("complementary", { name: "Properties" })).toBeTruthy();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("complementary", { name: "Properties" })).toBeNull();
+    expect(useEditor.getState().selectedLayerId).toBe("ly1");
+
+    fireEvent.click(headline);
+    expect(screen.getByRole("complementary", { name: "Properties" })).toBeTruthy();
+    const canvas = document.querySelector(".editor-canvas-scroll");
+    if (!canvas) throw new Error("the canvas scroll region is missing");
+    fireEvent.pointerDown(canvas);
+    expect(screen.queryByRole("complementary", { name: "Properties" })).toBeNull();
+    expect(useEditor.getState().selectedLayerId).toBeNull();
+  });
+
+  it("labels the canvas and reports the current layer selection", async () => {
+    renderApp();
+    await openDesign("Cover");
+
+    expect(screen.getByText("01 Page 1 / 1080 × 1080")).toBeTruthy();
+    expect(screen.getByText("Select a layer to inspect it.")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /Headline/ }));
+    expect(screen.getByText("Headline selected · page 1")).toBeTruthy();
+  });
+
+  it("shows counted page and layer headings with a text type icon", async () => {
+    renderApp();
+    await openDesign("Cover");
+
+    expect(screen.getByText("Pages 1")).toBeTruthy();
+    expect(screen.getByText("Layers 2")).toBeTruthy();
+    const headline = screen.getByRole("button", { name: /Headline/ });
+    expect(within(headline).getByText("T", { exact: true })).toBeTruthy();
+    expect(within(headline).queryByText("Text", { exact: true })).toBeNull();
   });
 
   it("shows the actual zoom percentage and keeps it through an agent write", async () => {
