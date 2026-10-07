@@ -152,7 +152,7 @@ async function openDesign(name: string) {
 
 beforeEach(() => {
   sessionStorage.clear();
-  useEditor.setState({ selectedPageId: null, selectedLayerId: null, propertiesOpen: false, zoom: 1, panel: "properties", draft: null, notice: null });
+  useEditor.setState({ selectedPageId: null, selectedLayerId: null, zoom: 1, panel: "properties", draft: null, notice: null });
   backend = new Backend();
   vi.stubGlobal("fetch", backend.fetch);
 });
@@ -260,30 +260,6 @@ describe("the chat of a window", () => {
 
     act(() => useEditor.getState().selectLayer(null));
     expect(screen.queryByRole("complementary", { name: "Properties" })).toBeNull();
-  });
-
-  it("closes Properties without changing selection and reopens it when a layer is selected again", async () => {
-    renderApp();
-    await openDesign("Cover");
-
-    const headline = screen.getByRole("button", { name: /Headline/ });
-    fireEvent.click(headline);
-    const selectedLayerId = useEditor.getState().selectedLayerId;
-    expect(selectedLayerId).not.toBeNull();
-
-    fireEvent.keyDown(document, { key: "Escape" });
-    expect(screen.queryByRole("complementary", { name: "Properties" })).toBeNull();
-    expect(useEditor.getState().selectedLayerId).toBe(selectedLayerId);
-
-    fireEvent.click(headline);
-    expect(screen.getByRole("complementary", { name: "Properties" })).toBeTruthy();
-
-    fireEvent.click(screen.getByRole("button", { name: "Close Properties" }));
-    expect(screen.queryByRole("complementary", { name: "Properties" })).toBeNull();
-    expect(useEditor.getState().selectedLayerId).toBe(selectedLayerId);
-
-    fireEvent.click(screen.getByRole("button", { name: /Tagline/ }));
-    expect(screen.getByRole("complementary", { name: "Properties" })).toBeTruthy();
   });
 
   it("shows the actual zoom percentage and keeps it through an agent write", async () => {
