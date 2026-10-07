@@ -614,6 +614,25 @@ describe("a conversation", () => {
     expect(jump.querySelector("[data-new-entry-indicator]")).toBeTruthy();
   });
 
+  it("shows the transcript scrollbar while scrolling, then fades it after scrolling stops", async () => {
+    await inSession();
+    const transcript = screen.getByRole("log");
+    vi.useFakeTimers();
+
+    try {
+      fireEvent.scroll(transcript);
+      expect(transcript.classList.contains("is-scrolling")).toBe(true);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(700);
+      });
+
+      expect(transcript.classList.contains("is-scrolling")).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("follows replies and approval details that grow after the approval event", async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
     await inSession(() => render(<Harness enabled queryClient={queryClient} />));

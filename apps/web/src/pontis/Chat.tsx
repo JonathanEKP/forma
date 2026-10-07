@@ -55,6 +55,8 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
   const followsLatest = useRef(true);
   const [showJump, setShowJump] = useState(false);
   const [hasNewEntries, setHasNewEntries] = useState(false);
+  const [transcriptScrolling, setTranscriptScrolling] = useState(false);
+  const scrollIdleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sessionInfoOpen, setSessionInfoOpen] = useState(false);
   const [runOnOpen, setRunOnOpen] = useState(chat.needsComputerChoice);
   const { state } = chat;
@@ -117,9 +119,19 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
     return () => observer.disconnect();
   }, []);
 
+  useEffect(() => () => {
+    if (scrollIdleTimer.current !== null) window.clearTimeout(scrollIdleTimer.current);
+  }, []);
+
   const onTranscriptScroll = () => {
     const transcript = log.current;
     if (!transcript) return;
+    setTranscriptScrolling(true);
+    if (scrollIdleTimer.current !== null) window.clearTimeout(scrollIdleTimer.current);
+    scrollIdleTimer.current = window.setTimeout(() => {
+      setTranscriptScrolling(false);
+      scrollIdleTimer.current = null;
+    }, 600);
     const atLatest = transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight < 32;
     followsLatest.current = atLatest;
     setShowJump(!atLatest);
@@ -197,7 +209,7 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
       <Status connection={chat.connection} live={chat.live} runtime={chat.runtime} />
 
       <div className="chat-transcript-shell">
-        <ol ref={log} onScroll={onTranscriptScroll} role="log" aria-live="polite" tabIndex={0} className="chat-transcript min-h-0 min-w-0 flex-1 space-y-2.5 overflow-y-auto overflow-x-hidden px-4 py-3 [overflow-wrap:anywhere]">
+        <ol ref={log} onScroll={onTranscriptScroll} role="log" aria-live="polite" tabIndex={0} className={`chat-transcript min-h-0 min-w-0 flex-1 space-y-2.5 overflow-y-auto overflow-x-hidden px-4 py-3 [overflow-wrap:anywhere] ${transcriptScrolling ? "is-scrolling" : ""}`}>
           {state.lines.length === 0 && (
             <li className="text-xs leading-5 text-faint">
               Ask the agent to work on this design. It acts through the same operations you do, and it asks before changing anything

@@ -108,7 +108,8 @@ samp {
 
 .chat-transcript:hover,
 .chat-transcript:focus-visible,
-.chat-transcript:active {
+.chat-transcript:active,
+.chat-transcript.is-scrolling {
   scrollbar-color: rgb(244 241 234 / 46%) transparent;
 }
 
@@ -128,7 +129,8 @@ samp {
 
 .chat-transcript:hover::-webkit-scrollbar-thumb,
 .chat-transcript:focus-visible::-webkit-scrollbar-thumb,
-.chat-transcript:active::-webkit-scrollbar-thumb {
+.chat-transcript:active::-webkit-scrollbar-thumb,
+.chat-transcript.is-scrolling::-webkit-scrollbar-thumb {
   background: rgb(244 241 234 / 46%);
 }
 
