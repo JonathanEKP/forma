@@ -57,7 +57,7 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
   const [renderJump, setRenderJump] = useState(false);
   const [hasNewEntries, setHasNewEntries] = useState(false);
   const [transcriptScrolling, setTranscriptScrolling] = useState(false);
-  const scrollIdleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollIdleTimer = useRef<number | null>(null);
   const [sessionInfoOpen, setSessionInfoOpen] = useState(false);
   const [runOnOpen, setRunOnOpen] = useState(chat.needsComputerChoice);
   const { state } = chat;
