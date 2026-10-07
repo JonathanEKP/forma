@@ -54,6 +54,8 @@ function renderButton(report?: ValidationReport) {
         <button type="button">Outside</button>
         <ExportButton
           designId="d1"
+          designName="Cover"
+          format={{ width: 1080, height: 1440 }}
           pageId="p1"
           pageCount={2}
           report={report}
@@ -215,7 +217,7 @@ describe("exporting from the editor", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close Export" }));
     expect(screen.queryByRole("region", { name: "Export options" })).toBeNull();
 
-    await act(async () => {
+    act(() => {
       finish?.(
         new Response(
           JSON.stringify({ export: { id: "e1", design_version: 7 }, files: [{ filename: "01.png", byte_size: 20480 }] }),

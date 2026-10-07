@@ -285,7 +285,9 @@ describe("the chat of a window", () => {
     expect(screen.queryByRole("complementary", { name: "Properties" })).toBeNull();
     expect(useEditor.getState().selectedLayerId).toBe("ly1");
 
-    fireEvent.click(headline);
+    fireEvent.click(screen.getByRole("button", { name: "Layers & pages" }));
+    const selectedHeadline = screen.getByRole("button", { name: /Headline/ });
+    fireEvent.click(selectedHeadline);
     expect(screen.getByRole("complementary", { name: "Properties" })).toBeTruthy();
     const canvas = document.querySelector(".editor-canvas-scroll");
     if (!canvas) throw new Error("the canvas scroll region is missing");
@@ -309,8 +311,10 @@ describe("the chat of a window", () => {
     renderApp();
     await openDesign("Cover");
 
-    expect(screen.getByText("Pages 1")).toBeTruthy();
-    expect(screen.getByText("Layers 2")).toBeTruthy();
+    const pagesHeading = screen.getByText("Pages", { exact: true }).parentElement;
+    const layersHeading = screen.getByText("Layers", { exact: true }).parentElement;
+    expect(pagesHeading?.querySelector(".editor-section-count")?.textContent).toBe("1");
+    expect(layersHeading?.querySelector(".editor-section-count")?.textContent).toBe("2");
     const headline = screen.getByRole("button", { name: /Headline/ });
     expect(within(headline).getByText("T", { exact: true })).toBeTruthy();
     expect(within(headline).queryByText("Text", { exact: true })).toBeNull();

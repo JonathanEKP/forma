@@ -60,6 +60,7 @@ export function Editor({
   const [activeTool, setActiveTool] = useState<RailTool | null>(() =>
     panel === "assets" || panel === "brand" ? panel : panel === "validation" ? null : "layers",
   );
+  const [propertiesOpen, setPropertiesOpen] = useState(() => selectedLayerId !== null);
   const [validationOpen, setValidationOpen] = useState(panel === "validation");
   const editorRoot = useRef<HTMLDivElement>(null);
   const fittedOnOpen = useRef(false);
@@ -87,6 +88,9 @@ export function Editor({
     setValidationOpen(false);
     setEditorPanel("properties");
   }, [setEditorPanel]);
+
+  const closeProperties = useCallback(() => setPropertiesOpen(false), []);
+  const openProperties = useCallback(() => setPropertiesOpen(true), []);
 
   const toggleTool = useCallback((tool: RailTool) => {
     const next = activeTool === tool ? null : tool;
@@ -122,6 +126,13 @@ export function Editor({
       setValidationOpen(false);
     }
   }, [panel]);
+
+  const previousSelectedLayerId = useRef(selectedLayerId);
+  useEffect(() => {
+    if (previousSelectedLayerId.current === selectedLayerId) return;
+    previousSelectedLayerId.current = selectedLayerId;
+    setPropertiesOpen(selectedLayerId !== null);
+  }, [selectedLayerId]);
 
   // The dock mounts with the editor. Move focus to its real composer as soon as
   // it exists, including when the person opens it from the floating composer.
@@ -220,15 +231,16 @@ export function Editor({
   }, [chat?.pending, chatOpen, record]);
 
   useEffect(() => {
-    if (!activeTool && !validationOpen) return;
+    if (!activeTool && !validationOpen && !propertiesOpen) return;
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       event.preventDefault();
       closePanels();
+      closeProperties();
     };
     document.addEventListener("keydown", closeOnEscape);
     return () => document.removeEventListener("keydown", closeOnEscape);
-  }, [activeTool, validationOpen, closePanels]);
+  }, [activeTool, validationOpen, propertiesOpen, closePanels, closeProperties]);
 
   const send = (operations: DesignOperation[]) => {
     if (!record || operations.length === 0) return;
@@ -358,6 +370,8 @@ export function Editor({
           </div>
           <ExportButton
             designId={record.id}
+            designName={record.name}
+            format={record.document.format}
             pageId={page?.id ?? null}
             pageCount={record.document.pages.length}
             report={validation.data}
@@ -416,6 +430,7 @@ export function Editor({
             lockedLayerIds={lockedLayerIds}
             fontFamily={fontFamily}
             onClose={closePanels}
+            onSelectLayer={openProperties}
           />
         )}
 
@@ -443,6 +458,7 @@ export function Editor({
               onCommit={commitFrame}
               disabled={busy}
               lockedLayerIds={lockedLayerIds}
+              onSelectLayer={openProperties}
             />
           ) : (
             <Centered>This design has no pages.</Centered>
@@ -476,13 +492,14 @@ export function Editor({
           )}
         </main>
 
-        {selectedLayer && page && (
+        {selectedLayer && page && propertiesOpen && (
           <div className="editor-properties">
             <Properties
               record={record}
               page={page}
               onOperations={send}
               disabled={busy}
+              onClose={closeProperties}
             />
           </div>
         )}

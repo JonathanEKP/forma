@@ -8,7 +8,7 @@
 import type { DesignOperation } from "../api";
 import { addPageOperation, addShapeOperation, addTextOperation, removeLayerOperation } from "./insert";
 import type { DesignRecord, Layer, Page } from "../types";
-import { findLayer, isShape, isText, layerKindLabel } from "../types";
+import { findLayer, isImage, isShape, isText, layerKindLabel } from "../types";
 import { useEditor } from "../store";
 
 const row =
@@ -16,14 +16,13 @@ const row =
 const idle = "text-muted hover:text-paper hover:bg-surface-2";
 const active = "text-paper bg-signal/10 outline outline-signal/40";
 
-const label = "text-faint uppercase text-[10px] tracking-[0.11em] px-2 mt-1 mb-2";
-
 export function PagesAndLayers({
   record,
   onOperations,
   disabled,
   fontFamily,
   onClose,
+  onSelectLayer,
   lockedLayerIds = new Set<string>(),
 }: {
   record: DesignRecord;
@@ -31,6 +30,7 @@ export function PagesAndLayers({
   disabled: boolean;
   fontFamily: string;
   onClose: () => void;
+  onSelectLayer: () => void;
   lockedLayerIds?: ReadonlySet<string>;
 }) {
   const { selectedPageId, selectedLayerId, selectPage, selectLayer } = useEditor();
@@ -53,7 +53,10 @@ export function PagesAndLayers({
       </header>
       <div className="px-3 pb-3">
         <section className="mb-5">
-          <label htmlFor="current-page" className={label}>Page</label>
+          <div className="editor-section-heading">
+            <span>Pages</span>
+            <span className="editor-section-count">{record.document.pages.length}</span>
+          </div>
           <div className="flex items-center gap-2">
             <select
               id="current-page"
@@ -84,7 +87,10 @@ export function PagesAndLayers({
         </section>
 
         <section aria-label="Layers">
-          <div className={label}>Layers</div>
+          <div className="editor-section-heading">
+            <span>Layers</span>
+            <span className="editor-section-count">{page?.layers.length ?? 0}</span>
+          </div>
 
       {/* Without these there is no way to build a piece by hand, which is what
           Phase 6 has to prove. They send the same typed operations an agent
@@ -130,15 +136,18 @@ export function PagesAndLayers({
               type="button"
               disabled={disabled || locked}
               title={locked ? "This layer is read-only while an approval is pending." : undefined}
-              aria-label={locked ? `${layer.name}, read-only while an approval is pending` : undefined}
+              aria-label={locked ? `${layer.name}, read-only while an approval is pending` : `${layer.name}, ${layerKindLabel(layer)} layer`}
               data-approval-highlight={highlighted ? "true" : undefined}
               data-approval-locked={locked ? "true" : undefined}
               className={`${row} ${selected ? active : highlighted ? "text-paper bg-signal/8 outline outline-1 outline-signal/35" : idle} ${locked ? "cursor-not-allowed opacity-70" : ""}`}
-              onClick={() => selectLayer(layer.id)}
+              onClick={() => {
+                selectLayer(layer.id);
+                onSelectLayer();
+              }}
             >
-              <Dot on={selected || highlighted} />
+              <LayerIcon layer={layer} active={selected || highlighted} />
               <span className="truncate flex-1">{layer.name}</span>
-              <span className="text-faint text-[10px]">{locked ? "Read-only" : layerKindLabel(layer)}</span>
+              {locked && <span className="text-faint text-[10px]">Read-only</span>}
             </button>
           );
         })}
@@ -148,12 +157,20 @@ export function PagesAndLayers({
   );
 }
 
-function Dot({ on }: { on: boolean }) {
-  return (
-    <span
-      className={`h-[7px] w-[7px] rounded-sm shrink-0 ${on ? "bg-signal" : "bg-faint"}`}
-    />
-  );
+function LayerIcon({ layer, active }: { layer: Layer; active: boolean }) {
+  const className = `editor-layer-icon${active ? " is-active" : ""}`;
+  if (isText(layer)) return <span className={`${className} editor-layer-icon-text`} aria-hidden="true">T</span>;
+  if (isShape(layer)) return <span className={`${className} editor-layer-icon-shape`} aria-hidden="true">□</span>;
+  if (isImage(layer)) {
+    return (
+      <svg className={className} viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <rect x="2" y="2.5" width="12" height="11" rx="1.5" />
+        <circle cx="5.5" cy="6" r="1" />
+        <path d="m3.5 11 3-3 2 2 1.5-1.5 2.5 2.5" />
+      </svg>
+    );
+  }
+  return null;
 }
 
 function Empty({ children }: { children: React.ReactNode }) {
@@ -165,16 +182,17 @@ interface PropertiesProps {
   page: Page | null;
   onOperations: (operations: DesignOperation[]) => void;
   disabled: boolean;
+  onClose: () => void;
 }
 
-export function Properties({ record, page, onOperations, disabled }: PropertiesProps) {
+export function Properties({ record, page, onOperations, disabled, onClose }: PropertiesProps) {
   const selectedLayerId = useEditor((s) => s.selectedLayerId);
   const draft = useEditor((s) => s.draft);
   const layer = findLayer(page, selectedLayerId);
 
   if (!layer) {
     return (
-      <Panel title="Properties">
+      <Panel title="Properties" onClose={onClose}>
         <Empty>Select a layer to edit it.</Empty>
       </Panel>
     );
@@ -185,21 +203,18 @@ export function Properties({ record, page, onOperations, disabled }: PropertiesP
   const frame = draft?.layerId === layer.id ? draft : layer.transform;
 
   return (
-    <Panel title="Properties">
-      <Field label="Layer">
-        <span className="truncate">{layer.name}</span>
-        <span className="text-faint">{layerKindLabel(layer)}</span>
-      </Field>
+    <Panel title="Properties" onClose={onClose}>
+      <div className="editor-property-name">
+        <strong className="truncate">{layer.name}</strong>
+        <span>{page?.name ?? "Page"} · {layerKindLabel(layer)}</span>
+      </div>
 
-      <Field label="Position">
-        <span className="tabular-nums">X {Math.round(frame.x)}</span>
-        <span className="tabular-nums">Y {Math.round(frame.y)}</span>
-      </Field>
-
-      <Field label="Size">
-        <span className="tabular-nums">W {Math.round(frame.width)}</span>
-        <span className="tabular-nums">H {Math.round(frame.height)}</span>
-      </Field>
+      <div className="editor-property-grid" role="group" aria-label="Layer position and size">
+        <PropertyValue label="X" value={Math.round(frame.x)} />
+        <PropertyValue label="Y" value={Math.round(frame.y)} />
+        <PropertyValue label="Width" value={Math.round(frame.width)} />
+        <PropertyValue label="Height" value={Math.round(frame.height)} />
+      </div>
 
       {isText(layer) && (
         <TextProperties
@@ -250,13 +265,15 @@ function TextProperties({
 }) {
   return (
     <>
-      <div className="mb-4">
-        <div className="text-faint text-[10px] mb-1.5 px-1">CONTENT</div>
+      <div className="editor-property-field">
+        <label htmlFor="editor-layer-text">Text</label>
         <textarea
+          id="editor-layer-text"
           key={`${layer.id}:${layer.text}`}
           defaultValue={layer.text}
           rows={3}
           disabled={disabled}
+          aria-label="Text"
           className="w-full rounded-lg border border-edge bg-surface-2 px-2.5 py-2 text-xs
                      text-paper outline-none focus:border-signal disabled:opacity-50"
           onBlur={(event) => {
@@ -266,18 +283,23 @@ function TextProperties({
           }}
         />
         {/* Plan section 18: no implicit wrapping, so a line break is a real \n. */}
-        <p className="mt-1.5 px-1 text-[10px] text-faint">
+        <p className="mt-1.5 text-[10px] text-faint">
           Line breaks are literal. Text does not wrap on its own.
         </p>
       </div>
 
-      <Field label="Type">
-        <span className="truncate">{layer.font_family}</span>
-        <span className="text-faint tabular-nums">
-          {Math.round(layer.font_size)}px / {layer.font_weight}
-        </span>
-      </Field>
+      <PropertyValue label="Font size" value={`${Math.round(layer.font_size)} px`} />
+      <PropertyValue label="Font family" value={layer.font_family} />
     </>
+  );
+}
+
+function PropertyValue({ label: name, value }: { label: string; value: string | number }) {
+  return (
+    <div className="editor-property-value">
+      <span>{name}</span>
+      <span className="tabular-nums">{value}</span>
+    </div>
   );
 }
 
@@ -296,7 +318,7 @@ export function Panel({
       aria-label={title}
     >
       <header className="editor-pane-heading">
-        <div className={label}>{title}</div>
+        <div className="editor-panel-title">{title}</div>
         {onClose && (
           <button type="button" className="editor-close-button" onClick={onClose} aria-label={`Close ${title}`}>
             ×

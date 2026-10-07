@@ -58,7 +58,7 @@ describe("approval layer highlight", () => {
     });
     const onCommit = vi.fn();
     const { container } = render(
-      <Canvas record={record} page={record.document.pages[0]} svg={undefined} onCommit={onCommit} disabled={false} lockedLayerIds={new Set([headline.id])} />,
+      <Canvas record={record} page={record.document.pages[0]} svg={undefined} onCommit={onCommit} onSelectLayer={vi.fn()} disabled={false} lockedLayerIds={new Set([headline.id])} />,
     );
     const rect = container.querySelector('rect[data-approval-highlight="true"]');
 
@@ -83,7 +83,7 @@ describe("approval layer highlight", () => {
       },
     });
     const { container } = render(
-      <PagesAndLayers record={record} onOperations={vi.fn()} disabled={false} fontFamily="Geist" onClose={vi.fn()} lockedLayerIds={new Set([headline.id])} />,
+      <PagesAndLayers record={record} onOperations={vi.fn()} disabled={false} fontFamily="Geist" onClose={vi.fn()} onSelectLayer={vi.fn()} lockedLayerIds={new Set([headline.id])} />,
     );
     const row = screen.getByRole("button", { name: "Headline, read-only while an approval is pending" });
 
