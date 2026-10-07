@@ -25,6 +25,7 @@ export function currentView(
   const record = queries.getQueryData<DesignRecord>(keys.design(designId));
   const { selectedPageId, selectedLayerId } = useEditor.getState();
   const page = record?.document.pages.find((candidate) => candidate.id === selectedPageId);
+  const pageIndex = record?.document.pages.findIndex((candidate) => candidate.id === selectedPageId) ?? -1;
   const layer = page?.layers.find((candidate) => layerId(candidate) === selectedLayerId);
 
   const ids: ViewIds = {
@@ -35,5 +36,12 @@ export function currentView(
   };
   // A design that has not loaded yet has no name to show; the ids still go, and the sidecar reads the name.
   if (!record) return { ids };
-  return { ids, chip: { design: record.name, ...(page ? { page: page.name } : {}), ...(layer ? { layer: layer.name } : {}) } };
+  return {
+    ids,
+    chip: {
+      design: record.name,
+      ...(page ? { page: page.name, pageNumber: pageIndex + 1 } : {}),
+      ...(layer ? { layer: layer.name } : {}),
+    },
+  };
 }

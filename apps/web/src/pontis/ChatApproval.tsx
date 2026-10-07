@@ -144,7 +144,7 @@ export function ApprovalCard({
   const canAnswer = status === "pending" && !busy && !expiredLocally;
   const actionHelp = expiredLocally
     ? "This approval expired. No changes were made."
-    : "This answer applies to this request only.";
+    : "Only this request. No permission for future changes.";
 
   useEffect(() => {
     if (status !== "pending" && approvalHighlight?.approvalId === approval.approvalId) setApprovalHighlight(null);

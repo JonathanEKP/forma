@@ -94,6 +94,14 @@ describe("approval card states", () => {
     expect(screen.getByRole("button", { name: "Deny" })).toBeTruthy();
   });
 
+  it("makes clear that approval applies only to this request", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-06T12:00:00.000Z"));
+    card();
+
+    expect(screen.getByText("Only this request. No permission for future changes.")).toBeTruthy();
+  });
+
   it("counts down from expiresAt and marks under thirty seconds urgent", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-10-06T12:00:00.000Z"));

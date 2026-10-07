@@ -34,7 +34,7 @@ The audit ([ux-batch-1-fidelity.md](ux-batch-1-fidelity.md)) found the two proto
 
 - **Wording of stopped notices (UX1-37…UX1-43): keep "computer".** Round 3 named the thing "computer", so the build's notices stay and the `chat.html` "device/Runtime" wording is not copied. The one exception is the offline-during-a-turn notice (UX1-38, UX1-66), which takes the round-3 `devices.html` wording: "{name} went offline during this turn." / "Start it on your computer, then begin a new session. To use another online computer, choose it below first." (the last sentence only when another computer is online).
 - **UX1-11 stays as built.** The round-1 collapsed composer ("Ask the agent…") replaces the prototype's rail chat icon by decision.
-- **Other audit items still open:** UX1-12, UX1-13, UX1-14, the approval helper "Only this request. No permission for future changes." (UX1-15, UX1-53), and the "Your session is ready." / "Send a message when you are ready." info notice (UX1-46).
+- **H2 closed the remaining chat findings:** UX1-12, UX1-13, UX1-14, the approval helper (UX1-15, UX1-53), and the ready notice (UX1-46). The offline-during-a-turn wording (UX1-38, UX1-66) is also fixed below.
 
 ### H1 implementation evidence
 
@@ -48,6 +48,21 @@ UX1-4, UX1-5, UX1-9, UX1-10 and UX1-69 were implemented in `3f6873d` and browser
 | UX1-9 | fixed (3f6873d) | [app](evidence/ux1/H1-9-app.png) / [prototype](evidence/ux1/H1-9-proto.png) |
 | UX1-10 | fixed (3f6873d) | [app](evidence/ux1/H1-10-app.png) / [prototype](evidence/ux1/H1-10-proto.png) |
 | UX1-69 | fixed (3f6873d) | [app](evidence/ux1/H1-69-app.png) / [prototype](evidence/ux1/H1-69-proto.png) |
+
+### H2 implementation evidence
+
+The chat header, composer and context were compared with `chat.html` at 1595×937. UX1-38 and UX1-66 were browser-proved on FakeProvider instance 71 by leaving an approval pending, stopping only that instance's test driver, and confirming the offline-during-a-turn notice; the instance was then stopped.
+
+| Finding | Status | Browser evidence |
+|---|---|---|
+| UX1-12 | fixed (5987c28) | [Session info popover](evidence/ux1/H2-UX1-12-app.png) |
+| UX1-13 | fixed (5987c28) | [Composer](evidence/ux1/H2-UX1-13-app.png) |
+| UX1-14 | fixed (5987c28) | [Design, page and selected layer context](evidence/ux1/H2-UX1-14-app.png) |
+| UX1-15 | fixed (1f8fd21) | [Approval helper](evidence/ux1/H2-UX1-15-app.png) |
+| UX1-38 | fixed (5987c28) | [Offline during a turn](evidence/ux1/H2-UX1-38-app.png) |
+| UX1-46 | fixed (5987c28) | [Session ready notice](evidence/ux1/H2-UX1-46-app.png) |
+| UX1-53 | fixed (1f8fd21) | [Approval helper](evidence/ux1/H2-UX1-53-app.png) |
+| UX1-66 | fixed (5987c28) | [Devices F offline wording](evidence/ux1/H2-UX1-66-app.png) |
 
 ## Question answered, no change
 
