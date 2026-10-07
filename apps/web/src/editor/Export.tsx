@@ -10,7 +10,7 @@
  * saw even after the design moves on.
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   ApiError,
@@ -39,6 +39,31 @@ export function ExportButton({
   const [scale, setScale] = useState(1);
   const [result, setResult] = useState<ExportResult | null>(null);
   const create = useCreateExport(designId);
+  const root = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setOpen(false);
+      trigger.current?.focus();
+    };
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (root.current && event.target instanceof Node && !root.current.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener("keydown", closeOnEscape);
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape);
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+    };
+  }, [open]);
 
   // Section 42: errors are the ones that mean the design is broken. The editor
   // says so and still lets a person decide, which is the difference between a
@@ -54,12 +79,14 @@ export function ExportButton({
   };
 
   return (
-    <div className="relative">
+    <div ref={root} className="relative">
       <button
+        ref={trigger}
         type="button"
         disabled={disabled}
         onClick={() => setOpen((was) => !was)}
         aria-expanded={open}
+        aria-haspopup="true"
         aria-controls="editor-export-options"
         className="editor-export-button rounded-lg px-4 py-2 text-xs font-semibold disabled:opacity-40"
       >
@@ -74,6 +101,18 @@ export function ExportButton({
           className="absolute right-0 top-[38px] z-20 w-64 rounded-xl border border-edge
                      bg-surface p-3 shadow-lg"
         >
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h2 className="text-xs font-medium text-paper">Export options</h2>
+            <button
+              type="button"
+              className="editor-close-button"
+              onClick={() => setOpen(false)}
+              aria-label="Close export options"
+            >
+              ×
+            </button>
+          </div>
+
           {errors.length > 0 && (
             <div className="mb-2.5 rounded-lg border border-signal/45 bg-signal/6 px-2.5 py-2 text-[11px] leading-snug">
               <strong className="font-semibold">
