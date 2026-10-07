@@ -56,7 +56,7 @@ export function Editor({
   onToggleChat?: () => void;
 }) {
   const { data: record, isLoading, error, refetch } = useDesign(designId);
-  const { selectedPageId, selectedLayerId, selectPage, selectLayer, panel, setPanel, zoom, setZoom, approvalHighlight, setApprovalHighlight, setOpenDesignId } = useEditor();
+  const { selectedPageId, selectedLayerId, selectPage, selectLayer, panel, setPanel, propertiesOpen, setPropertiesOpen, zoom, setZoom, approvalHighlight, setApprovalHighlight, setOpenDesignId } = useEditor();
   const [activeTool, setActiveTool] = useState<RailTool | null>(() =>
     panel === "assets" || panel === "brand" ? panel : panel === "validation" ? null : "layers",
   );
@@ -87,6 +87,8 @@ export function Editor({
     setValidationOpen(false);
     setEditorPanel("properties");
   }, [setEditorPanel]);
+
+  const closeProperties = useCallback(() => setPropertiesOpen(false), [setPropertiesOpen]);
 
   const toggleTool = useCallback((tool: RailTool) => {
     const next = activeTool === tool ? null : tool;
@@ -220,15 +222,16 @@ export function Editor({
   }, [chat?.pending, chatOpen, record]);
 
   useEffect(() => {
-    if (!activeTool && !validationOpen) return;
+    if (!propertiesOpen && !activeTool && !validationOpen) return;
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       event.preventDefault();
-      closePanels();
+      if (propertiesOpen) closeProperties();
+      else closePanels();
     };
     document.addEventListener("keydown", closeOnEscape);
     return () => document.removeEventListener("keydown", closeOnEscape);
-  }, [activeTool, validationOpen, closePanels]);
+  }, [activeTool, closePanels, closeProperties, propertiesOpen, validationOpen]);
 
   const send = (operations: DesignOperation[]) => {
     if (!record || operations.length === 0) return;
@@ -476,13 +479,14 @@ export function Editor({
           )}
         </main>
 
-        {selectedLayer && page && (
+        {propertiesOpen && selectedLayer && page && (
           <div className="editor-properties">
             <Properties
               record={record}
               page={page}
               onOperations={send}
               disabled={busy}
+              onClose={closeProperties}
             />
           </div>
         )}
