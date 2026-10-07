@@ -44,7 +44,6 @@ interface EditorState {
   selectedLayerId: string | null;
   zoom: number;
   panel: Panel;
-  propertiesOpen: boolean;
   /**
    * Set only while a pointer is down. Plan section 38: the pointer move is
    * local state and sends nothing, so a drag is one operation rather than one
@@ -64,7 +63,6 @@ interface EditorState {
   selectLayer: (id: string | null) => void;
   setZoom: (zoom: number) => void;
   setPanel: (panel: Panel) => void;
-  setPropertiesOpen: (open: boolean) => void;
   setDraft: (draft: DraftFrame | null) => void;
   announce: (text: string) => void;
   dismissNotice: () => void;
@@ -81,7 +79,6 @@ export const useEditor = create<EditorState>((set) => ({
   selectedLayerId: null,
   zoom: 1,
   panel: "properties",
-  propertiesOpen: false,
   draft: null,
   notice: null,
 
@@ -94,15 +91,13 @@ export const useEditor = create<EditorState>((set) => ({
 
   selectPage: (selectedPageId) =>
     // A layer belongs to one page, so it cannot stay selected across a change.
-    set({ selectedPageId, selectedLayerId: null, propertiesOpen: false, draft: null }),
+    set({ selectedPageId, selectedLayerId: null, draft: null }),
 
-  selectLayer: (selectedLayerId) => set({ selectedLayerId, propertiesOpen: selectedLayerId !== null, draft: null }),
+  selectLayer: (selectedLayerId) => set({ selectedLayerId, draft: null }),
 
   setZoom: (zoom) => set({ zoom: Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom)) }),
 
-  setPanel: (panel) => set((state) => ({ panel, propertiesOpen: panel === "properties" ? true : state.propertiesOpen })),
-
-  setPropertiesOpen: (propertiesOpen) => set({ propertiesOpen }),
+  setPanel: (panel) => set({ panel }),
 
   setDraft: (draft) => set({ draft }),
 

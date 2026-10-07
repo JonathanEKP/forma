@@ -165,17 +165,16 @@ interface PropertiesProps {
   page: Page | null;
   onOperations: (operations: DesignOperation[]) => void;
   disabled: boolean;
-  onClose: () => void;
 }
 
-export function Properties({ record, page, onOperations, disabled, onClose }: PropertiesProps) {
+export function Properties({ record, page, onOperations, disabled }: PropertiesProps) {
   const selectedLayerId = useEditor((s) => s.selectedLayerId);
   const draft = useEditor((s) => s.draft);
   const layer = findLayer(page, selectedLayerId);
 
   if (!layer) {
     return (
-      <Panel title="Properties" onClose={onClose}>
+      <Panel title="Properties">
         <Empty>Select a layer to edit it.</Empty>
       </Panel>
     );
@@ -186,7 +185,7 @@ export function Properties({ record, page, onOperations, disabled, onClose }: Pr
   const frame = draft?.layerId === layer.id ? draft : layer.transform;
 
   return (
-    <Panel title="Properties" onClose={onClose}>
+    <Panel title="Properties">
       <Field label="Layer">
         <span className="truncate">{layer.name}</span>
         <span className="text-faint">{layerKindLabel(layer)}</span>
