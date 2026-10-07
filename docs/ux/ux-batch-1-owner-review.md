@@ -4,12 +4,14 @@
 
 ## Findings
 
-| Id | Where | What the owner saw | Decision |
-|---|---|---|---|
-| UX1-4 | Editor, Properties panel | The panel has no close button. Its only exit is deselecting, which nobody guesses. | **Superseded by UX1-8.** Properties opens in the shared left flyout, whose × closes it, as do Escape and deselection. Closing does not change the selection, and selecting a layer reopens it. |
-| UX1-5 | Editor, Export | The export options open, but there is no obvious way to close them. | **Superseded by UX1-8.** Export opens in the shared left flyout with its ×, and Escape returns focus to Export. No backdrop, no modal (C-5). An export already running keeps running when the flyout closes. |
-| UX1-6 | Chat, transcript scrollbar | The scrollbar style is not liked. | Invisible until used: no visible bar at rest; a thin, semi-transparent overlay thumb appears while the pointer is over the transcript or it is scrolling, then fades. The content width does not shift when it appears. Keyboard and wheel scrolling are unchanged. |
-| UX1-7 | Chat, Jump to latest | The text button sits in the layout between the transcript and the composer, cutting the conversation, and looks plain. | A small round floating button with a ↓ arrow, overlaid on the bottom-right of the transcript. It takes no layout space and has the accessible name "Jump to latest". When a new entry arrives while the person is scrolled up, it shows a small Signal dot. It appears and disappears with a short fade, and the follow rule of UX1-3 is unchanged. |
+| Id | Where | What the owner saw | Decision | Status |
+|---|---|---|---|---|
+| UX1-4 | Editor, Properties panel | The panel has no close button. Its only exit is deselecting, which nobody guesses. | **Superseded by UX1-8.** Properties opens in the shared left flyout, whose × closes it, as do Escape and deselection. Closing does not change the selection, and selecting a layer reopens it. | Superseded by UX1-8 |
+| UX1-5 | Editor, Export | The export options open, but there is no obvious way to close them. | **Superseded by UX1-8.** Export opens in the shared left flyout with its ×, and Escape returns focus to Export. No backdrop, no modal (C-5). An export already running keeps running when the flyout closes. | Superseded by UX1-8 |
+| UX1-6 | Chat, transcript scrollbar | The scrollbar style is not liked. | Invisible until used: no visible bar at rest; a thin, semi-transparent overlay thumb appears while the pointer is over the transcript or it is scrolling, then fades. The content width does not shift when it appears. Keyboard and wheel scrolling are unchanged. | fixed (e513cae) |
+| UX1-7 | Chat, Jump to latest | The text button sits in the layout between the transcript and the composer, cutting the conversation, and looks plain. | A small round floating button with a ↓ arrow, overlaid on the bottom-right of the transcript. It takes no layout space and has the accessible name "Jump to latest". When a new entry arrives while the person is scrolled up, it shows a small Signal dot. It appears and disappears with a short fade, and the follow rule of UX1-3 is unchanged. | fixed (8f636f0) |
+
+UX1-6 and UX1-7 were browser-proved on FakeProvider instance 32, then stopped. The [transcript at rest](evidence/ux1/G-6-scrollbar-rest.png) and [on hover](evidence/ux1/G-6-scrollbar-hover.png) kept the same content width; the [Jump to latest state](evidence/ux1/G-7-jump-latest.png) shows its Signal dot while scrolled up.
 
 ## Fidelity to the approved prototypes
 
