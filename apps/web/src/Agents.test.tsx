@@ -189,17 +189,100 @@ describe("agent credentials", () => {
     expect(screen.getByRole("link", { name: "Chat in the editor" }).getAttribute("href")).toBe("/agents");
   });
 
-  it("explains MCP and keeps the existing per-host wording", () => {
+  it("explains MCP and defaults to the Claude setup tab", () => {
     window.history.replaceState({}, "", "/agents/mcp");
     renderAgents();
 
     expect(screen.getByText("MCP is a standard way for an AI app to use tools in another app.")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Your MCP URL" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Pick your app" })).toBeTruthy();
-    expect(screen.getByText(/Add a custom connector and paste the URL\. Claude completes the authorization in your browser\./)).toBeTruthy();
-    expect(screen.getByText(/These hosts accept OAuth or nothing at all, so a personal access token will not work there\./)).toBeTruthy();
-    expect(screen.getByText(/Command-line hosts cannot open a browser for you\. Create a personal access token below and give it to them as a bearer credential\./)).toBeTruthy();
+    expect(screen.getByRole("tablist", { name: "Pick your app" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Claude" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tabpanel", { name: "Claude" })).toBeTruthy();
+    expect(screen.getByText(/Free allows one connector/i)).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Devices" })).toBeNull();
+  });
+
+  it("switches the app setup with clicks and wrapping tab keys", () => {
+    window.history.replaceState({}, "", "/agents/mcp");
+    renderAgents();
+
+    const claude = screen.getByRole("tab", { name: "Claude" });
+    const chatgpt = screen.getByRole("tab", { name: "ChatGPT" });
+    const vscode = screen.getByRole("tab", { name: "VS Code (GitHub Copilot)" });
+    fireEvent.click(chatgpt);
+    expect(chatgpt.getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tabpanel", { name: "ChatGPT" })).toBeTruthy();
+    expect(screen.queryByRole("tabpanel", { name: "Claude" })).toBeNull();
+
+    fireEvent.keyDown(chatgpt, { key: "ArrowRight" });
+    expect(screen.getByRole("tab", { name: "Claude Code" }).getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(screen.getByRole("tab", { name: "Claude Code" }), { key: "Home" });
+    expect(claude.getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(claude, { key: "End" });
+    expect(vscode.getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(vscode, { key: "ArrowRight" });
+    expect(claude.getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("uses the live MCP URL in the selected app snippets and copies snippets", async () => {
+    window.history.replaceState({}, "", "/agents/mcp");
+    renderAgents();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Claude Code" }));
+    const liveUrl = `${window.location.origin}/mcp`;
+    const snippet = screen.getByLabelText("Claude Code OAuth setup command");
+    expect(snippet.textContent).toContain(liveUrl);
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    fireEvent.click(screen.getByRole("button", { name: "Copy Claude Code OAuth setup command" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(snippet.textContent));
+  });
+
+  it("does not offer a ChatGPT token path", () => {
+    window.history.replaceState({}, "", "/agents/mcp");
+    renderAgents();
+    fireEvent.click(screen.getByRole("tab", { name: "ChatGPT" }));
+
+    expect(screen.queryByText("Use a token instead")).toBeNull();
+    expect(screen.getByText(/Pro is read only/i)).toBeTruthy();
+    expect(screen.getByText(/admin must publish/i)).toBeTruthy();
+  });
+
+  it("warns that Gemini CLI saves an expanded token in its config", () => {
+    window.history.replaceState({}, "", "/agents/mcp");
+    renderAgents();
+    fireEvent.click(screen.getByRole("tab", { name: "Gemini CLI" }));
+    fireEvent.click(screen.getByText("Use a token instead"));
+
+    expect(screen.getByText(/saves the bearer token in Gemini's config/i)).toBeTruthy();
+    expect(screen.getByText(/does not document an environment-variable reference/i)).toBeTruthy();
+    expect(screen.getByLabelText("Gemini CLI token setup command").textContent).toContain("$FORMA_TOKEN");
+  });
+
+  it("renders no token value in MCP setup guidance", () => {
+    window.history.replaceState({}, "", "/agents/mcp");
+    renderAgents();
+
+    expect(document.body.textContent).not.toMatch(/forma_pat_[a-zA-Z0-9]{16,}/);
+    expect(screen.getAllByRole("link", { name: "Official guide" }).length).toBeGreaterThan(0);
+  });
+
+  it("lists the eight supported apps in the decided order", () => {
+    window.history.replaceState({}, "", "/agents/mcp");
+    renderAgents();
+
+    const tabs = screen.getAllByRole("tab").map((tab) => tab.textContent);
+    expect(tabs).toEqual([
+      "Claude",
+      "ChatGPT",
+      "Claude Code",
+      "Codex CLI",
+      "Gemini CLI",
+      "OpenCode",
+      "Cursor",
+      "VS Code (GitHub Copilot)",
+    ]);
   });
 
   it("uses the wider MCP column, divided sections, and bordered URL row", () => {
