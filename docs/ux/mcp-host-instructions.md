@@ -8,7 +8,7 @@ Forma's remote MCP endpoint is one Streamable HTTP URL: copy the account URL sho
 
 Forma requires authentication. A public deployment advertises a protected-resource document at `/.well-known/oauth-protected-resource/mcp`; `apps/mcp/src/http.rs:61-105` sets the resource to `https://<FORMA_DOMAIN>/mcp`, points `authorization_servers` at `FORMA_SUPABASE_ISSUER`, and advertises bearer headers. Forma publishes that metadata; OAuth authorization, token exchange and dynamic client registration belong to the configured authorization server. `docs/deploy/status.md:210-218` records the hosted PKCE S256 + dynamic-registration flow as verified, while noting Claude connector end to end was not run. For hosts that cannot use that OAuth flow, a Forma personal access token (PAT), prefixed `forma_pat_`, is a bearer credential. The API returns the secret only on creation and stores a hash (`apps/server/src/routes/api_keys.rs:1-5,27-48`; `crates/persistence/src/sqlite/api_key.rs:13,57-85`); account-scoped create/list/revoke routes are in `apps/server/src/routes/api_keys.rs:27-72`. The UI shows a newly created PAT once on /agents/mcp. The internal `FORMA_REMOTE_TOKEN` in `apps/mcp/src/main.rs:43-68` is the MCP service's credential to its backend, not a value the person pastes into a host.
 
-**Repository note.** `CLAUDE.md:73-77` still describes port 4766 as reserved for future MCP HTTP, and `apps/mcp/src/main.rs:1-4` says V1 speaks stdio only; the current CLI and `apps/mcp/src/http.rs` implement HTTP transport. These architecture comments are stale relative to the code and hosted deployment status.
+**Repository note (resolved 2026-10-07).** `CLAUDE.md` now says `forma-mcp --transport http` serves MCP on port 4766 by default, and `apps/mcp/src/main.rs` says the service supports stdio and Streamable HTTP.
 
 Use OAuth when the host supports it and PAT headers when the host supports secure header configuration. Never put a PAT in a checked-in or shared config file. A local loopback MCP URL only works for apps running on that same machine; Claude web/Desktop and ChatGPT connect from their cloud services and need the public Forma URL.
 
@@ -248,7 +248,9 @@ For OAuth, omit `headers` and `oauth: false`, then run `opencode mcp auth forma`
 
 **Sources (read 2026-10-06):** [OpenCode: MCP servers](https://opencode.ai/docs/mcp-servers/); [official OpenCode repository](https://github.com/anomalyco/opencode).
 
-## Recommendation for the /agents/mcp page
+## Earlier recommendation for the /agents/mcp page
+
+The owner decisions below supersede this recommendation where they differ.
 
 Keep the approved **Pick your app** cards and short numbered steps, grouping the nine hosts under three headings or expandable cards:
 
@@ -266,3 +268,15 @@ Today's `apps/web/src/Agents.tsx` copy needs corrections:
 - Cursor, VS Code/Copilot, Windsurf/Cascade, and OpenCode are missing from the cards. The PAT section should distinguish hosts with environment-variable-backed headers from Gemini CLI, whose current remote-header docs do not document env expansion.
 
 **Adoption sources (read 2026-10-06):** [GitHub Copilot: 20M+ developers (2025-10-15)](https://github.blog/ai-and-ml/github-copilot/copilot-faster-smarter-and-built-for-how-you-work-now/); [Cognition: Windsurf had millions of users (2026-07-14)](https://cognition.com/blog/one-year-of-building-together); [OpenCode GitHub repository, 208.3k stars when checked](https://github.com/anomalyco/opencode).
+
+## Owner decisions (2026-10-07)
+
+1. The page has eight apps, in order: Claude, ChatGPT, Claude Code, Codex CLI, Gemini CLI, OpenCode, Cursor, and VS
+   Code (GitHub Copilot). Windsurf is omitted.
+2. “Pick your app” is one wrapping row of accessible tabs and shows one panel at a time, with Claude selected by
+   default. Support click, arrow keys, Home/End, and visible keyboard focus; use Signal only for the selected state.
+3. Browser OAuth is the main path wherever the app supports it. A PAT is a secondary “Use a token instead” disclosure
+   only for apps that accept one; ChatGPT has no token path. Keep PATs in `FORMA_TOKEN` when the host documents
+   environment references. For VS Code, use its documented password prompt; Gemini CLI's token header expands into
+   and is saved in Gemini's config. Every panel has a short requirement, 2–4 numbered steps, the live MCP URL in
+   snippets, Copy buttons, and an official vendor guide.

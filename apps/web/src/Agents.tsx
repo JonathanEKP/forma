@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
 
 import { getIdentity, listProjects } from "./api";
 import { currentSession, listGrants, revokeGrant, supabase, type Grant } from "./identity";
+import { MCP_HOSTS, type McpCodeSample, type McpHost } from "./mcp-hosts";
 import { DevicePanel } from "./pontis/devices-panel";
 import { useApiKeys, useCreateApiKey, useRevokeApiKey } from "./queries";
 
@@ -70,26 +71,7 @@ function McpConnections() {
 
       <section className="mcp-section" aria-labelledby="pick-app-heading">
         <h2 id="pick-app-heading" className="text-base font-medium text-paper">Pick your app</h2>
-        <div className="mcp-host-cards mt-4 grid gap-4 md:grid-cols-2">
-          <article className="mcp-host-card rounded-lg border border-edge bg-surface-2 p-6">
-            <h3 className="text-sm font-medium text-paper">Claude</h3>
-            <p className="mt-2 text-sm leading-6 text-muted">
-              Add a custom connector and paste the URL. Claude completes the authorization in your browser. <strong className="font-medium text-paper">Do not paste a token</strong> — it does not need one.
-            </p>
-          </article>
-          <article className="mcp-host-card rounded-lg border border-edge bg-surface-2 p-6">
-            <h3 className="text-sm font-medium text-paper">ChatGPT and Codex</h3>
-            <p className="mt-2 text-sm leading-6 text-muted">
-              Connect through the provider&apos;s own MCP app flow, with the same URL. These hosts accept OAuth or nothing at all, so a personal access token will not work there.
-            </p>
-          </article>
-          <article className="mcp-host-card rounded-lg border border-edge bg-surface-2 p-6 md:col-span-2">
-            <h3 className="text-sm font-medium text-paper">Codex CLI · Claude Code · Gemini CLI</h3>
-            <p className="mt-2 text-sm leading-6 text-muted">
-              Command-line hosts cannot open a browser for you. Create a personal access token below and give it to them as a bearer credential.
-            </p>
-          </article>
-        </div>
+        <McpHostPicker mcpUrl={mcpUrl} />
       </section>
 
       {grants.available && (
@@ -128,10 +110,10 @@ function McpConnections() {
         </section>
       )}
 
-      <section className="mcp-section" aria-labelledby="tokens-heading">
+      <section id="tokens" className="mcp-section" aria-labelledby="tokens-heading">
         <h2 id="tokens-heading" className="text-base font-medium text-paper">Personal access tokens</h2>
         <p className="mt-2 text-sm leading-6 text-muted">
-          Command-line hosts cannot open a browser for you. Create a named token for the tool or computer that will use it. Revoking one token does not disconnect any other client.
+          Use a personal access token with an app that supports bearer headers. Several command-line apps also support sign-in in your browser. Revoking a token does not disconnect other apps.
         </p>
 
         <form className="mt-4 flex flex-wrap gap-2" onSubmit={submit}>
@@ -208,6 +190,141 @@ function McpConnections() {
         </div>
       </section>
     </main>
+  );
+}
+
+function McpHostPicker({ mcpUrl }: { mcpUrl: string }) {
+  const [selectedHostId, setSelectedHostId] = useState(MCP_HOSTS[0].id);
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const selectedIndex = MCP_HOSTS.findIndex((host) => host.id === selectedHostId);
+  const selectedHost = MCP_HOSTS[selectedIndex] ?? MCP_HOSTS[0];
+
+  function selectByKeyboard(index: number) {
+    const wrappedIndex = (index + MCP_HOSTS.length) % MCP_HOSTS.length;
+    const host = MCP_HOSTS[wrappedIndex];
+    setSelectedHostId(host.id);
+    tabRefs.current[wrappedIndex]?.focus();
+  }
+
+  function onTabKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>, index: number) {
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      selectByKeyboard(index + 1);
+    } else if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      selectByKeyboard(index - 1);
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      selectByKeyboard(0);
+    } else if (event.key === "End") {
+      event.preventDefault();
+      selectByKeyboard(MCP_HOSTS.length - 1);
+    }
+  }
+
+  return (
+    <div className="mt-4 min-w-0">
+      <div role="tablist" aria-labelledby="pick-app-heading" className="mcp-host-tabs flex flex-wrap gap-2">
+        {MCP_HOSTS.map((host, index) => {
+          const selected = host.id === selectedHost.id;
+          const tabId = `mcp-host-tab-${host.id}`;
+          return (
+            <button
+              key={host.id}
+              ref={(element) => { tabRefs.current[index] = element; }}
+              type="button"
+              role="tab"
+              id={tabId}
+              aria-selected={selected}
+              aria-controls="mcp-host-panel"
+              tabIndex={selected ? 0 : -1}
+              onClick={() => setSelectedHostId(host.id)}
+              onKeyDown={(event) => onTabKeyDown(event, index)}
+              className={`mcp-host-tab min-h-10 rounded-lg border px-3 py-2 text-left text-xs transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper sm:text-sm ${selected ? "border-signal/60 bg-surface-2 text-paper" : "border-edge bg-ink text-muted hover:border-edge-strong hover:text-paper"}`}
+            >
+              {host.name}
+            </button>
+          );
+        })}
+      </div>
+      <article
+        id="mcp-host-panel"
+        role="tabpanel"
+        aria-labelledby={`mcp-host-tab-${selectedHost.id}`}
+        tabIndex={0}
+        className="mcp-host-panel mt-4 min-w-0 rounded-lg border border-edge bg-surface-2 p-4 outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal sm:p-6"
+      >
+        {selectedHost.requirement && <p className="text-xs leading-5 text-muted">{selectedHost.requirement}</p>}
+        <ol className="mt-4 list-decimal space-y-3 pl-5 text-sm leading-6 text-paper">
+          {selectedHost.steps.map((step) => <li key={step} className="pl-1">{step}</li>)}
+        </ol>
+        {selectedHost.samples.map((sample) => <CodeSample key={sample.accessibleName} sample={sample} mcpUrl={mcpUrl} />)}
+        {selectedHost.token && <TokenInstructions host={selectedHost} mcpUrl={mcpUrl} />}
+        <a href={selectedHost.officialGuide} target="_blank" rel="noreferrer" className="mt-4 inline-block text-xs text-muted underline underline-offset-4 hover:text-paper focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal">
+          Official guide
+        </a>
+      </article>
+    </div>
+  );
+}
+
+function TokenInstructions({ host, mcpUrl }: { host: McpHost; mcpUrl: string }) {
+  const tokenPath = host.token;
+  if (!tokenPath) return null;
+
+  return (
+    <details className="mcp-token-details mt-5 border-t border-edge pt-4">
+      <summary className="w-fit cursor-pointer text-sm text-paper underline decoration-muted underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-signal">
+        Use a token instead
+      </summary>
+      <div className="mt-3 space-y-3">
+        <p className="text-xs leading-5 text-muted">
+          Create or manage a key in <a href="#tokens" className="text-paper underline underline-offset-4">Personal access tokens</a> below.
+        </p>
+        {tokenPath.warning && <p className="rounded-md border border-edge px-3 py-2 text-xs leading-5 text-paper">{tokenPath.warning}</p>}
+        <ol className="list-decimal space-y-3 pl-5 text-sm leading-6 text-paper">
+          {tokenPath.steps.map((step) => <li key={step} className="pl-1">{step}</li>)}
+        </ol>
+        {tokenPath.samples.map((sample) => <CodeSample key={sample.accessibleName} sample={sample} mcpUrl={mcpUrl} />)}
+      </div>
+    </details>
+  );
+}
+
+function CodeSample({ sample, mcpUrl }: { sample: McpCodeSample; mcpUrl: string }) {
+  const value = sample.content(mcpUrl);
+
+  return (
+    <div className="mcp-code-sample mt-4 min-w-0 rounded-lg border border-edge bg-ink p-3 sm:p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-muted">{sample.label}</p>
+        <CopySnippetButton value={value} label={sample.copyName} />
+      </div>
+      <pre aria-label={sample.accessibleName} className="mcp-code mt-2 min-w-0 whitespace-pre-wrap break-all font-mono text-xs leading-5 text-paper"><code>{value}</code></pre>
+    </div>
+  );
+}
+
+function CopySnippetButton({ value, label }: { value: string; label: string }) {
+  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+
+  async function copy() {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("clipboard unavailable");
+      await navigator.clipboard.writeText(value);
+      setState("copied");
+    } catch {
+      setState("failed");
+    }
+  }
+
+  return (
+    <span className="flex flex-col items-start gap-1">
+      <button type="button" onClick={() => void copy()} aria-label={label} className="min-h-9 rounded-lg border border-edge px-3 py-2 text-xs text-muted hover:border-edge-strong hover:text-paper focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal">
+        {state === "copied" ? "Copied" : state === "failed" ? "Copy failed" : "Copy"}
+      </button>
+      {state === "failed" && <span role="status" className="text-[11px] text-muted">Clipboard unavailable. Select the text and copy it manually.</span>}
+    </span>
   );
 }
 

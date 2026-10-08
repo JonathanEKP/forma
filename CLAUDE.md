@@ -74,7 +74,7 @@ AI host --stdio MCP--> forma-mcp --HTTP localhost--> forma-server --> SQLite + l
   SQLite directly — a single mutation path keeps versioning, validation, and transactions
   in one authority.
 - `forma-server` (Actix Web) binds `127.0.0.1:4765` and also serves the built React
-  `apps/web/dist`, so the whole app is one URL. `4766` is reserved for future MCP HTTP.
+  `apps/web/dist`, so the whole app is one URL. `forma-mcp --transport http` serves remote MCP on port `4766` by default.
 - Rendering authority is Rust: `DesignDocument -> SVG (usvg) -> PNG (resvg)`. The editor
   preview and the export come from the same pipeline.
 
