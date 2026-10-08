@@ -240,11 +240,11 @@ describe("agent credentials", () => {
     }
 
     fireEvent.click(screen.getByRole("tab", { name: "Claude Code" }));
-    const snippet = screen.getByLabelText("Claude Code sign-in and connection check commands");
+    const snippet = screen.getByLabelText("Claude Code registration command");
     expect(snippet.textContent).toContain(liveUrl);
     const writeText = vi.fn(() => Promise.resolve());
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
-    fireEvent.click(screen.getByRole("button", { name: "Copy Claude Code sign-in and connection check commands" }));
+    fireEvent.click(screen.getByRole("button", { name: "Copy Claude Code registration command" }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(snippet.textContent));
   });
 
@@ -256,7 +256,7 @@ describe("agent credentials", () => {
     const tabsWithoutRequirements = ["Claude Code", "Codex CLI", "OpenCode", "Cursor", "Antigravity", "Other app"];
     for (const name of tabsWithoutRequirements) {
       fireEvent.click(screen.getByRole("tab", { name }));
-      expect(panel.querySelector(":scope > p")).toBeNull();
+      expect(panel.querySelector(".mcp-host-requirement")).toBeNull();
     }
 
     fireEvent.click(screen.getByRole("tab", { name: "Claude" }));
@@ -274,18 +274,18 @@ describe("agent credentials", () => {
     renderAgents();
 
     const labels: ReadonlyArray<readonly [string, string, string]> = [
-      ["Claude Code", "Commands", "Claude Code sign-in and connection check commands"],
-      ["Codex CLI", "Commands", "Codex CLI sign-in and connection check commands"],
-      ["Antigravity", "MCP config", "Antigravity MCP config"],
-      ["OpenCode", "Project config", "OpenCode project config"],
-      ["OpenCode", "Sign in and check", "OpenCode sign-in and connection check commands"],
-      ["Cursor", "Project config", "Cursor project config"],
+      ["Claude Code", "Commands", "Claude Code registration command"],
+      ["Codex CLI", "Commands", "Codex CLI registration command"],
+      ["Antigravity", "mcp_config.json", "Antigravity MCP config"],
+      ["OpenCode", "opencode.json", "OpenCode project config"],
+      ["OpenCode", "Commands", "OpenCode sign-in command"],
+      ["Cursor", ".cursor/mcp.json", "Cursor project config"],
     ];
     for (const [hostName, sampleLabel, accessibleName] of labels) {
       fireEvent.click(screen.getByRole("tab", { name: hostName }));
       const panel = screen.getByRole("tabpanel");
-      expect(screen.getByText(sampleLabel)).toBeTruthy();
-      expect(screen.getByLabelText(accessibleName)).toBeTruthy();
+      expect(within(panel).getAllByText(sampleLabel).length).toBeGreaterThan(0);
+      expect(panel.querySelector(`pre[aria-label="${accessibleName}"]`)).toBeTruthy();
       expect(screen.getByRole("button", { name: `Copy ${accessibleName}` })).toBeTruthy();
       expect(panel.textContent).toMatch(/browser/i);
     }
@@ -316,14 +316,14 @@ describe("agent credentials", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Antigravity" }));
     expect(screen.getByRole("tabpanel").textContent).toMatch(/sign in in your browser/i);
     expect(screen.getByLabelText("Antigravity MCP config").textContent).toContain("serverUrl");
-    expect(screen.getByRole("link", { name: "Official guide" }).getAttribute("href")).toBe("https://antigravity.google/docs/mcp");
+    expect(screen.getByRole("link", { name: /Official Antigravity setup guide/ }).getAttribute("href")).toBe("https://antigravity.google/docs/mcp");
     fireEvent.click(screen.getByText("Use a token instead"));
 
     expect(screen.getByText(/Google's docs show bearer tokens as config values; no environment reference is documented/i)).toBeTruthy();
     const tokenSteps = screen.getByText("Use a token instead").closest("details")?.querySelector("ol");
     expect(tokenSteps?.textContent).not.toMatch(/config file|saves? this token/i);
-    expect(screen.getByLabelText("Antigravity token config").textContent).toContain("YOUR_FORMA_TOKEN");
-    expect(screen.getByRole("link", { name: "Personal access tokens" }).getAttribute("href")).toBe("#tokens");
+    expect(screen.getByLabelText("Antigravity token config").textContent).toContain("Bearer <token>");
+    expect(screen.getByRole("link", { name: "Create a personal access token" }).getAttribute("href")).toBe("#token-form");
   });
 
   it("explains Other app with the live URL, Streamable HTTP, browser sign-in, and a placeholder header", () => {
@@ -354,7 +354,7 @@ describe("agent credentials", () => {
       if (tokenDisclosure) fireEvent.click(tokenDisclosure);
       expect(document.body.textContent).not.toMatch(/forma_pat_[a-zA-Z0-9]{16,}/);
       if (tab.textContent?.trim() !== "Other app") {
-        expect(screen.getByRole("link", { name: "Official guide" })).toBeTruthy();
+        expect(screen.getByRole("link", { name: /^Official .* setup guide, opens in a new tab$/ })).toBeTruthy();
       }
     }
   });
@@ -439,7 +439,8 @@ describe("agent credentials", () => {
     expect(urlSection?.querySelector(".mcp-section-content")).toBeTruthy();
     const picker = screen.getByRole("heading", { name: "Pick your app" }).closest("section");
     expect(picker?.querySelector(".mcp-host-layout")).toBeTruthy();
-    expect(picker?.querySelector(".mcp-host-tabs")?.compareDocumentPosition(screen.getByRole("tabpanel")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const tabList = picker?.querySelector(".mcp-host-tabs");
+    expect(tabList && (tabList.compareDocumentPosition(screen.getByRole("tabpanel")) & Node.DOCUMENT_POSITION_FOLLOWING)).toBeTruthy();
   });
 
   it("keeps each numbered step's own code block and copy control", () => {
@@ -477,6 +478,13 @@ describe("agent credentials", () => {
     expect(screen.getByRole("tab", { name: "Cursor" }).getAttribute("aria-selected")).toBe("true");
     expect(screen.getByText("Use a token instead").closest("details")?.hasAttribute("open")).toBe(true);
     expect(document.activeElement).toBe(screen.getByText("Use a token instead"));
+  });
+
+  it("explains how to recover if a token leaks", () => {
+    window.history.replaceState({}, "", "/agents/mcp");
+    renderAgents();
+
+    expect(screen.getByText("If a token leaks, revoke it here and create a new one.")).toBeTruthy();
   });
 
   it("uses the portable VS Code token config with a password input", () => {
@@ -524,7 +532,7 @@ describe("agent credentials", () => {
     window.history.replaceState({}, "", "/agents/mcp");
     renderAgents();
 
-    expect(await screen.findByText("Claude")).toBeTruthy();
+    expect(await screen.findByRole("article", { name: /^Claude, connected/ })).toBeTruthy();
     const disconnect = screen.getByRole("button", { name: "Disconnect Claude" });
     fireEvent.click(disconnect);
     const keep = screen.getByRole("button", { name: "Keep Claude, connected 4 Oct" });

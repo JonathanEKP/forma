@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode, type RefObject } from "react";
 
 import { getIdentity, listProjects } from "./api";
 import { currentSession, listGrants, revokeGrant, supabase, type Grant } from "./identity";
-import { MCP_HOST_GROUPS, MCP_HOSTS, MCP_HOSTS_IN_TAB_ORDER, MCP_OTHER_HOST, type McpCodeSample, type McpHost } from "./mcp-hosts";
+import { MCP_HOST_GROUPS, MCP_HOSTS, MCP_HOSTS_IN_TAB_ORDER, MCP_OTHER_HOST, type McpCodeSample, type McpHost, type McpSetupStep } from "./mcp-hosts";
 import { McpHostIcon } from "./mcp-host-icons";
 import { DevicePanel } from "./pontis/devices-panel";
 import { useApiKeys, useCreateApiKey, useRevokeApiKey } from "./queries";
@@ -36,8 +36,27 @@ function McpConnections() {
   const revoke = useRevokeApiKey();
   const [name, setName] = useState("");
   const [showCreatedToken, setShowCreatedToken] = useState(false);
+  const [selectedHostId, setSelectedHostId] = useState(MCP_HOSTS[0].id);
+  const [tokenOpen, setTokenOpen] = useState(false);
+  const [tokenFocusRequest, setTokenFocusRequest] = useState(0);
+  const tokenDetailsRef = useRef<HTMLDetailsElement>(null);
+  const tokenSummaryRef = useRef<HTMLElement>(null);
   const mcpUrl = `${window.location.origin}/mcp`;
   const grants = useGrants();
+  const selectedHost = MCP_HOSTS_IN_TAB_ORDER.find((host) => host.id === selectedHostId) ?? MCP_HOSTS[0];
+
+  useEffect(() => {
+    if (tokenFocusRequest === 0) return;
+    tokenDetailsRef.current?.scrollIntoView?.({ block: "start" });
+    tokenSummaryRef.current?.focus({ preventScroll: true });
+  }, [tokenFocusRequest, selectedHostId]);
+
+  function followSelectedTokenSteps(event: ReactMouseEvent<HTMLAnchorElement>) {
+    event.preventDefault();
+    if (!selectedHost.token) return;
+    setTokenOpen(true);
+    setTokenFocusRequest((request) => request + 1);
+  }
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -65,137 +84,179 @@ function McpConnections() {
       </div>
 
       <section className="mcp-section" aria-labelledby="mcp-url-heading">
-        <h2 id="mcp-url-heading" className="text-base font-medium text-paper">Your MCP URL</h2>
-        <p className="mt-2 text-sm leading-6 text-muted">Use the same URL in each app you want to connect.</p>
-        <CopyableUrl url={mcpUrl} />
+        <div className="mcp-section-heading">
+          <h2 id="mcp-url-heading">Your MCP URL</h2>
+          <p>Use this URL in each AI app you connect.</p>
+        </div>
+        <div className="mcp-section-content">
+          <CopyableUrl url={mcpUrl} />
+        </div>
       </section>
 
       <section className="mcp-section" aria-labelledby="pick-app-heading">
-        <h2 id="pick-app-heading" className="text-base font-medium text-paper">Pick your app</h2>
-        <McpHostPicker mcpUrl={mcpUrl} />
+        <div className="mcp-section-heading">
+          <h2 id="pick-app-heading">Pick your app</h2>
+          <p>Choose an app to see its connection steps.</p>
+        </div>
+        <div className="mcp-section-content">
+          <McpHostPicker
+            mcpUrl={mcpUrl}
+            selectedHostId={selectedHost.id}
+            onSelectHost={setSelectedHostId}
+            tokenOpen={tokenOpen}
+            onTokenOpenChange={setTokenOpen}
+            tokenDetailsRef={tokenDetailsRef}
+            tokenSummaryRef={tokenSummaryRef}
+          />
+        </div>
       </section>
 
       {grants.available && (
         <section className="mcp-section" aria-labelledby="connected-apps-heading">
-          <h2 id="connected-apps-heading" className="text-base font-medium text-paper">Connected applications</h2>
-          <p className="mt-2 text-sm leading-6 text-muted">
-            Applications you have authorized. Disconnecting one ends its access immediately, and leaves your other connections and access tokens working.
-          </p>
-
-          <div className="mt-4 space-y-2">
-            {grants.error && <p role="alert" className="text-sm text-danger">{grants.error}</p>}
+          <div className="mcp-section-heading">
+            <h2 id="connected-apps-heading">Connected applications</h2>
+            <p>Apps you authorize can use this workspace until you disconnect them.</p>
+          </div>
+          <div className="mcp-section-content">
+            {grants.error && <p role="alert" className="mb-3 text-sm text-danger">{grants.error}</p>}
             {grants.list?.length === 0 && <p className="text-sm text-muted">No applications connected yet.</p>}
-            {grants.list?.map((grant) => (
-              <article
-                key={grant.client.id}
-                aria-label={grant.client.name + ", connected " + dateLabel(grant.granted_at)}
-                className="rounded-lg border border-edge bg-surface-2 px-4 py-3"
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm text-paper">{grant.client.name}</p>
-                    <p className="mt-1 text-xs text-faint">connected {dateLabel(grant.granted_at)}</p>
+            <div className="space-y-2">
+              {grants.list?.map((grant) => (
+                <article
+                  key={grant.client.id}
+                  aria-label={grant.client.name + ", connected " + dateLabel(grant.granted_at)}
+                  className="rounded-lg border border-edge bg-surface-2 px-4 py-3"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm text-paper">{grant.client.name}</p>
+                      <p className="mt-1 text-xs text-faint">connected {dateLabel(grant.granted_at)}</p>
+                    </div>
+                    <InlineConfirmAction
+                      action="Disconnect"
+                      subject={grant.client.name}
+                      specific={grant.client.name + ", connected " + dateLabel(grant.granted_at)}
+                      detail="This app will lose access to your Forma workspace. You can authorize it again later."
+                      pending={grants.pending === grant.client.id}
+                      onConfirm={() => void grants.disconnect(grant.client.id)}
+                    />
                   </div>
-                  <InlineConfirmAction
-                    action="Disconnect"
-                    subject={grant.client.name}
-                    specific={grant.client.name + ", connected " + dateLabel(grant.granted_at)}
-                    detail="This app will lose access to your Forma workspace. You can authorize it again later."
-                    pending={grants.pending === grant.client.id}
-                    onConfirm={() => void grants.disconnect(grant.client.id)}
-                  />
-                </div>
-              </article>
-            ))}
+                </article>
+              ))}
+            </div>
           </div>
         </section>
       )}
 
       <section id="tokens" className="mcp-section" aria-labelledby="tokens-heading">
-        <h2 id="tokens-heading" className="text-base font-medium text-paper">Personal access tokens</h2>
-        <p className="mt-2 text-sm leading-6 text-muted">
-          Use a personal access token with an app that supports bearer headers. Several command-line apps also support sign-in in your browser. Revoking a token does not disconnect other apps.
-        </p>
+        <div className="mcp-section-heading">
+          <h2 id="tokens-heading">Personal access tokens</h2>
+          <p>For apps that need a token instead of browser sign-in.</p>
+        </div>
+        <div className="mcp-section-content">
+          <McpTokenGuidance host={selectedHost} onFollowTokenSteps={followSelectedTokenSteps} />
 
-        <form className="mt-4 flex flex-wrap gap-2" onSubmit={submit}>
-          <input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder="Key name"
-            aria-label="Key name"
-            className="min-w-0 flex-1 rounded-lg border border-edge bg-surface-2 px-3 py-2 text-sm text-paper outline-none placeholder:text-faint focus:border-signal/60"
-          />
-          <button
-            type="submit"
-            disabled={create.isPending || name.trim() === ""}
-            className="rounded-lg bg-signal px-4 py-2 text-sm font-medium text-ink disabled:cursor-not-allowed disabled:opacity-45"
-          >
-            {create.isPending ? "Creating…" : "Create token"}
-          </button>
-        </form>
-
-        {create.isError && <p role="alert" className="mt-3 text-sm text-danger">{create.error.message}</p>}
-
-        {create.data && showCreatedToken && (
-          <div role="status" aria-label="New personal access token, shown once" className="mt-4 rounded-lg border border-signal/40 bg-signal/8 p-4">
-            <p className="text-sm font-medium text-paper">Copy this token now.</p>
-            <p className="mt-1 text-xs leading-5 text-muted">Forma stores only its hash. This complete value will not appear in the list again.</p>
-            <div className="mt-3 flex flex-wrap items-start gap-2">
-              <code className="min-w-0 flex-1 break-all rounded-lg bg-ink px-3 py-2 font-mono text-xs text-paper">{create.data.token}</code>
-              <CopyTextButton value={create.data.token} label="Copy newly created token" />
+          <form id="token-form" className="mcp-token-form" onSubmit={submit}>
+            <label htmlFor="mcp-token-name" className="text-xs text-muted">Token name</label>
+            <div className="flex flex-wrap gap-2">
+              <input
+                id="mcp-token-name"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="Key name"
+                aria-label="Key name"
+                className="min-w-0 flex-1 rounded-lg border border-edge bg-surface-2 px-3 py-2 text-sm text-paper outline-none placeholder:text-faint focus:border-signal/60"
+              />
               <button
-                type="button"
-                aria-label={"Dismiss the full token for " + create.data.key.name + " after saving it"}
-                onClick={() => {
-                  setShowCreatedToken(false);
-                  create.reset();
-                }}
-                className="rounded-lg border border-edge px-3 py-2 text-xs text-muted hover:text-paper"
+                type="submit"
+                disabled={create.isPending || name.trim() === ""}
+                className="rounded-lg bg-signal px-4 py-2 text-sm font-medium text-ink disabled:cursor-not-allowed disabled:opacity-45"
               >
-                I’ve saved it
+                {create.isPending ? "Creating…" : "Create token"}
               </button>
             </div>
-          </div>
-        )}
+          </form>
 
-        <div className="mt-5 space-y-2">
-          {keys.isLoading && <p className="text-sm text-muted">Loading tokens…</p>}
-          {keys.isError && <p role="alert" className="text-sm text-danger">{keys.error.message}</p>}
-          {revoke.isError && <p role="alert" className="text-sm text-danger">{revoke.error.message}</p>}
-          {keys.data?.length === 0 && <p className="text-sm text-muted">No personal access tokens yet.</p>}
-          {keys.data?.map((key) => (
-            <article key={key.id} aria-label={key.name + ", created " + dateLabel(key.created_at)} className="rounded-lg border border-edge bg-surface-2 px-4 py-3">
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <p className="truncate text-sm text-paper">{key.name}</p>
-                  <p className="mt-1 font-mono text-[11px] text-faint">
-                    {key.token_prefix}… · created {dateLabel(key.created_at)}
-                    {key.last_used_at ? " · used " + dateLabel(key.last_used_at) : ""}
-                  </p>
-                </div>
-                {key.revoked_at ? (
-                  <span className="shrink-0 text-xs text-faint">Revoked</span>
-                ) : (
-                  <InlineConfirmAction
-                    action="Revoke"
-                    subject={key.name}
-                    specific={key.name + ", created " + dateLabel(key.created_at)}
-                    detail="Tools using this token will lose access to your Forma workspace. This cannot be undone; create a new token to reconnect."
-                    pending={revoke.isPending}
-                    onConfirm={() => revoke.mutate(key.id)}
-                  />
-                )}
+          {create.isError && <p role="alert" className="mt-3 text-sm text-danger">{create.error.message}</p>}
+
+          {create.data && showCreatedToken && (
+            <div role="status" aria-label="New personal access token, shown once" className="mt-4 rounded-lg border border-signal/40 bg-signal/8 p-4">
+              <p className="text-sm font-medium text-paper">Copy this token now.</p>
+              <p className="mt-1 text-xs leading-5 text-muted">Forma stores only its hash. This complete value will not appear in the list again.</p>
+              <div className="mt-3 flex flex-wrap items-start gap-2">
+                <code className="min-w-0 flex-1 break-all rounded-lg bg-ink px-3 py-2 font-mono text-xs text-paper">{create.data.token}</code>
+                <CopyTextButton value={create.data.token} label="Copy newly created token" />
+                <button
+                  type="button"
+                  aria-label={"Dismiss the full token for " + create.data.key.name + " after saving it"}
+                  onClick={() => {
+                    setShowCreatedToken(false);
+                    create.reset();
+                  }}
+                  className="rounded-lg border border-edge px-3 py-2 text-xs text-muted hover:text-paper"
+                >
+                  I’ve saved it
+                </button>
               </div>
-            </article>
-          ))}
+              <McpTokenFollowUp host={selectedHost} onFollowTokenSteps={followSelectedTokenSteps} />
+            </div>
+          )}
+
+          <div className="mcp-token-list mt-5 space-y-2">
+            {keys.isLoading && <p className="text-sm text-muted">Loading tokens…</p>}
+            {keys.isError && <p role="alert" className="text-sm text-danger">{keys.error.message}</p>}
+            {revoke.isError && <p role="alert" className="text-sm text-danger">{revoke.error.message}</p>}
+            {keys.data?.length === 0 && <p className="text-sm text-muted">No personal access tokens yet.</p>}
+            {keys.data?.map((key) => (
+              <article key={key.id} aria-label={key.name + ", created " + dateLabel(key.created_at)} className="rounded-lg border border-edge bg-surface-2 px-4 py-3">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm text-paper">{key.name}</p>
+                    <p className="mt-1 font-mono text-[11px] text-faint">
+                      {key.token_prefix}… · created {dateLabel(key.created_at)}
+                      {key.last_used_at ? " · used " + dateLabel(key.last_used_at) : ""}
+                    </p>
+                  </div>
+                  {key.revoked_at ? (
+                    <span className="shrink-0 text-xs text-faint">Revoked</span>
+                  ) : (
+                    <InlineConfirmAction
+                      action="Revoke"
+                      subject={key.name}
+                      specific={key.name + ", created " + dateLabel(key.created_at)}
+                      detail="Tools using this token will lose access to your Forma workspace. This cannot be undone; create a new token to reconnect."
+                      pending={revoke.isPending}
+                      onConfirm={() => revoke.mutate(key.id)}
+                    />
+                  )}
+                </div>
+              </article>
+            ))}
+          </div>
+          <p className="mcp-token-safety">If a token leaks, revoke it here and create a new one.</p>
         </div>
       </section>
     </main>
   );
 }
 
-function McpHostPicker({ mcpUrl }: { mcpUrl: string }) {
-  const [selectedHostId, setSelectedHostId] = useState(MCP_HOSTS[0].id);
+function McpHostPicker({
+  mcpUrl,
+  selectedHostId,
+  onSelectHost,
+  tokenOpen,
+  onTokenOpenChange,
+  tokenDetailsRef,
+  tokenSummaryRef,
+}: {
+  mcpUrl: string;
+  selectedHostId: string;
+  onSelectHost: (hostId: string) => void;
+  tokenOpen: boolean;
+  onTokenOpenChange: (open: boolean) => void;
+  tokenDetailsRef: RefObject<HTMLDetailsElement | null>;
+  tokenSummaryRef: RefObject<HTMLElement | null>;
+}) {
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const selectedIndex = MCP_HOSTS_IN_TAB_ORDER.findIndex((host) => host.id === selectedHostId);
   const selectedHost = MCP_HOSTS_IN_TAB_ORDER[selectedIndex] ?? MCP_HOSTS[0];
@@ -203,15 +264,15 @@ function McpHostPicker({ mcpUrl }: { mcpUrl: string }) {
   function selectByKeyboard(index: number) {
     const wrappedIndex = (index + MCP_HOSTS_IN_TAB_ORDER.length) % MCP_HOSTS_IN_TAB_ORDER.length;
     const host = MCP_HOSTS_IN_TAB_ORDER[wrappedIndex];
-    setSelectedHostId(host.id);
+    onSelectHost(host.id);
     tabRefs.current[wrappedIndex]?.focus();
   }
 
   function onTabKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>, index: number) {
-    if (event.key === "ArrowRight") {
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
       event.preventDefault();
       selectByKeyboard(index + 1);
-    } else if (event.key === "ArrowLeft") {
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
       event.preventDefault();
       selectByKeyboard(index - 1);
     } else if (event.key === "Home") {
@@ -238,29 +299,32 @@ function McpHostPicker({ mcpUrl }: { mcpUrl: string }) {
         aria-selected={selected}
         aria-controls="mcp-host-panel"
         tabIndex={selected ? 0 : -1}
-        onClick={() => setSelectedHostId(host.id)}
+        onClick={() => onSelectHost(host.id)}
         onKeyDown={(event) => onTabKeyDown(event, index)}
-        className={`mcp-host-tab min-h-10 rounded-lg border px-3 py-2 text-left text-xs transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper sm:text-sm ${selected ? "border-signal/60 bg-surface-2 text-paper" : "border-edge bg-ink text-muted hover:border-edge-strong hover:text-paper"}`}
+        className="mcp-host-tab"
       >
-        <span className="flex items-center gap-2">
+        <span className="mcp-host-tab-content">
           <McpHostIcon name={host.icon} />
-          <span>{host.name}</span>
+          <span className="mcp-host-tab-name">{host.name}</span>
         </span>
       </button>
     );
   }
 
   return (
-    <div className="mt-4 min-w-0">
-      <div role="tablist" aria-labelledby="pick-app-heading" aria-orientation="horizontal" className="mcp-host-tabs flex flex-wrap items-end gap-x-5 gap-y-3">
-        {MCP_HOST_GROUPS.map((group) => (
-          <div key={group.id} className="mcp-host-group min-w-0" role="presentation">
-            <h3 className="mb-2 text-[10px] font-medium uppercase tracking-[0.12em] text-faint">{group.heading}</h3>
-            <div className="flex flex-wrap gap-2">
-              {MCP_HOSTS.filter((host) => host.group === group.id).map(renderHostTab)}
+    <div className="mcp-host-layout">
+      <div role="tablist" aria-labelledby="pick-app-heading" aria-orientation="vertical" className="mcp-host-tabs">
+        {MCP_HOST_GROUPS.map((group) => {
+          const hosts = MCP_HOSTS.filter((host) => host.group === group.id);
+          return (
+            <div key={group.id} className="mcp-host-group" role="presentation">
+              <h3 className="mcp-host-group-heading">{group.heading}</h3>
+              <div className="mcp-host-group-tabs">
+                {hosts.map(renderHostTab)}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
         <div className="mcp-host-other" role="presentation">
           {renderHostTab(MCP_OTHER_HOST)}
         </div>
@@ -270,44 +334,165 @@ function McpHostPicker({ mcpUrl }: { mcpUrl: string }) {
         role="tabpanel"
         aria-labelledby={`mcp-host-tab-${selectedHost.id}`}
         tabIndex={0}
-        className="mcp-host-panel mt-4 min-w-0 rounded-lg border border-edge bg-surface-2 p-4 outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal sm:p-6"
+        className="mcp-host-panel"
       >
-        {selectedHost.requirement && <p className="text-xs leading-5 text-muted">{selectedHost.requirement}</p>}
-        <ol className="mt-4 list-decimal space-y-3 pl-5 text-sm leading-6 text-paper">
-          {selectedHost.steps.map((step) => <li key={step} className="pl-1">{step}</li>)}
+        <header className="mcp-panel-heading">
+          <span className="mcp-panel-icon"><McpHostIcon name={selectedHost.icon} /></span>
+          <h3>{selectedHost.name}</h3>
+        </header>
+        {selectedHost.requirement && <p className="mcp-host-requirement">{selectedHost.requirement}</p>}
+        <ol className="mcp-steps">
+          {selectedHost.steps.map((step, index) => (
+            <McpStep key={`${selectedHost.id}-step-${index}`} step={step} index={index} mcpUrl={mcpUrl} />
+          ))}
         </ol>
-        {selectedHost.samples.map((sample) => <CodeSample key={sample.accessibleName} sample={sample} mcpUrl={mcpUrl} />)}
-        {selectedHost.token && <TokenInstructions host={selectedHost} mcpUrl={mcpUrl} />}
         {selectedHost.officialGuide && (
-          <a href={selectedHost.officialGuide} target="_blank" rel="noreferrer" className="mt-4 inline-block text-xs text-muted underline underline-offset-4 hover:text-paper focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal">
-            Official guide
+          <a
+            href={selectedHost.officialGuide}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`Official ${selectedHost.name} setup guide, opens in a new tab`}
+            className="mcp-guide"
+          >
+            Official guide ↗
           </a>
+        )}
+        <p className="mcp-next-line">
+          After connecting, ask your AI app to use Forma. Designs and edits appear in your workspace{selectedHost.id === "chatgpt" ? "; on Pro, you can view designs only" : ""}.
+        </p>
+        {selectedHost.token && (
+          <TokenInstructions
+            host={selectedHost}
+            mcpUrl={mcpUrl}
+            tokenOpen={tokenOpen}
+            onTokenOpenChange={onTokenOpenChange}
+            detailsRef={tokenDetailsRef}
+            summaryRef={tokenSummaryRef}
+          />
         )}
       </article>
     </div>
   );
 }
 
-function TokenInstructions({ host, mcpUrl }: { host: McpHost; mcpUrl: string }) {
+function TokenInstructions({
+  host,
+  mcpUrl,
+  tokenOpen,
+  onTokenOpenChange,
+  detailsRef,
+  summaryRef,
+}: {
+  host: McpHost;
+  mcpUrl: string;
+  tokenOpen: boolean;
+  onTokenOpenChange: (open: boolean) => void;
+  detailsRef: RefObject<HTMLDetailsElement | null>;
+  summaryRef: RefObject<HTMLElement | null>;
+}) {
   const tokenPath = host.token;
   if (!tokenPath) return null;
 
   return (
-    <details className="mcp-token-details mt-5 border-t border-edge pt-4">
-      <summary className="w-fit cursor-pointer text-sm text-paper underline decoration-muted underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-signal">
+    <details
+      id="mcp-token-details"
+      ref={detailsRef}
+      open={tokenOpen}
+      onToggle={(event) => onTokenOpenChange(event.currentTarget.open)}
+      className="mcp-token-details"
+    >
+      <summary ref={summaryRef}>
         Use a token instead
       </summary>
-      <div className="mt-3 space-y-3">
-        <p className="text-xs leading-5 text-muted">
-          Create or manage a key in <a href="#tokens" className="text-paper underline underline-offset-4">Personal access tokens</a> below.
+      <div className="mcp-token-content">
+        <p className="mcp-token-intro">
+          Browser sign-in is the main path when your app offers it. If you need a token, <a href="#token-form">create a personal access token below</a>.
         </p>
-        {tokenPath.warning && <p className="rounded-md border border-edge px-3 py-2 text-xs leading-5 text-paper">{tokenPath.warning}</p>}
-        <ol className="list-decimal space-y-3 pl-5 text-sm leading-6 text-paper">
-          {tokenPath.steps.map((step) => <li key={step} className="pl-1">{step}</li>)}
+        {tokenPath.warning && <p className="mcp-token-warning">{tokenPath.warning}</p>}
+        <ol className="mcp-steps mcp-token-steps">
+          {tokenPath.steps.map((step, index) => (
+            <McpStep key={`${host.id}-token-step-${index}`} step={step} index={index} mcpUrl={mcpUrl} />
+          ))}
         </ol>
-        {tokenPath.samples.map((sample) => <CodeSample key={sample.accessibleName} sample={sample} mcpUrl={mcpUrl} />)}
       </div>
     </details>
+  );
+}
+
+function McpStep({ step, index, mcpUrl }: { step: McpSetupStep; index: number; mcpUrl: string }) {
+  return (
+    <li className="mcp-step">
+      <span className="mcp-step-number" aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+      <div className="mcp-step-content">
+        <p className="mcp-step-copy">{renderMcpStepText(step)}</p>
+        {step.code && <CodeSample sample={step.code} mcpUrl={mcpUrl} />}
+      </div>
+    </li>
+  );
+}
+
+function renderMcpStepText(step: McpSetupStep) {
+  const tokenFormPhrase = "Create a personal access token";
+  const matches = [
+    ...(step.inlineCode ?? []).map((phrase) => ({ phrase, kind: "code" as const })),
+    ...(step.linksToTokenForm ? [{ phrase: tokenFormPhrase, kind: "token-link" as const }] : []),
+  ];
+  const nodes: ReactNode[] = [];
+  let cursor = 0;
+  let partIndex = 0;
+
+  while (cursor < step.text.length) {
+    let nextMatch: { phrase: string; kind: "code" | "token-link"; index: number } | undefined;
+    for (const match of matches) {
+      const index = step.text.indexOf(match.phrase, cursor);
+      if (index < 0) continue;
+      if (!nextMatch || index < nextMatch.index || (index === nextMatch.index && match.phrase.length > nextMatch.phrase.length)) {
+        nextMatch = { ...match, index };
+      }
+    }
+
+    if (!nextMatch) {
+      nodes.push(step.text.slice(cursor));
+      break;
+    }
+    if (nextMatch.index > cursor) nodes.push(step.text.slice(cursor, nextMatch.index));
+    nodes.push(nextMatch.kind === "code"
+      ? <code key={`inline-code-${partIndex}`}>{nextMatch.phrase}</code>
+      : <a key={`token-link-${partIndex}`} href="#token-form">{nextMatch.phrase}</a>);
+    partIndex += 1;
+    cursor = nextMatch.index + nextMatch.phrase.length;
+  }
+
+  return <>{nodes}</>;
+}
+
+function McpTokenGuidance({ host, onFollowTokenSteps }: { host: McpHost; onFollowTokenSteps: (event: ReactMouseEvent<HTMLAnchorElement>) => void }) {
+  const noTokenText = `${host.name} signs in in your browser and does not need a token.`;
+
+  return (
+    <ol className="mcp-token-guidance">
+      <li><span>Name the token and create it.</span></li>
+      <li><span>Copy it now. It is shown only once.</span></li>
+      <li>
+        <span>
+          {host.token ? (
+            <a href="#mcp-token-details" onClick={onFollowTokenSteps}>Follow {host.name}'s token steps above</a>
+          ) : noTokenText}
+        </span>
+      </li>
+    </ol>
+  );
+}
+
+function McpTokenFollowUp({ host, onFollowTokenSteps }: { host: McpHost; onFollowTokenSteps: (event: ReactMouseEvent<HTMLAnchorElement>) => void }) {
+  const noTokenText = `${host.name} signs in in your browser and does not need a token.`;
+
+  return (
+    <p className="mcp-token-follow-up">
+      {host.token ? (
+        <>Next: <a href="#mcp-token-details" onClick={onFollowTokenSteps}>follow {host.name}'s token steps ↑</a></>
+      ) : noTokenText}
+    </p>
   );
 }
 
@@ -315,12 +500,12 @@ function CodeSample({ sample, mcpUrl }: { sample: McpCodeSample; mcpUrl: string 
   const value = sample.content(mcpUrl);
 
   return (
-    <div className="mcp-code-sample mt-4 min-w-0 rounded-lg border border-edge bg-ink p-3 sm:p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-muted">{sample.label}</p>
+    <div className="mcp-code-sample">
+      <div className="mcp-code-heading">
+        <p>{sample.label}</p>
         <CopySnippetButton value={value} label={sample.copyName} />
       </div>
-      <pre aria-label={sample.accessibleName} className="mcp-code mt-2 min-w-0 whitespace-pre-wrap break-all font-mono text-xs leading-5 text-paper"><code>{value}</code></pre>
+      <pre aria-label={sample.accessibleName} className="mcp-code"><code>{value}</code></pre>
     </div>
   );
 }
@@ -339,11 +524,11 @@ function CopySnippetButton({ value, label }: { value: string; label: string }) {
   }
 
   return (
-    <span className="flex flex-col items-start gap-1">
-      <button type="button" onClick={() => void copy()} aria-label={label} className="min-h-9 rounded-lg border border-edge px-3 py-2 text-xs text-muted hover:border-edge-strong hover:text-paper focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal">
+    <span className="mcp-copy-control">
+      <button type="button" onClick={() => void copy()} aria-label={label}>
         {state === "copied" ? "Copied" : state === "failed" ? "Copy failed" : "Copy"}
       </button>
-      {state === "failed" && <span role="status" className="text-[11px] text-muted">Clipboard unavailable. Select the text and copy it manually.</span>}
+      {state === "failed" && <span role="status">Clipboard unavailable. Select the text and copy it manually.</span>}
     </span>
   );
 }
