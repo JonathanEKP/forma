@@ -223,14 +223,23 @@ describe("agent credentials", () => {
     expect(vscode.getAttribute("aria-selected")).toBe("true");
     fireEvent.keyDown(vscode, { key: "ArrowRight" });
     expect(claude.getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(claude, { key: "ArrowLeft" });
+    expect(vscode.getAttribute("aria-selected")).toBe("true");
   });
 
-  it("uses the live MCP URL in the selected app snippets and copies snippets", async () => {
+  it("uses the live MCP URL in every app snippet and copies snippets", async () => {
     window.history.replaceState({}, "", "/agents/mcp");
     renderAgents();
 
-    fireEvent.click(screen.getByRole("tab", { name: "Claude Code" }));
     const liveUrl = `${window.location.origin}/mcp`;
+    for (const tab of screen.getAllByRole("tab")) {
+      fireEvent.click(tab);
+      const snippets = screen.getByRole("tabpanel").querySelectorAll("pre");
+      expect(snippets.length).toBeGreaterThan(0);
+      expect(Array.from(snippets).some((snippet) => snippet.textContent?.includes(liveUrl))).toBe(true);
+    }
+
+    fireEvent.click(screen.getByRole("tab", { name: "Claude Code" }));
     const snippet = screen.getByLabelText("Claude Code OAuth setup command");
     expect(snippet.textContent).toContain(liveUrl);
     const writeText = vi.fn(() => Promise.resolve());
@@ -258,14 +267,20 @@ describe("agent credentials", () => {
     expect(screen.getByText(/saves the bearer token in Gemini's config/i)).toBeTruthy();
     expect(screen.getByText(/does not document an environment-variable reference/i)).toBeTruthy();
     expect(screen.getByLabelText("Gemini CLI token setup command").textContent).toContain("$FORMA_TOKEN");
+    expect(screen.getByRole("link", { name: "Personal access tokens" }).getAttribute("href")).toBe("#tokens");
   });
 
-  it("renders no token value in MCP setup guidance", () => {
+  it("renders no token value in MCP setup guidance for any app", () => {
     window.history.replaceState({}, "", "/agents/mcp");
     renderAgents();
 
-    expect(document.body.textContent).not.toMatch(/forma_pat_[a-zA-Z0-9]{16,}/);
-    expect(screen.getAllByRole("link", { name: "Official guide" }).length).toBeGreaterThan(0);
+    for (const tab of screen.getAllByRole("tab")) {
+      fireEvent.click(tab);
+      const tokenDisclosure = screen.queryByText("Use a token instead");
+      if (tokenDisclosure) fireEvent.click(tokenDisclosure);
+      expect(document.body.textContent).not.toMatch(/forma_pat_[a-zA-Z0-9]{16,}/);
+      expect(screen.getByRole("link", { name: "Official guide" })).toBeTruthy();
+    }
   });
 
   it("lists the eight supported apps in the decided order", () => {
