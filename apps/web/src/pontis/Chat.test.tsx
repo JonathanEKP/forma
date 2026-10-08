@@ -642,7 +642,7 @@ describe("a conversation", () => {
 
     backend.push(3, "agent.output.completed", { turnId: "latest", text: "A new entry arrived." });
     await screen.findByText("A new entry arrived.");
-    expect(jump.querySelector("[data-new-entry-indicator]")).toBeTruthy();
+    await waitFor(() => expect(jump.querySelector("[data-new-entry-indicator]")).toBeTruthy());
   });
 
   it("removes the jump button after its exit fade", async () => {
@@ -1172,7 +1172,7 @@ describe("a window's session", () => {
     await waitFor(() => expect(agentBinding.get()).toBe(SESSION));
     backend.push(3, "session.failed", { error: { message: "gone" } });
     await screen.findByRole("region", { name: "Session stopped" });
-    expect(agentBinding.get()).toBeNull();
+    await waitFor(() => expect(agentBinding.get()).toBeNull());
   });
 
   it("is forgotten by a tab that signs out", async () => {
