@@ -10,6 +10,7 @@ the two disagree.
 | `chat.html` | [2](../../round-2-chat.md) | The chat: formatting, UI action cards, session notices, context chip, rail flyouts, session info popover |
 | `devices.html` | [3](../../round-3-devices.md) | "Chat in the editor": pairing steps, device list, revoke, Run on |
 | `mcp.html` | [3](../../round-3-devices.md) | "Use Forma from your AI app": the layout only; the per-app step text is a placeholder |
+| `mcp-v2.html` | [mcp-host-instructions](../../mcp-host-instructions.md) | "Use Forma from your AI app", second version, approved by the owner on 2026-10-08: two-column picker, inline code per step, token instructions. The step text is real; one fix applies when building: VS Code's token example must use the portable `.mcp.json` format (`mcpServers` + `inputs`), not `servers`. Its official guide links are the research's |
 
 Open one directly in a browser. Each has a review rail outside the frame that switches states. They load
 `assets/geist-variable.ttf` and `assets/geist-mono-variable.ttf`, which are not copied here; without them the page
