@@ -240,11 +240,11 @@ describe("agent credentials", () => {
     }
 
     fireEvent.click(screen.getByRole("tab", { name: "Claude Code" }));
-    const snippet = screen.getByLabelText("Claude Code sign-in and connection check commands");
+    const snippet = screen.getByLabelText("Claude Code registration command");
     expect(snippet.textContent).toContain(liveUrl);
     const writeText = vi.fn(() => Promise.resolve());
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
-    fireEvent.click(screen.getByRole("button", { name: "Copy Claude Code sign-in and connection check commands" }));
+    fireEvent.click(screen.getByRole("button", { name: "Copy Claude Code registration command" }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(snippet.textContent));
   });
 
@@ -256,7 +256,7 @@ describe("agent credentials", () => {
     const tabsWithoutRequirements = ["Claude Code", "Codex CLI", "OpenCode", "Cursor", "Antigravity", "Other app"];
     for (const name of tabsWithoutRequirements) {
       fireEvent.click(screen.getByRole("tab", { name }));
-      expect(panel.querySelector(":scope > p")).toBeNull();
+      expect(panel.querySelector(".mcp-host-requirement")).toBeNull();
     }
 
     fireEvent.click(screen.getByRole("tab", { name: "Claude" }));
@@ -274,18 +274,18 @@ describe("agent credentials", () => {
     renderAgents();
 
     const labels: ReadonlyArray<readonly [string, string, string]> = [
-      ["Claude Code", "Commands", "Claude Code sign-in and connection check commands"],
-      ["Codex CLI", "Commands", "Codex CLI sign-in and connection check commands"],
-      ["Antigravity", "MCP config", "Antigravity MCP config"],
-      ["OpenCode", "Project config", "OpenCode project config"],
-      ["OpenCode", "Sign in and check", "OpenCode sign-in and connection check commands"],
-      ["Cursor", "Project config", "Cursor project config"],
+      ["Claude Code", "Commands", "Claude Code registration command"],
+      ["Codex CLI", "Commands", "Codex CLI registration command"],
+      ["Antigravity", "mcp_config.json", "Antigravity MCP config"],
+      ["OpenCode", "opencode.json", "OpenCode project config"],
+      ["OpenCode", "Commands", "OpenCode sign-in command"],
+      ["Cursor", ".cursor/mcp.json", "Cursor project config"],
     ];
     for (const [hostName, sampleLabel, accessibleName] of labels) {
       fireEvent.click(screen.getByRole("tab", { name: hostName }));
       const panel = screen.getByRole("tabpanel");
-      expect(screen.getByText(sampleLabel)).toBeTruthy();
-      expect(screen.getByLabelText(accessibleName)).toBeTruthy();
+      expect(within(panel).getAllByText(sampleLabel).length).toBeGreaterThan(0);
+      expect(panel.querySelector(`pre[aria-label="${accessibleName}"]`)).toBeTruthy();
       expect(screen.getByRole("button", { name: `Copy ${accessibleName}` })).toBeTruthy();
       expect(panel.textContent).toMatch(/browser/i);
     }
@@ -303,6 +303,11 @@ describe("agent credentials", () => {
 
     expect(screen.queryByText("Use a token instead")).toBeNull();
     expect(screen.getByText("Editing needs a Business, Enterprise or Edu plan; on Pro, Forma is read-only. A workspace admin publishes the app.")).toBeTruthy();
+    expect(screen.getByText("ChatGPT signs in in your browser and does not need a token.")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Claude" }));
+    expect(screen.queryByText("Use a token instead")).toBeNull();
+    expect(screen.getByText("Claude signs in in your browser and does not need a token.")).toBeTruthy();
   });
 
   it("shows Antigravity browser sign-in first and a documented token header alternative", () => {
@@ -311,14 +316,14 @@ describe("agent credentials", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Antigravity" }));
     expect(screen.getByRole("tabpanel").textContent).toMatch(/sign in in your browser/i);
     expect(screen.getByLabelText("Antigravity MCP config").textContent).toContain("serverUrl");
-    expect(screen.getByRole("link", { name: "Official guide" }).getAttribute("href")).toBe("https://antigravity.google/docs/mcp");
+    expect(screen.getByRole("link", { name: /Official Antigravity setup guide/ }).getAttribute("href")).toBe("https://antigravity.google/docs/mcp");
     fireEvent.click(screen.getByText("Use a token instead"));
 
     expect(screen.getByText(/Google's docs show bearer tokens as config values; no environment reference is documented/i)).toBeTruthy();
     const tokenSteps = screen.getByText("Use a token instead").closest("details")?.querySelector("ol");
     expect(tokenSteps?.textContent).not.toMatch(/config file|saves? this token/i);
-    expect(screen.getByLabelText("Antigravity token config").textContent).toContain("YOUR_FORMA_TOKEN");
-    expect(screen.getByRole("link", { name: "Personal access tokens" }).getAttribute("href")).toBe("#tokens");
+    expect(screen.getByLabelText("Antigravity token config").textContent).toContain("Bearer <token>");
+    expect(screen.getByRole("link", { name: "Create a personal access token" }).getAttribute("href")).toBe("#token-form");
   });
 
   it("explains Other app with the live URL, Streamable HTTP, browser sign-in, and a placeholder header", () => {
@@ -349,7 +354,7 @@ describe("agent credentials", () => {
       if (tokenDisclosure) fireEvent.click(tokenDisclosure);
       expect(document.body.textContent).not.toMatch(/forma_pat_[a-zA-Z0-9]{16,}/);
       if (tab.textContent?.trim() !== "Other app") {
-        expect(screen.getByRole("link", { name: "Official guide" })).toBeTruthy();
+        expect(screen.getByRole("link", { name: /^Official .* setup guide, opens in a new tab$/ })).toBeTruthy();
       }
     }
   });
@@ -378,6 +383,7 @@ describe("agent credentials", () => {
 
     const tablist = screen.getByRole("tablist");
     expect(screen.getAllByRole("tablist")).toHaveLength(1);
+    expect(tablist.getAttribute("aria-orientation")).toBe("vertical");
     const browser = within(screen.getByRole("heading", { name: "In your browser" }).parentElement as HTMLElement);
     const terminal = within(screen.getByRole("heading", { name: "In your terminal" }).parentElement as HTMLElement);
     const editor = within(screen.getByRole("heading", { name: "In your editor" }).parentElement as HTMLElement);
@@ -390,6 +396,10 @@ describe("agent credentials", () => {
     fireEvent.keyDown(chatgpt, { key: "ArrowRight" });
     expect(screen.getByRole("tab", { name: "Claude Code" }).getAttribute("aria-selected")).toBe("true");
     fireEvent.keyDown(screen.getByRole("tab", { name: "Claude Code" }), { key: "ArrowLeft" });
+    expect(chatgpt.getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(chatgpt, { key: "ArrowDown" });
+    expect(screen.getByRole("tab", { name: "Claude Code" }).getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(screen.getByRole("tab", { name: "Claude Code" }), { key: "ArrowUp" });
     expect(chatgpt.getAttribute("aria-selected")).toBe("true");
     fireEvent.keyDown(screen.getByRole("tab", { name: "Antigravity" }), { key: "ArrowRight" });
     expect(screen.getByRole("tab", { name: "Other app" }).getAttribute("aria-selected")).toBe("true");
@@ -423,6 +433,97 @@ describe("agent credentials", () => {
 
     const copy = screen.getByRole("button", { name: "Copy your MCP URL" });
     expect(copy.parentElement?.classList.contains("mcp-url-row")).toBe(true);
+
+    const urlSection = screen.getByRole("heading", { name: "Your MCP URL" }).closest("section");
+    expect(urlSection?.querySelector(".mcp-section-heading")).toBeTruthy();
+    expect(urlSection?.querySelector(".mcp-section-content")).toBeTruthy();
+    const picker = screen.getByRole("heading", { name: "Pick your app" }).closest("section");
+    expect(picker?.querySelector(".mcp-host-layout")).toBeTruthy();
+    const tabList = picker?.querySelector(".mcp-host-tabs");
+    expect(tabList && (tabList.compareDocumentPosition(screen.getByRole("tabpanel")) & Node.DOCUMENT_POSITION_FOLLOWING)).toBeTruthy();
+  });
+
+  it("keeps each numbered step's own code block and copy control", () => {
+    window.history.replaceState({}, "", "/agents/mcp");
+    renderAgents();
+
+    const panel = screen.getByRole("tabpanel", { name: "Claude" });
+    const steps = panel.querySelectorAll(".mcp-steps > li");
+    expect(steps).toHaveLength(4);
+    expect(Array.from(steps).map((step) => step.querySelector(".mcp-step-number")?.textContent)).toEqual(["01", "02", "03", "04"]);
+
+    const urlSample = screen.getByLabelText("Claude MCP URL");
+    const step = urlSample.closest(".mcp-step");
+    expect(step?.querySelector(".mcp-code-sample")).toBeTruthy();
+    expect(within(step as HTMLElement).getByRole("button", { name: "Copy Claude MCP URL" })).toBeTruthy();
+    expect(panel.querySelectorAll(":scope > .mcp-code-sample")).toHaveLength(0);
+  });
+
+  it("shows numbered token steps, links token creation, and opens the selected app's disclosure from the token section", () => {
+    window.history.replaceState({}, "", "/agents/mcp");
+    renderAgents();
+    fireEvent.click(screen.getByRole("tab", { name: "Cursor" }));
+    fireEvent.click(screen.getByText("Use a token instead"));
+
+    const disclosure = screen.getByText("Use a token instead").closest("details");
+    const tokenSteps = disclosure?.querySelectorAll(".mcp-steps > li");
+    expect(tokenSteps).toHaveLength(2);
+    expect(disclosure?.querySelector(".mcp-steps code")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Create a personal access token" }).getAttribute("href")).toBe("#token-form");
+    expect(screen.getByLabelText("Key name").closest("form")?.id).toBe("token-form");
+
+    const next = screen.getByRole("link", { name: "Follow Cursor's token steps above" });
+    expect(next.getAttribute("href")).toBe("#mcp-token-details");
+    fireEvent.click(next);
+    expect(screen.getByRole("tab", { name: "Cursor" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByText("Use a token instead").closest("details")?.hasAttribute("open")).toBe(true);
+    expect(document.activeElement).toBe(screen.getByText("Use a token instead"));
+  });
+
+  it("explains how to recover if a token leaks", () => {
+    window.history.replaceState({}, "", "/agents/mcp");
+    renderAgents();
+
+    expect(screen.getByText("If a token leaks, revoke it here and create a new one.")).toBeTruthy();
+  });
+
+  it("uses the portable VS Code token config with a password input", () => {
+    window.history.replaceState({}, "", "/agents/mcp");
+    renderAgents();
+    fireEvent.click(screen.getByRole("tab", { name: "VS Code (GitHub Copilot)" }));
+    fireEvent.click(screen.getByText("Use a token instead"));
+
+    const config = JSON.parse(screen.getByLabelText("VS Code token config").textContent ?? "") as {
+      mcpServers?: { forma?: { type?: string; url?: string; headers?: { Authorization?: string } } };
+      inputs?: Array<{ id?: string; type?: string; description?: string; password?: boolean }>;
+      servers?: unknown;
+    };
+    expect(config.servers).toBeUndefined();
+    expect(config.mcpServers?.forma?.type).toBe("http");
+    expect(config.mcpServers?.forma?.url).toBe(`${window.location.origin}/mcp`);
+    expect(config.mcpServers?.forma?.headers?.Authorization).toBe("Bearer ${input:forma-token}");
+    expect(config.inputs).toEqual([{
+      id: "forma-token",
+      type: "promptString",
+      description: "Forma personal access token",
+      password: true,
+    }]);
+  });
+
+  it("shows token follow-up for the selected app after creating a token without leaking it into setup guidance", async () => {
+    window.history.replaceState({}, "", "/agents/mcp");
+    renderAgents();
+    fireEvent.click(screen.getByRole("tab", { name: "Claude Code" }));
+    fireEvent.change(screen.getByLabelText("Key name"), { target: { value: "Claude Code" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create token" }));
+
+    expect(await screen.findByText(TOKEN)).toBeTruthy();
+    const follow = screen.getByRole("link", { name: "follow Claude Code's token steps ↑" });
+    expect(follow.getAttribute("href")).toBe("#mcp-token-details");
+    fireEvent.click(follow);
+    expect(screen.getByRole("tab", { name: "Claude Code" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByText("Use a token instead").closest("details")?.hasAttribute("open")).toBe(true);
+    expect(screen.getByLabelText("Claude Code token config").textContent).not.toContain(TOKEN);
   });
 
   it("disconnects an authorized application inline", async () => {
@@ -431,7 +532,7 @@ describe("agent credentials", () => {
     window.history.replaceState({}, "", "/agents/mcp");
     renderAgents();
 
-    expect(await screen.findByText("Claude")).toBeTruthy();
+    expect(await screen.findByRole("article", { name: /^Claude, connected/ })).toBeTruthy();
     const disconnect = screen.getByRole("button", { name: "Disconnect Claude" });
     fireEvent.click(disconnect);
     const keep = screen.getByRole("button", { name: "Keep Claude, connected 4 Oct" });
