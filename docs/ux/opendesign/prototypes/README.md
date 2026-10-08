@@ -12,6 +12,7 @@ the two disagree.
 | `mcp.html` | [3](../../round-3-devices.md) | "Use Forma from your AI app": the layout only; the per-app step text is a placeholder |
 | `mcp-v2.html` | [mcp-host-instructions](../../mcp-host-instructions.md) | "Use Forma from your AI app", second version, approved by the owner on 2026-10-08: two-column picker, inline code per step, token instructions. The step text is real; one fix applies when building: VS Code's token example must use the portable `.mcp.json` format (`mcpServers` + `inputs`), not `servers`. Its official guide links are the research's |
 | `projects.html` | — | The home page: projects sidebar, design cards with page-1 thumbnails and last editor, Brand Kit row, new design with format or template, image requests per design, inline delete for a design (on its card) and a project (type the name), server unreachable. Approved by the owner on 2026-10-08. Not built yet |
+| `signin.html` | — | Sign-in and first visit: email link with no password, arriving from an AI app, check your inbox with resend wait, sending failed, invited (create my workspace), not invited, expired or used link. Approved by the owner on 2026-10-08. Not built yet; the expired-link state needs the provider's error read from the return URL |
 
 Open one directly in a browser. Each has a review rail outside the frame that switches states. They load
 `assets/geist-variable.ttf` and `assets/geist-mono-variable.ttf`, which are not copied here; without them the page
