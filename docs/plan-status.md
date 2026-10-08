@@ -125,6 +125,16 @@ taken; this is the cleanup those decisions will have earned. It belongs after
 PV-1 has shown which classes are actually load-bearing — designing it before
 that would be guessing at the shape.
 
+### Later: Forma's own connection guide per app
+
+An idea from the owner (2026-10-08), recorded so it is not lost, not scheduled.
+Today each app on the MCP page links "Official guide" to that vendor's own
+documentation ([ux/mcp-host-instructions.md](ux/mcp-host-instructions.md)). A
+Forma-hosted guide per app, with screenshots step by step, would be friendlier.
+The cost is upkeep: every vendor moves its menus, and a guide with stale
+screenshots misleads more than a link to the vendor. Revisit once the page has
+real users and we know which apps they actually connect.
+
 ## What the three-model experiment settled
 
 Recorded because it changed the order below, and an order changed without a
