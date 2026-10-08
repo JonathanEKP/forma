@@ -2,7 +2,8 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent as Reac
 
 import { getIdentity, listProjects } from "./api";
 import { currentSession, listGrants, revokeGrant, supabase, type Grant } from "./identity";
-import { MCP_HOSTS, type McpCodeSample, type McpHost } from "./mcp-hosts";
+import { MCP_HOST_GROUPS, MCP_HOSTS, MCP_HOSTS_IN_TAB_ORDER, MCP_OTHER_HOST, type McpCodeSample, type McpHost } from "./mcp-hosts";
+import { McpHostIcon } from "./mcp-host-icons";
 import { DevicePanel } from "./pontis/devices-panel";
 import { useApiKeys, useCreateApiKey, useRevokeApiKey } from "./queries";
 
@@ -196,12 +197,12 @@ function McpConnections() {
 function McpHostPicker({ mcpUrl }: { mcpUrl: string }) {
   const [selectedHostId, setSelectedHostId] = useState(MCP_HOSTS[0].id);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const selectedIndex = MCP_HOSTS.findIndex((host) => host.id === selectedHostId);
-  const selectedHost = MCP_HOSTS[selectedIndex] ?? MCP_HOSTS[0];
+  const selectedIndex = MCP_HOSTS_IN_TAB_ORDER.findIndex((host) => host.id === selectedHostId);
+  const selectedHost = MCP_HOSTS_IN_TAB_ORDER[selectedIndex] ?? MCP_HOSTS[0];
 
   function selectByKeyboard(index: number) {
-    const wrappedIndex = (index + MCP_HOSTS.length) % MCP_HOSTS.length;
-    const host = MCP_HOSTS[wrappedIndex];
+    const wrappedIndex = (index + MCP_HOSTS_IN_TAB_ORDER.length) % MCP_HOSTS_IN_TAB_ORDER.length;
+    const host = MCP_HOSTS_IN_TAB_ORDER[wrappedIndex];
     setSelectedHostId(host.id);
     tabRefs.current[wrappedIndex]?.focus();
   }
@@ -218,34 +219,51 @@ function McpHostPicker({ mcpUrl }: { mcpUrl: string }) {
       selectByKeyboard(0);
     } else if (event.key === "End") {
       event.preventDefault();
-      selectByKeyboard(MCP_HOSTS.length - 1);
+      selectByKeyboard(MCP_HOSTS_IN_TAB_ORDER.length - 1);
     }
+  }
+
+  function renderHostTab(host: McpHost) {
+    const index = MCP_HOSTS_IN_TAB_ORDER.findIndex((entry) => entry.id === host.id);
+    const selected = host.id === selectedHost.id;
+    const tabId = `mcp-host-tab-${host.id}`;
+
+    return (
+      <button
+        key={host.id}
+        ref={(element) => { tabRefs.current[index] = element; }}
+        type="button"
+        role="tab"
+        id={tabId}
+        aria-selected={selected}
+        aria-controls="mcp-host-panel"
+        tabIndex={selected ? 0 : -1}
+        onClick={() => setSelectedHostId(host.id)}
+        onKeyDown={(event) => onTabKeyDown(event, index)}
+        className={`mcp-host-tab min-h-10 rounded-lg border px-3 py-2 text-left text-xs transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper sm:text-sm ${selected ? "border-signal/60 bg-surface-2 text-paper" : "border-edge bg-ink text-muted hover:border-edge-strong hover:text-paper"}`}
+      >
+        <span className="flex items-center gap-2">
+          <McpHostIcon name={host.icon} />
+          <span>{host.name}</span>
+        </span>
+      </button>
+    );
   }
 
   return (
     <div className="mt-4 min-w-0">
-      <div role="tablist" aria-labelledby="pick-app-heading" className="mcp-host-tabs flex flex-wrap gap-2">
-        {MCP_HOSTS.map((host, index) => {
-          const selected = host.id === selectedHost.id;
-          const tabId = `mcp-host-tab-${host.id}`;
-          return (
-            <button
-              key={host.id}
-              ref={(element) => { tabRefs.current[index] = element; }}
-              type="button"
-              role="tab"
-              id={tabId}
-              aria-selected={selected}
-              aria-controls="mcp-host-panel"
-              tabIndex={selected ? 0 : -1}
-              onClick={() => setSelectedHostId(host.id)}
-              onKeyDown={(event) => onTabKeyDown(event, index)}
-              className={`mcp-host-tab min-h-10 rounded-lg border px-3 py-2 text-left text-xs transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper sm:text-sm ${selected ? "border-signal/60 bg-surface-2 text-paper" : "border-edge bg-ink text-muted hover:border-edge-strong hover:text-paper"}`}
-            >
-              {host.name}
-            </button>
-          );
-        })}
+      <div role="tablist" aria-labelledby="pick-app-heading" aria-orientation="horizontal" className="mcp-host-tabs flex flex-wrap items-end gap-x-5 gap-y-3">
+        {MCP_HOST_GROUPS.map((group) => (
+          <div key={group.id} className="mcp-host-group min-w-0" role="presentation">
+            <h3 className="mb-2 text-[10px] font-medium uppercase tracking-[0.12em] text-faint">{group.heading}</h3>
+            <div className="flex flex-wrap gap-2">
+              {MCP_HOSTS.filter((host) => host.group === group.id).map(renderHostTab)}
+            </div>
+          </div>
+        ))}
+        <div className="mcp-host-other" role="presentation">
+          {renderHostTab(MCP_OTHER_HOST)}
+        </div>
       </div>
       <article
         id="mcp-host-panel"
@@ -260,9 +278,11 @@ function McpHostPicker({ mcpUrl }: { mcpUrl: string }) {
         </ol>
         {selectedHost.samples.map((sample) => <CodeSample key={sample.accessibleName} sample={sample} mcpUrl={mcpUrl} />)}
         {selectedHost.token && <TokenInstructions host={selectedHost} mcpUrl={mcpUrl} />}
-        <a href={selectedHost.officialGuide} target="_blank" rel="noreferrer" className="mt-4 inline-block text-xs text-muted underline underline-offset-4 hover:text-paper focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal">
-          Official guide
-        </a>
+        {selectedHost.officialGuide && (
+          <a href={selectedHost.officialGuide} target="_blank" rel="noreferrer" className="mt-4 inline-block text-xs text-muted underline underline-offset-4 hover:text-paper focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal">
+            Official guide
+          </a>
+        )}
       </article>
     </div>
   );

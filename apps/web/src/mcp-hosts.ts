@@ -11,20 +11,33 @@ export interface McpTokenPath {
   readonly warning?: string;
 }
 
+export type McpHostGroupId = "browser" | "terminal" | "editor";
+export type McpHostIconName = "anthropic" | "openai-neutral" | "opencode" | "cursor" | "antigravity" | "neutral-app" | "plug";
+
 export interface McpHost {
   readonly id: string;
   readonly name: string;
+  readonly icon: McpHostIconName;
+  readonly group?: McpHostGroupId;
   readonly requirement?: string;
   readonly steps: readonly string[];
   readonly samples: readonly McpCodeSample[];
-  readonly officialGuide: string;
+  readonly officialGuide?: string;
   readonly token?: McpTokenPath;
 }
+
+export const MCP_HOST_GROUPS: readonly { readonly id: McpHostGroupId; readonly heading: string }[] = [
+  { id: "browser", heading: "In your browser" },
+  { id: "terminal", heading: "In your terminal" },
+  { id: "editor", heading: "In your editor" },
+];
 
 export const MCP_HOSTS: readonly McpHost[] = [
   {
     id: "claude",
     name: "Claude",
+    icon: "anthropic",
+    group: "browser",
     requirement: "Free allows one connector; Team and Enterprise owners can add connectors for their organization.",
     steps: [
       "Open Customize → Connectors → + Add → Add custom connector.",
@@ -43,6 +56,8 @@ export const MCP_HOSTS: readonly McpHost[] = [
   {
     id: "chatgpt",
     name: "ChatGPT",
+    icon: "openai-neutral",
+    group: "browser",
     requirement: "Editing needs a Business, Enterprise or Edu plan; on Pro, Forma is read-only. A workspace admin publishes the app.",
     steps: [
       "Enable developer mode: Pro uses Settings → Apps; Business owners/admins use Workspace settings → Permissions & Roles → Connected Data; Enterprise/Edu needs RBAC access, then Settings → Apps → Advanced Settings.",
@@ -61,6 +76,8 @@ export const MCP_HOSTS: readonly McpHost[] = [
   {
     id: "claude-code",
     name: "Claude Code",
+    icon: "anthropic",
+    group: "terminal",
     steps: [
       "In your project directory, register Forma with this command.",
       "Run the browser sign-in command, then sign in in your browser.",
@@ -105,6 +122,8 @@ export const MCP_HOSTS: readonly McpHost[] = [
   {
     id: "codex-cli",
     name: "Codex CLI",
+    icon: "openai-neutral",
+    group: "terminal",
     steps: [
       "Register Forma with this command.",
       "Run the browser sign-in command, then sign in in your browser.",
@@ -139,45 +158,10 @@ export const MCP_HOSTS: readonly McpHost[] = [
     },
   },
   {
-    id: "gemini-cli",
-    name: "Gemini CLI",
-    steps: [
-      "Add Forma with this command.",
-      "Start Gemini, run its browser sign-in command, then sign in in your browser.",
-      "Check the connection with its server-list command.",
-    ],
-    samples: [{
-      label: "Commands",
-      accessibleName: "Gemini CLI sign-in and connection check commands",
-      copyName: "Copy Gemini CLI sign-in and connection check commands",
-      content: (mcpUrl) => `gemini mcp add --transport http forma "${mcpUrl}"\ngemini\n/mcp auth forma\n/mcp list`,
-    }],
-    officialGuide: "https://github.com/google-gemini/gemini-cli/blob/main/docs/tools/mcp-server.md",
-    token: {
-      steps: [
-        "Create a personal access token below, then enter it at a shell prompt.",
-        "Run the command below to add its bearer header.",
-      ],
-      samples: [
-        {
-          label: "Read the token into this shell",
-          accessibleName: "Gemini CLI token environment command",
-          copyName: "Copy Gemini CLI token environment command",
-          content: () => "read -rsp 'Forma PAT: ' FORMA_TOKEN; echo; export FORMA_TOKEN",
-        },
-        {
-          label: "Token setup command",
-          accessibleName: "Gemini CLI token setup command",
-          copyName: "Copy Gemini CLI token setup command",
-          content: (mcpUrl) => `gemini mcp add --transport http --header "Authorization: Bearer $FORMA_TOKEN" forma "${mcpUrl}"`,
-        },
-      ],
-      warning: "Gemini saves this token in its config file.",
-    },
-  },
-  {
     id: "opencode",
     name: "OpenCode",
+    icon: "opencode",
+    group: "terminal",
     steps: [
       "Add this configuration to opencode.json in your project root.",
       "Run the sign-in command, then sign in in your browser.",
@@ -233,6 +217,8 @@ export const MCP_HOSTS: readonly McpHost[] = [
   {
     id: "cursor",
     name: "Cursor",
+    icon: "cursor",
+    group: "editor",
     steps: [
       "Add this configuration to .cursor/mcp.json in your project root.",
       "Open Customize and check that Forma is listed.",
@@ -276,6 +262,8 @@ export const MCP_HOSTS: readonly McpHost[] = [
   {
     id: "vscode-copilot",
     name: "VS Code (GitHub Copilot)",
+    icon: "neutral-app",
+    group: "editor",
     requirement: "VS Code 1.99+; Business/Enterprise needs Copilot access and the organization MCP policy enabled.",
     steps: [
       "Open the Command Palette and run MCP: Add Server.",
@@ -313,4 +301,71 @@ export const MCP_HOSTS: readonly McpHost[] = [
       ],
     },
   },
+  {
+    id: "antigravity",
+    name: "Antigravity",
+    icon: "antigravity",
+    group: "editor",
+    steps: [
+      "Add this to ~/.gemini/config/mcp_config.json or your project's .agents/mcp_config.json. It works in Antigravity desktop, IDE, and CLI.",
+      "In Agent settings → Customizations, choose Authenticate next to Forma. Sign in in your browser, then paste the code back and submit.",
+      "In the CLI, run /mcp to check the connection.",
+    ],
+    samples: [{
+      label: "MCP config",
+      accessibleName: "Antigravity MCP config",
+      copyName: "Copy Antigravity MCP config",
+      content: (mcpUrl) => JSON.stringify({ mcpServers: { forma: { serverUrl: mcpUrl } } }, null, 2),
+    }],
+    officialGuide: "https://antigravity.google/docs/mcp",
+    token: {
+      steps: [
+        "Create a personal access token below.",
+        "Add it as the Authorization header value in the config below. Replace the placeholder before using it.",
+      ],
+      samples: [{
+        label: "Token config",
+        accessibleName: "Antigravity token config",
+        copyName: "Copy Antigravity token config",
+        content: (mcpUrl) => JSON.stringify({
+          mcpServers: {
+            forma: {
+              serverUrl: mcpUrl,
+              headers: { Authorization: "Bearer YOUR_FORMA_TOKEN" },
+            },
+          },
+        }, null, 2),
+      }],
+      warning: "Google's docs show bearer tokens as config values; no environment reference is documented. Prefer browser sign-in and avoid saving a real token in shared config.",
+    },
+  },
+];
+
+export const MCP_OTHER_HOST: McpHost = {
+  id: "other-app",
+  name: "Other app",
+  icon: "plug",
+  steps: [
+    "Add the entry below under mcpServers as a remote Streamable HTTP server.",
+    "If your app offers sign-in in a browser, choose it; Forma advertises it automatically.",
+    'Otherwise send a personal access token as Authorization: Bearer <token>. Keep it as an environment reference or placeholder. Some apps use "serverUrl" instead of "url", or also need "type": "http".',
+  ],
+  samples: [{
+    label: "Most common config",
+    accessibleName: "Other app MCP config",
+    copyName: "Copy Other app MCP config",
+    content: (mcpUrl) => JSON.stringify({
+      mcpServers: {
+        forma: {
+          url: mcpUrl,
+          headers: { Authorization: "Bearer ${FORMA_TOKEN}" },
+        },
+      },
+    }, null, 2),
+  }],
+};
+
+export const MCP_HOSTS_IN_TAB_ORDER: readonly McpHost[] = [
+  ...MCP_HOST_GROUPS.flatMap((group) => MCP_HOSTS.filter((host) => host.group === group.id)),
+  MCP_OTHER_HOST,
 ];
