@@ -14,7 +14,7 @@ export interface McpTokenPath {
 export interface McpHost {
   readonly id: string;
   readonly name: string;
-  readonly requirement: string;
+  readonly requirement?: string;
   readonly steps: readonly string[];
   readonly samples: readonly McpCodeSample[];
   readonly officialGuide: string;
@@ -25,11 +25,11 @@ export const MCP_HOSTS: readonly McpHost[] = [
   {
     id: "claude",
     name: "Claude",
-    requirement: "Free allows one connector; Team and Enterprise owners add organization connectors.",
+    requirement: "Free allows one connector; Team and Enterprise owners can add connectors for their organization.",
     steps: [
       "Open Customize → Connectors → + Add → Add custom connector.",
       "Name it Forma, paste this URL, and choose Continue.",
-      "Choose Sign in now → Register automatically, then finish Forma sign-in in your browser.",
+      "Choose Sign in now → Register automatically, then sign in in your browser.",
       "For Team or Enterprise, members open Customize → Connectors → Connect.",
     ],
     samples: [{
@@ -43,11 +43,11 @@ export const MCP_HOSTS: readonly McpHost[] = [
   {
     id: "chatgpt",
     name: "ChatGPT",
-    requirement: "Business, Enterprise, or Edu for editing; Pro is read only. A workspace admin must publish the app.",
+    requirement: "Editing needs a Business, Enterprise or Edu plan; on Pro, Forma is read-only. A workspace admin publishes the app.",
     steps: [
       "Enable developer mode: Pro uses Settings → Apps; Business owners/admins use Workspace settings → Permissions & Roles → Connected Data; Enterprise/Edu needs RBAC access, then Settings → Apps → Advanced Settings.",
-      "Choose Settings → Apps → Create (admins: Workspace settings → Apps → Create), enter Forma and its URL, then choose OAuth.",
-      "Choose Scan Tools, finish Forma sign-in in your browser, then choose Create.",
+      "Choose Settings → Apps → Create (admins: Workspace settings → Apps → Create), enter Forma and its URL, then choose the browser sign-in option.",
+      "Choose Scan Tools, sign in in your browser, then choose Create.",
       "A Business owner/admin or authorized Enterprise/Edu publisher publishes from Workspace settings → Apps → Drafts.",
     ],
     samples: [{
@@ -61,16 +61,15 @@ export const MCP_HOSTS: readonly McpHost[] = [
   {
     id: "claude-code",
     name: "Claude Code",
-    requirement: "No MCP-specific plan gate is listed; organization policy can restrict servers.",
     steps: [
       "In your project directory, register Forma with this command.",
-      "Run the OAuth sign-in command and finish sign-in in your browser.",
+      "Run the browser sign-in command, then sign in in your browser.",
       "Approve the project config when prompted, then check the connection.",
     ],
     samples: [{
-      label: "OAuth setup commands",
-      accessibleName: "Claude Code OAuth setup command",
-      copyName: "Copy Claude Code OAuth setup command",
+      label: "Commands",
+      accessibleName: "Claude Code sign-in and connection check commands",
+      copyName: "Copy Claude Code sign-in and connection check commands",
       content: (mcpUrl) => `claude mcp add --transport http --scope project forma "${mcpUrl}"\nclaude mcp login forma\nclaude mcp get forma`,
     }],
     officialGuide: "https://code.claude.com/docs/en/mcp",
@@ -106,16 +105,15 @@ export const MCP_HOSTS: readonly McpHost[] = [
   {
     id: "codex-cli",
     name: "Codex CLI",
-    requirement: "No MCP-specific plan gate is listed; account or managed-organization policy can restrict servers.",
     steps: [
       "Register Forma with this command.",
-      "Run the OAuth sign-in command and finish sign-in in your browser.",
+      "Run the browser sign-in command, then sign in in your browser.",
       "Check the connection with the final command in the block, or run /mcp in the TUI.",
     ],
     samples: [{
-      label: "OAuth setup commands",
-      accessibleName: "Codex CLI OAuth setup command",
-      copyName: "Copy Codex CLI OAuth setup command",
+      label: "Commands",
+      accessibleName: "Codex CLI sign-in and connection check commands",
+      copyName: "Copy Codex CLI sign-in and connection check commands",
       content: (mcpUrl) => `codex mcp add forma --url "${mcpUrl}"\ncodex mcp login forma\ncodex mcp list`,
     }],
     officialGuide: "https://developers.openai.com/codex/mcp",
@@ -132,7 +130,7 @@ export const MCP_HOSTS: readonly McpHost[] = [
           content: () => "read -rsp 'Forma PAT: ' FORMA_TOKEN; echo; export FORMA_TOKEN",
         },
         {
-          label: "OAuth setup with a token",
+          label: "Token setup command",
           accessibleName: "Codex CLI token setup command",
           copyName: "Copy Codex CLI token setup command",
           content: (mcpUrl) => `codex mcp add forma --url "${mcpUrl}" --bearer-token-env-var FORMA_TOKEN`,
@@ -143,23 +141,22 @@ export const MCP_HOSTS: readonly McpHost[] = [
   {
     id: "gemini-cli",
     name: "Gemini CLI",
-    requirement: "No MCP-specific plan gate is listed; Google account or organization policy can restrict servers.",
     steps: [
       "Add Forma with this command.",
-      "Start Gemini, run its browser sign-in command, and finish authorization.",
+      "Start Gemini, run its browser sign-in command, then sign in in your browser.",
       "Check the connection with its server-list command.",
     ],
     samples: [{
-      label: "OAuth setup commands",
-      accessibleName: "Gemini CLI OAuth setup command",
-      copyName: "Copy Gemini CLI OAuth setup command",
+      label: "Commands",
+      accessibleName: "Gemini CLI sign-in and connection check commands",
+      copyName: "Copy Gemini CLI sign-in and connection check commands",
       content: (mcpUrl) => `gemini mcp add --transport http forma "${mcpUrl}"\ngemini\n/mcp auth forma\n/mcp list`,
     }],
     officialGuide: "https://github.com/google-gemini/gemini-cli/blob/main/docs/tools/mcp-server.md",
     token: {
       steps: [
         "Create a personal access token below, then enter it at a shell prompt.",
-        "Run the command below to add its bearer header. Gemini saves the expanded token in its config.",
+        "Run the command below to add its bearer header.",
       ],
       samples: [
         {
@@ -175,30 +172,29 @@ export const MCP_HOSTS: readonly McpHost[] = [
           content: (mcpUrl) => `gemini mcp add --transport http --header "Authorization: Bearer $FORMA_TOKEN" forma "${mcpUrl}"`,
         },
       ],
-      warning: "Gemini CLI does not document an environment-variable reference for remote HTTP headers. This command expands $FORMA_TOKEN and saves the bearer token in Gemini's config.",
+      warning: "Gemini saves this token in its config file.",
     },
   },
   {
     id: "opencode",
     name: "OpenCode",
-    requirement: "No separate MCP plan requirement is listed; model-provider sign-in is separate.",
     steps: [
-      "Add this OAuth configuration to opencode.json in your project root.",
-      "Run the sign-in command and finish OAuth in your browser.",
+      "Add this configuration to opencode.json in your project root.",
+      "Run the sign-in command, then sign in in your browser.",
       "Check the connection with the listed commands.",
     ],
     samples: [{
-      label: "OAuth project config",
-      accessibleName: "OpenCode OAuth config",
-      copyName: "Copy OpenCode OAuth config",
+      label: "Project config",
+      accessibleName: "OpenCode project config",
+      copyName: "Copy OpenCode project config",
       content: (mcpUrl) => JSON.stringify({
         $schema: "https://opencode.ai/config.json",
         mcp: { forma: { type: "remote", url: mcpUrl, enabled: true } },
       }, null, 2),
     }, {
-      label: "OAuth sign-in and check commands",
-      accessibleName: "OpenCode OAuth commands",
-      copyName: "Copy OpenCode OAuth commands",
+      label: "Sign in and check",
+      accessibleName: "OpenCode sign-in and connection check commands",
+      copyName: "Copy OpenCode sign-in and connection check commands",
       content: () => "opencode mcp auth forma\nopencode mcp list\nopencode mcp debug forma",
     }],
     officialGuide: "https://opencode.ai/docs/mcp-servers/",
@@ -237,16 +233,15 @@ export const MCP_HOSTS: readonly McpHost[] = [
   {
     id: "cursor",
     name: "Cursor",
-    requirement: "No MCP-specific plan gate is listed; team or Enterprise policy can restrict servers.",
     steps: [
       "Add this configuration to .cursor/mcp.json in your project root.",
       "Open Customize and check that Forma is listed.",
-      "Choose Forma and finish the browser sign-in.",
+      "Choose Forma, then sign in in your browser.",
     ],
     samples: [{
-      label: "OAuth project config",
-      accessibleName: "Cursor OAuth config",
-      copyName: "Copy Cursor OAuth config",
+      label: "Project config",
+      accessibleName: "Cursor project config",
+      copyName: "Copy Cursor project config",
       content: (mcpUrl) => JSON.stringify({ mcpServers: { forma: { url: mcpUrl } } }, null, 2),
     }],
     officialGuide: "https://cursor.com/docs/mcp",
@@ -285,7 +280,7 @@ export const MCP_HOSTS: readonly McpHost[] = [
     steps: [
       "Open the Command Palette and run MCP: Add Server.",
       "Choose HTTP, enter this URL, name the server forma, and save to your workspace .mcp.json.",
-      "Start Forma, finish browser sign-in, then run MCP: List Servers.",
+      "Start Forma, sign in in your browser, then run MCP: List Servers.",
     ],
     samples: [{
       label: "Forma MCP URL",

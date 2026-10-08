@@ -113,7 +113,7 @@ function McpConnections() {
       <section id="tokens" className="mcp-section" aria-labelledby="tokens-heading">
         <h2 id="tokens-heading" className="text-base font-medium text-paper">Personal access tokens</h2>
         <p className="mt-2 text-sm leading-6 text-muted">
-          Use a personal access token with an app that supports bearer headers. OAuth is available in several command-line apps. Revoking a token does not disconnect other apps.
+          Use a personal access token with an app that supports bearer headers. Several command-line apps also support sign-in in your browser. Revoking a token does not disconnect other apps.
         </p>
 
         <form className="mt-4 flex flex-wrap gap-2" onSubmit={submit}>
@@ -254,7 +254,7 @@ function McpHostPicker({ mcpUrl }: { mcpUrl: string }) {
         tabIndex={0}
         className="mcp-host-panel mt-4 min-w-0 rounded-lg border border-edge bg-surface-2 p-4 outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal sm:p-6"
       >
-        <p className="text-xs leading-5 text-muted">{selectedHost.requirement}</p>
+        {selectedHost.requirement && <p className="text-xs leading-5 text-muted">{selectedHost.requirement}</p>}
         <ol className="mt-4 list-decimal space-y-3 pl-5 text-sm leading-6 text-paper">
           {selectedHost.steps.map((step) => <li key={step} className="pl-1">{step}</li>)}
         </ol>

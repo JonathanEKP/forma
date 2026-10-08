@@ -240,12 +240,60 @@ describe("agent credentials", () => {
     }
 
     fireEvent.click(screen.getByRole("tab", { name: "Claude Code" }));
-    const snippet = screen.getByLabelText("Claude Code OAuth setup command");
+    const snippet = screen.getByLabelText("Claude Code sign-in and connection check commands");
     expect(snippet.textContent).toContain(liveUrl);
     const writeText = vi.fn(() => Promise.resolve());
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
-    fireEvent.click(screen.getByRole("button", { name: "Copy Claude Code OAuth setup command" }));
+    fireEvent.click(screen.getByRole("button", { name: "Copy Claude Code sign-in and connection check commands" }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(snippet.textContent));
+  });
+
+  it("shows plan requirements only when the person needs to know them", () => {
+    window.history.replaceState({}, "", "/agents/mcp");
+    renderAgents();
+
+    const panel = screen.getByRole("tabpanel");
+    const tabsWithoutRequirements = ["Claude Code", "Codex CLI", "Gemini CLI", "OpenCode", "Cursor"];
+    for (const name of tabsWithoutRequirements) {
+      fireEvent.click(screen.getByRole("tab", { name }));
+      expect(panel.querySelector(":scope > p")).toBeNull();
+    }
+
+    fireEvent.click(screen.getByRole("tab", { name: "Claude" }));
+    expect(panel.querySelector(":scope > p")?.textContent).toContain("Free allows one connector");
+    fireEvent.click(screen.getByRole("tab", { name: "ChatGPT" }));
+    expect(panel.querySelector(":scope > p")?.textContent).toBe(
+      "Editing needs a Business, Enterprise or Edu plan; on Pro, Forma is read-only. A workspace admin publishes the app.",
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "VS Code (GitHub Copilot)" }));
+    expect(panel.querySelector(":scope > p")?.textContent).toContain("VS Code 1.99+");
+  });
+
+  it("uses plain sign-in copy and meaningful sample labels and names", () => {
+    window.history.replaceState({}, "", "/agents/mcp");
+    renderAgents();
+
+    const labels: ReadonlyArray<readonly [string, string, string]> = [
+      ["Claude Code", "Commands", "Claude Code sign-in and connection check commands"],
+      ["Codex CLI", "Commands", "Codex CLI sign-in and connection check commands"],
+      ["Gemini CLI", "Commands", "Gemini CLI sign-in and connection check commands"],
+      ["OpenCode", "Project config", "OpenCode project config"],
+      ["OpenCode", "Sign in and check", "OpenCode sign-in and connection check commands"],
+      ["Cursor", "Project config", "Cursor project config"],
+    ];
+    for (const [hostName, sampleLabel, accessibleName] of labels) {
+      fireEvent.click(screen.getByRole("tab", { name: hostName }));
+      const panel = screen.getByRole("tabpanel");
+      expect(screen.getByText(sampleLabel)).toBeTruthy();
+      expect(screen.getByLabelText(accessibleName)).toBeTruthy();
+      expect(screen.getByRole("button", { name: `Copy ${accessibleName}` })).toBeTruthy();
+      expect(panel.textContent).toContain("sign in in your browser");
+    }
+
+    for (const hostName of ["Claude", "ChatGPT", "Claude Code", "Codex CLI", "Gemini CLI", "OpenCode", "Cursor", "VS Code (GitHub Copilot)"]) {
+      fireEvent.click(screen.getByRole("tab", { name: hostName }));
+      expect(screen.getByRole("tabpanel").textContent).not.toContain("OAuth");
+    }
   });
 
   it("does not offer a ChatGPT token path", () => {
@@ -254,8 +302,7 @@ describe("agent credentials", () => {
     fireEvent.click(screen.getByRole("tab", { name: "ChatGPT" }));
 
     expect(screen.queryByText("Use a token instead")).toBeNull();
-    expect(screen.getByText(/Pro is read only/i)).toBeTruthy();
-    expect(screen.getByText(/admin must publish/i)).toBeTruthy();
+    expect(screen.getByText("Editing needs a Business, Enterprise or Edu plan; on Pro, Forma is read-only. A workspace admin publishes the app.")).toBeTruthy();
   });
 
   it("warns that Gemini CLI saves an expanded token in its config", () => {
@@ -264,8 +311,9 @@ describe("agent credentials", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Gemini CLI" }));
     fireEvent.click(screen.getByText("Use a token instead"));
 
-    expect(screen.getByText(/saves the bearer token in Gemini's config/i)).toBeTruthy();
-    expect(screen.getByText(/does not document an environment-variable reference/i)).toBeTruthy();
+    expect(screen.getByText("Gemini saves this token in its config file.")).toBeTruthy();
+    const tokenSteps = screen.getByText("Use a token instead").closest("details")?.querySelector("ol");
+    expect(tokenSteps?.textContent).not.toMatch(/config file|saves? this token/i);
     expect(screen.getByLabelText("Gemini CLI token setup command").textContent).toContain("$FORMA_TOKEN");
     expect(screen.getByRole("link", { name: "Personal access tokens" }).getAttribute("href")).toBe("#tokens");
   });
