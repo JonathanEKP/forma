@@ -20,14 +20,14 @@ In: every decision of rounds 1 to 3.
 
 Out, deliberately:
 
-- **The MCP page's per-app instructions.** The page is built with the approved layout, but its host cards keep the
-  wording `Agents.tsx` has today, unchanged, until a separate research task writes the real steps (round 3). The owner
-  will decide when to run that research, at the time the page is in front of them.
 - **Everything waiting on Pontis:** the visual-result slot (CR-2.3), anything that masks the five-minute session death
   (F-30-5, F-30-10), and the countdown after the person has answered (round 1 decision 8, upstream item 11). The card
   keeps today's behaviour there: the countdown is hidden while sending.
 - **"Resume an earlier conversation"** (round 2, *Later*).
 - The Pontis repository, production, the real Supabase project, Phase 12.
+
+**Owner add-on (2026-10-07):** Task P implements the researched per-app MCP steps as eight app tabs; its app order,
+OAuth-first paths, and token rules are recorded in [Task P](#task-p-per-app-mcp-setup-owner-2026-10-07).
 
 ## Decisions taken for this batch (owner, 2026-10-06)
 
@@ -174,7 +174,7 @@ Round 3, as in `devices.html` and `mcp.html`:
 - **"Use Forma from your AI app (MCP)":**
   - the intro for someone who has never heard of MCP;
   - "Your MCP URL" with Copy;
-  - "Pick your app" cards, keeping today's per-host wording from `Agents.tsx`;
+  - "Pick your app" tabs with concise per-host steps from [the MCP host research](mcp-host-instructions.md);
   - connected applications with an inline Disconnect;
   - personal access tokens, with a new token shown **in full**, once, with Copy.
 - **Navigation:** a two-item switcher, "Chat in the editor" / "AI apps (MCP)", with the current page marked. These are
@@ -210,3 +210,17 @@ on the browser stack, against the round documents.
   - stop processes you did not start.
 - **No `any`,** and no new dependency for markdown or UI without asking. A small parser for the formatting subset is
   expected to be Forma's own.
+
+## Task P: per-app MCP setup (owner, 2026-10-07)
+
+- Show Claude, ChatGPT, Claude Code, Codex CLI, Gemini CLI, OpenCode, Cursor, and VS Code (GitHub Copilot), in that
+  order. Do not include Windsurf.
+- Use one row of app tabs and one active panel; Claude is selected initially. Follow the accessible tabs pattern with
+  arrow keys, Home/End, visible focus, and wrapping on narrow screens.
+- Lead with browser OAuth wherever supported. Offer “Use a token instead” only for apps that accept a PAT. Do not
+  offer it for ChatGPT; Gemini CLI's token command saves the expanded bearer token in Gemini's config. Store PATs in
+  `FORMA_TOKEN` where the host documents an environment reference; VS Code's documented password prompt is the
+  secure equivalent.
+- Each panel uses a concise plan/admin requirement, 2–4 numbered steps, the live MCP URL in any snippet, a Copy
+  button for each command/config block, and an official vendor guide. Token instructions link to the existing
+  Personal access tokens section on the page.

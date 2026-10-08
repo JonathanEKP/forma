@@ -1,7 +1,7 @@
 //! `forma-mcp`: the MCP front end for Forma.
 //!
 //! It is a client of `forma-server`'s REST API, never of the database
-//! (plan section 5). V1 speaks stdio; HTTP is reserved for the remote phase.
+//! (plan section 5). It supports both stdio and Streamable HTTP transports.
 
 mod client;
 mod http;
