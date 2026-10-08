@@ -1,6 +1,6 @@
 # MCP host connection instructions
 
-Research date: 2026-10-06. This guide records each host's current documented remote MCP setup; its linked vendor docs are the authority if labels move.
+Research updated 2026-10-08 for Google's Gemini CLI and Antigravity changes. Earlier host sections retain their source-read dates; linked vendor docs remain the authority if labels move.
 
 ## What Forma offers
 
@@ -96,7 +96,9 @@ For OAuth instead, omit `--bearer-token-env-var FORMA_TOKEN` and run `codex mcp 
 
 **Sources (read 2026-10-06):** [OpenAI: Codex MCP servers](https://developers.openai.com/codex/mcp).
 
-## Gemini CLI
+## Gemini CLI (retired for individual plans)
+
+**Retired for most individual users on 2026-06-18.** Google says Gemini CLI stopped serving requests for Google AI Pro and Ultra and for Gemini Code Assist for individuals on that date. Access remains unchanged for Gemini Code Assist Standard and Enterprise customers, and Gemini CLI remains available through paid Gemini and Gemini Enterprise Agent Platform API keys. The setup notes below are retained for those supported accounts; they are not the recommendation for most people.
 
 **Support.** Remote HTTP MCP: yes (Streamable HTTP and SSE). OAuth: yes; the CLI starts browser auth after a 401 and supports DCR. Bearer headers: yes, but current docs do not document environment-variable expansion for a remote HTTP `headers` value. No MCP-specific plan gate is listed; Google account/project policy can still apply, and organization policy can block user-added MCP servers.
 
@@ -110,7 +112,36 @@ For OAuth instead, omit `--bearer-token-env-var FORMA_TOKEN` and run `codex mcp 
 
 **Verification.** Docs only; Gemini CLI was not installed, and no software was installed for this research.
 
-**Sources (read 2026-10-06):** [Gemini CLI: MCP servers](https://github.com/google-gemini/gemini-cli/blob/main/docs/tools/mcp-server.md); [Gemini CLI: enterprise policy](https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/enterprise.md).
+**Sources (setup checked 2026-10-06; retirement verified against Google sources 2026-10-08):** [Google Developers Blog: transition announcement](https://developers.googleblog.com/an-important-update-transitioning-gemini-cli-to-antigravity-cli/); [Gemini CLI: MCP servers](https://github.com/google-gemini/gemini-cli/blob/main/docs/tools/mcp-server.md); [Gemini CLI: enterprise policy](https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/enterprise.md).
+
+## Antigravity (desktop, IDE, and CLI)
+
+**Support.** Remote Streamable HTTP: yes. A shared `mcpServers` config format is documented for Antigravity 2.0, Antigravity IDE, and Antigravity CLI, so one page entry covers all three. Use `serverUrl` for a remote server; the CLI migration guide says legacy `url` and `httpUrl` fields are not supported. Antigravity can sign in through the browser for servers that support automatic registration. Google documents no environment reference for a custom bearer header.
+
+**Steps (browser sign-in).**
+
+1. Add this entry to `~/.gemini/config/mcp_config.json` or the project file `.agents/mcp_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "forma": {
+      "serverUrl": "<FORMA_MCP_URL>"
+    }
+  }
+}
+```
+
+2. In Antigravity's Agent settings, open **Customizations** and choose **Authenticate** next to Forma. Sign in in the browser, copy the code back, and submit it.
+3. In Antigravity CLI, run `/mcp` to check the connection.
+
+The MCP config format and server entry apply to Antigravity desktop, the IDE, and CLI. The desktop and IDE can also manage servers in their MCP settings. Antigravity stores its browser sign-in tokens in `~/.gemini/antigravity/mcp_oauth_tokens.json` and refreshes them.
+
+**Credential and pitfalls.** Use Forma's browser sign-in first. A personal access token can be sent in an `Authorization: Bearer <token>` header, but Google's custom-header example puts the token value in the config and does not document environment-variable expansion. If using a token, keep the real value out of shared files; do not assume `${FORMA_TOKEN}` is expanded. Google lists no MCP-specific plan gate; the signed-in account's model credits and quotas are separate.
+
+**Verification.** Docs only; Antigravity was not installed or run.
+
+**Official sources (checked 2026-10-08):** [Google Developers Blog: transition announcement](https://developers.googleblog.com/an-important-update-transitioning-gemini-cli-to-antigravity-cli/) (Google I/O 2026 transition; June 18 retirement and Enterprise/API-key exceptions); [Google I/O developer highlights](https://blog.google/innovation-and-ai/technology/developers-tools/google-io-2026-developer-highlights/) (2026-05-19 launch); [Antigravity MCP docs](https://antigravity.google/docs/mcp) (shared config, `serverUrl`, browser sign-in, and headers); [Antigravity CLI installation and authentication](https://antigravity.google/docs/cli/install) (local browser sign-in and credentials); [Antigravity CLI migration guide](https://antigravity.google/docs/cli/gcli-migration/) (`url`/`httpUrl` migration); [Antigravity IDE extensions](https://antigravity.google/docs/ide/extensions/) (individual free tier and account quotas).
 
 ## Cursor
 
@@ -280,3 +311,22 @@ Today's `apps/web/src/Agents.tsx` copy needs corrections:
    environment references. For VS Code, use its documented password prompt; Gemini CLI's token header expands into
    and is saved in Gemini's config. Every panel has a short requirement, 2–4 numbered steps, the live MCP URL in
    snippets, Copy buttons, and an official vendor guide.
+
+## Owner decisions (2026-10-08)
+
+1. Replace Gemini CLI in the current picker with Antigravity. Keep Gemini CLI's research section above, marked retired for individual plans, with Google's June 18, 2026 reason and the Enterprise/API-key exceptions.
+2. Use one **Antigravity** entry under **In your editor** for Antigravity desktop, IDE, and CLI. Google's MCP guide documents the same `mcpServers` structure for all three. Keep browser sign-in first; show the personal access token path only as a secondary option and say that Google documents no environment reference for bearer headers. The visible copy says “sign in,” not the provider's name for the flow.
+3. Keep one tablist and one active panel. Group Claude and ChatGPT under **In your browser**; Claude Code, Codex CLI, and OpenCode under **In your terminal**; Cursor, VS Code, and Antigravity under **In your editor**. Put **Other app** last, after the groups.
+4. **Other app** states the live URL, remote Streamable HTTP transport, browser sign-in when offered, and the `Authorization: Bearer <token>` alternative. Its example uses an environment reference or placeholder, never a token value; mention `serverUrl` and `"type": "http"` variants briefly.
+
+## App mark sources and licenses
+
+The picker uses 16px inline SVG paths with `currentColor`, so the marks follow the quiet chrome. Sources below were checked 2026-10-08.
+
+- **Claude / Claude Code:** [Simple Icons Anthropic SVG](https://github.com/simple-icons/simple-icons/blob/develop/icons/anthropic.svg), CC0 1.0 Universal ([Simple Icons license](https://github.com/simple-icons/simple-icons/blob/develop/LICENSE.md)).
+- **OpenCode:** [Simple Icons OpenCode SVG](https://github.com/simple-icons/simple-icons/blob/develop/icons/opencode.svg), CC0 1.0 Universal ([license](https://github.com/simple-icons/simple-icons/blob/develop/LICENSE.md)).
+- **Cursor:** [Simple Icons Cursor SVG](https://github.com/simple-icons/simple-icons/blob/develop/icons/cursor.svg), CC0 1.0 Universal ([license](https://github.com/simple-icons/simple-icons/blob/develop/LICENSE.md)).
+- **Antigravity:** [Google's one-color press SVG](https://antigravity.google/assets/image/brand/antigravity-icon__one-color.svg), linked from [Google Antigravity Press Assets](https://antigravity.google/press). It is a Google-owned press asset, not CC0; the path keeps the supplied mark and uses `currentColor` as required by the picker.
+- **ChatGPT / Codex CLI:** neutral sparkle glyphs drawn for Forma. The OpenAI mark is not in the current Simple Icons set; OpenAI's [brand guidelines](https://openai.com/brand/) require the mark to be used exactly as supplied and prohibit modifications, which conflicts with the required `currentColor` treatment.
+- **VS Code (GitHub Copilot):** neutral app-window glyph drawn for Forma. Microsoft's [VS Code brand rules](https://code.visualstudio.com/brand) forbid pairing its icon with the product name as a lockup; GitHub's [brand toolkit](https://brand.github.com/foundations/logo) says Copilot has no standalone logo as of 2025.
+- **Other app:** neutral plug glyph drawn for Forma; no vendor mark applies.
