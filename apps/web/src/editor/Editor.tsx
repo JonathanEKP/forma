@@ -21,11 +21,13 @@ import { useEditor, type DraftFrame } from "../store";
 import { ChatPanel } from "../pontis/Chat";
 import type { Chat } from "../pontis/useChat";
 import { findLayer, findPage } from "../types";
+import "./panels.css";
 import { Assets } from "./Assets";
 import { Brand } from "./Brand";
 import { Canvas } from "./Canvas";
 import { ApprovalBubble, approvalWindowTitle } from "./ApprovalBubble";
-import { ExportButton } from "./Export";
+import { ExportPanel } from "./Export";
+import { SaveAsTemplateButton } from "./SaveTemplate";
 import { approvalOperationSource, buildApprovalDetails } from "../pontis/approval-details";
 import type { Line } from "../pontis/chat";
 import { addImageOperation } from "./insert";
@@ -35,7 +37,7 @@ import { Validation } from "./Validation";
 /** How long the agent-updated notice stays. */
 const NOTICE_MS = 6_000;
 
-type RailTool = "layers" | "assets" | "brand";
+type RailTool = "layers" | "images" | "brand";
 
 export function Editor({
   designId,
@@ -43,6 +45,7 @@ export function Editor({
   chat,
   chatOpen = false,
   onToggleChat = () => undefined,
+  initialTool,
 }: {
   designId: string;
   onBack: () => void;
@@ -54,14 +57,16 @@ export function Editor({
   chat?: Chat;
   chatOpen?: boolean;
   onToggleChat?: () => void;
+  initialTool?: "layers" | "images" | "brand";
 }) {
   const { data: record, isLoading, error, refetch } = useDesign(designId);
   const { selectedPageId, selectedLayerId, selectPage, selectLayer, panel, setPanel, zoom, setZoom, approvalHighlight, setApprovalHighlight, setOpenDesignId } = useEditor();
   const [activeTool, setActiveTool] = useState<RailTool | null>(() =>
-    panel === "assets" || panel === "brand" ? panel : panel === "validation" ? null : "layers",
+    initialTool ?? (panel === "assets" ? "images" : panel === "brand" ? "brand" : panel === "validation" ? null : "layers"),
   );
   const [propertiesOpen, setPropertiesOpen] = useState(() => selectedLayerId !== null);
   const [validationOpen, setValidationOpen] = useState(panel === "validation");
+  const [exportOpen, setExportOpen] = useState(false);
   const editorRoot = useRef<HTMLDivElement>(null);
   const fittedOnOpen = useRef(false);
   const observedPanel = useRef(panel);
@@ -86,6 +91,7 @@ export function Editor({
   const closePanels = useCallback(() => {
     setActiveTool(null);
     setValidationOpen(false);
+    setExportOpen(false);
     setEditorPanel("properties");
   }, [setEditorPanel]);
 
@@ -96,12 +102,24 @@ export function Editor({
     const next = activeTool === tool ? null : tool;
     setActiveTool(next);
     setValidationOpen(false);
-    setEditorPanel(next === "assets" || next === "brand" ? next : "properties");
+    setExportOpen(false);
+    setEditorPanel(next === "images" ? "assets" : next === "brand" ? "brand" : "properties");
   }, [activeTool, setEditorPanel]);
 
   const toggleValidation = useCallback(() => {
     setActiveTool(null);
-    setValidationOpen((open) => !open);
+    setExportOpen(false);
+    setPropertiesOpen(false);
+    const next = !validationOpen;
+    setValidationOpen(next);
+    setEditorPanel(next ? "validation" : "properties");
+  }, [setEditorPanel, validationOpen]);
+
+  const toggleExport = useCallback(() => {
+    setActiveTool(null);
+    setValidationOpen(false);
+    setPropertiesOpen(false);
+    setExportOpen((open) => !open);
     setEditorPanel("properties");
   }, [setEditorPanel]);
 
@@ -116,14 +134,17 @@ export function Editor({
     }
 
     if (panel === "assets" || panel === "brand") {
-      setActiveTool(panel);
+      setActiveTool(panel === "assets" ? "images" : "brand");
       setValidationOpen(false);
+      setExportOpen(false);
     } else if (panel === "validation") {
       setActiveTool(null);
       setValidationOpen(true);
+      setExportOpen(false);
     } else {
       setActiveTool(null);
       setValidationOpen(false);
+      setExportOpen(false);
     }
   }, [panel]);
 
@@ -231,7 +252,7 @@ export function Editor({
   }, [chat?.pending, chatOpen, record]);
 
   useEffect(() => {
-    if (!activeTool && !validationOpen && !propertiesOpen) return;
+    if (!activeTool && !validationOpen && !exportOpen && !propertiesOpen) return;
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       event.preventDefault();
@@ -240,7 +261,7 @@ export function Editor({
     };
     document.addEventListener("keydown", closeOnEscape);
     return () => document.removeEventListener("keydown", closeOnEscape);
-  }, [activeTool, validationOpen, propertiesOpen, closePanels, closeProperties]);
+  }, [activeTool, validationOpen, exportOpen, propertiesOpen, closePanels, closeProperties]);
 
   const send = (operations: DesignOperation[]) => {
     if (!record || operations.length === 0) return;
@@ -287,12 +308,16 @@ export function Editor({
   }
 
   const selectedLayer = findLayer(page, selectedLayerId);
-  const validationCount = validation.data?.issues.length ?? 0;
-  const validationLabel = validation.data
-    ? validationCount === 0
-      ? "✓ Valid"
-      : `${validationCount} ${validationCount === 1 ? "issue" : "issues"}`
-    : "Checking…";
+  const validationErrors = validation.data?.issues.filter((issue) => issue.severity === "error").length ?? 0;
+  const validationWarnings = validation.data?.issues.filter((issue) => issue.severity === "warning").length ?? 0;
+  const checking = validation.isLoading || validation.isFetching;
+  const validationLabel = checking
+    ? "Checking…"
+    : validationErrors > 0
+      ? `${validationErrors} error${validationErrors === 1 ? "" : "s"} · ${validationWarnings} warnings`
+      : validationWarnings > 0
+        ? `${validationWarnings} warnings`
+        : "✓ Valid";
 
   return (
     <div ref={editorRoot} className="editor-root flex h-full min-h-0 flex-col">
@@ -331,52 +356,27 @@ export function Editor({
           >
             <EditorIcon name="redo" />
           </button>
-          <div className="relative">
-            <button
-              type="button"
-              onClick={toggleValidation}
-              aria-expanded={validationOpen}
-              aria-controls="editor-validation-popover"
-              aria-label={
-                validationCount === 0 && validation.data
-                  ? "Open validation: valid"
-                  : `Open validation: ${validationLabel}`
-              }
-              title="Validation"
-              className="editor-validation-chip"
-            >
-              {validationLabel}
-            </button>
-            {validationOpen && (
-              <section
-                id="editor-validation-popover"
-                className="editor-validation-popover"
-                aria-label="Validation"
-              >
-                <header className="flex items-center justify-between gap-3">
-                  <h2 className="text-xs font-medium">Validation</h2>
-                  <button
-                    type="button"
-                    onClick={closePanels}
-                    aria-label="Close validation"
-                    className="editor-close-button"
-                  >
-                    ×
-                  </button>
-                </header>
-                <Validation report={validation.data} loading={validation.isLoading} onSelect={closePanels} />
-              </section>
-            )}
-          </div>
-          <ExportButton
-            designId={record.id}
-            designName={record.name}
-            format={record.document.format}
-            pageId={page?.id ?? null}
-            pageCount={record.document.pages.length}
-            report={validation.data}
-            disabled={busy}
-          />
+          <button
+            type="button"
+            onClick={toggleValidation}
+            aria-expanded={validationOpen}
+            aria-controls="editor-checks-panel"
+            aria-label="Open checks"
+            title="Checks"
+            className="editor-validation-chip"
+          >
+            {validationLabel}
+          </button>
+          <SaveAsTemplateButton projectId={record.project_id} designId={record.id} designName={record.name} />
+          <button
+            type="button"
+            onClick={toggleExport}
+            aria-expanded={exportOpen}
+            aria-controls="editor-export-panel"
+            className="editor-export-button rounded-lg px-4 py-2 text-xs font-semibold"
+          >
+            Export
+          </button>
         </div>
       </header>
 
@@ -409,12 +409,15 @@ export function Editor({
         <Rejected error={apply.error} onDismiss={() => apply.reset()} />
       )}
 
-      <div className="editor-workspace flex min-h-0 flex-1">
+      <div
+        className="editor-workspace flex min-h-0 flex-1"
+        data-panel-open={activeTool !== null || validationOpen || exportOpen}
+      >
         <nav className="editor-rail flex shrink-0 flex-col items-center gap-2 py-3" aria-label="Design tools">
           <RailButton tool="layers" activeTool={activeTool} onClick={toggleTool}>
             <EditorIcon name="layers" />
           </RailButton>
-          <RailButton tool="assets" activeTool={activeTool} onClick={toggleTool}>
+          <RailButton tool="images" activeTool={activeTool} onClick={toggleTool}>
             <EditorIcon name="assets" />
           </RailButton>
           <RailButton tool="brand" activeTool={activeTool} onClick={toggleTool}>
@@ -434,7 +437,7 @@ export function Editor({
           />
         )}
 
-        {activeTool === "assets" && (
+        {activeTool === "images" && (
           <Assets
             projectId={record.project_id}
             onPlace={placeAsset}
@@ -448,6 +451,38 @@ export function Editor({
             <Brand projectId={record.project_id} />
           </Panel>
         )}
+
+        {validationOpen && (
+          <Panel id="editor-checks-panel" title="Checks" onClose={closePanels}>
+            <Validation
+              record={record}
+              report={validation.data}
+              loading={checking}
+              onSelect={closePanels}
+              onCheckAgain={() => void validation.refetch()}
+            />
+          </Panel>
+        )}
+
+        <ExportPanel
+          open={exportOpen}
+          designId={record.id}
+          designName={record.name}
+          format={record.document.format}
+          pageId={page?.id ?? null}
+          pageCount={record.document.pages.length}
+          version={record.version}
+          report={validation.data}
+          disabled={busy}
+          onClose={closePanels}
+          onOpenChecks={() => {
+            setExportOpen(false);
+            setActiveTool(null);
+            setValidationOpen(true);
+            setPropertiesOpen(false);
+            setEditorPanel("validation");
+          }}
+        />
 
         <main className="editor-canvas-room relative flex min-h-0 min-w-0 flex-1" aria-label="Design workspace">
           {page ? (
@@ -591,7 +626,7 @@ function RailButton({
 }) {
   const labels: Record<RailTool, string> = {
     layers: "Layers & pages",
-    assets: "Assets",
+    images: "Images",
     brand: "Brand",
   };
   const label = labels[tool];

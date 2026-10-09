@@ -206,7 +206,7 @@ describe("the chat of a window", () => {
     await openDesign("Cover");
 
     const layers = screen.getByRole("button", { name: "Layers & pages" });
-    const assets = screen.getByRole("button", { name: "Assets" });
+    const assets = screen.getByRole("button", { name: "Images" });
     expect(layers.getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByRole("complementary", { name: "Layers & pages" })).toBeTruthy();
     fireEvent.click(layers);
@@ -219,34 +219,34 @@ describe("the chat of a window", () => {
 
     fireEvent.click(assets);
     expect(screen.queryByRole("complementary", { name: "Layers & pages" })).toBeNull();
-    expect(screen.getByRole("complementary", { name: "Assets" })).toBeTruthy();
+    expect(screen.getByRole("complementary", { name: "Images" })).toBeTruthy();
     expect(assets.getAttribute("aria-pressed")).toBe("true");
     expect(layers.getAttribute("aria-pressed")).toBe("false");
 
     fireEvent.keyDown(document, { key: "Escape" });
-    expect(screen.queryByRole("complementary", { name: "Assets" })).toBeNull();
+    expect(screen.queryByRole("complementary", { name: "Images" })).toBeNull();
     expect(assets.getAttribute("aria-pressed")).toBe("false");
 
     fireEvent.click(assets);
-    fireEvent.click(screen.getByRole("button", { name: "Close Assets" }));
-    expect(screen.queryByRole("complementary", { name: "Assets" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Close Images" }));
+    expect(screen.queryByRole("complementary", { name: "Images" })).toBeNull();
 
     fireEvent.click(assets);
     fireEvent.click(assets);
-    expect(screen.queryByRole("complementary", { name: "Assets" })).toBeNull();
+    expect(screen.queryByRole("complementary", { name: "Images" })).toBeNull();
   });
 
-  it("opens validation as a popover without modal markup", async () => {
+  it("opens checks in a side panel", async () => {
     renderApp();
     await openDesign("Cover");
-    fireEvent.click(screen.getByRole("button", { name: /Open validation:/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Open checks/ }));
 
-    expect(screen.getByRole("region", { name: "Validation" })).toBeTruthy();
+    expect(screen.getByRole("complementary", { name: "Checks" })).toBeTruthy();
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(document.querySelector('[aria-modal="true"]')).toBeNull();
 
     fireEvent.keyDown(document, { key: "Escape" });
-    expect(screen.queryByRole("region", { name: "Validation" })).toBeNull();
+    expect(screen.queryByRole("complementary", { name: "Checks" })).toBeNull();
   });
 
   it("shows Properties only while a layer is selected", async () => {

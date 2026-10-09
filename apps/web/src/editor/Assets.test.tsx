@@ -100,10 +100,12 @@ describe("the asset request flow", () => {
 
     expect(await screen.findByText("hero photo")).toBeTruthy();
     expect(screen.getByText(/futuristic coffee shop/)).toBeTruthy();
-    // Forma does not generate images, so the prompt is for the user to take
-    // elsewhere and bring back.
+    expect(screen.getByText("Pending")).toBeTruthy();
+    expect(screen.getByText("Suggested 1600 × 900")).toBeTruthy();
+    expect(screen.getByText("Suggested prompt").closest("details")?.open).toBe(false);
+    fireEvent.click(screen.getByText("Suggested prompt"));
     expect(screen.getByText("wide shot, neon, rain")).toBeTruthy();
-    expect(screen.getByText(/1600×900/)).toBeTruthy();
+    expect(screen.getByText("Upload what the agent needs. It will continue on its own.")).toBeTruthy();
   });
 
   it("uploads the image and resolves the request in that order", async () => {
@@ -123,7 +125,7 @@ describe("the asset request flow", () => {
     renderPanel();
     await screen.findByText("hero photo");
 
-    const drop = screen.getByText(/Drop the image here to resolve/);
+    const drop = screen.getByRole("button", { name: /Drop the image here/ });
     fireEvent.drop(drop, { dataTransfer: { files: [file()] } });
 
     await waitFor(() => expect(calls.some((c) => c.url.includes("/resolve"))).toBe(true));
@@ -150,7 +152,7 @@ describe("the asset request flow", () => {
 
     renderPanel();
 
-    await waitFor(() => expect(screen.getByText(/LIBRARY/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/Library/)).toBeTruthy());
     expect(screen.queryByText("hero photo")).toBeNull();
     expect(screen.queryByText(/Drop the image here to resolve/)).toBeNull();
   });
@@ -175,7 +177,7 @@ describe("the asset request flow", () => {
     renderPanel();
     await screen.findByText("hero photo");
 
-    fireEvent.drop(screen.getByText(/Drop the image here to resolve/), {
+    fireEvent.drop(screen.getByRole("button", { name: "Drop the image here" }), {
       dataTransfer: { files: [file()] },
     });
 
@@ -192,6 +194,7 @@ describe("the asset request flow", () => {
     vi.stubGlobal("navigator", { clipboard: { writeText } });
 
     renderPanel();
+    fireEvent.click(await screen.findByText("Suggested prompt"));
     fireEvent.click(await screen.findByText("Copy prompt"));
 
     expect(writeText).toHaveBeenCalledWith("wide shot, neon, rain");
@@ -206,7 +209,7 @@ describe("the asset library", () => {
     }));
 
     const onPlace = renderPanel();
-    fireEvent.click(await screen.findByTitle(/Place cafe.png/));
+    fireEvent.click(await screen.findByRole("button", { name: /Place cafe.png on this page/ }));
 
     expect(onPlace).toHaveBeenCalledWith(uploaded);
   });
@@ -216,5 +219,52 @@ describe("the asset library", () => {
     renderPanel();
 
     expect(await screen.findByText(/ask your agent for one/)).toBeTruthy();
+  });
+
+  it("lists the supported formats and keeps the drop zone active while dragging", async () => {
+    mockFetch((url) => ({ body: url.includes("asset-requests") ? [] : [uploaded] }));
+    renderPanel();
+
+    const drop = await screen.findByRole("button", { name: /Drop an image, or click to choose/ });
+    expect(screen.getByText("PNG, JPEG, WebP, GIF or SVG")).toBeTruthy();
+    const picker = screen.getByLabelText<HTMLInputElement>("Choose an image to upload");
+    expect(picker.accept).toContain("image/gif");
+    expect(picker.accept).toContain("image/svg+xml");
+
+    fireEvent.dragOver(drop, { dataTransfer: { files: [] } });
+    expect(drop.getAttribute("data-drag-over")).toBe("true");
+    fireEvent.dragLeave(drop);
+    expect(drop.getAttribute("data-drag-over")).toBe("false");
+  });
+
+  it("confirms before cancelling a request", async () => {
+    const calls = mockFetch((url) => ({
+      body: url.includes("asset-requests") ? [pendingRequest] : pendingRequest,
+    }));
+    renderPanel();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel request" }));
+    expect(screen.getByText("Cancel this image request?")).toBeTruthy();
+    expect(calls.some((call) => call.url.endsWith("/cancel"))).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Confirm cancellation" }));
+    await waitFor(() => expect(calls.some((call) => call.url.endsWith("/cancel"))).toBe(true));
+  });
+
+  it("shows an uploading state while the server is receiving a file", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        if (url.includes("/assets") && init?.method === "POST") return new Promise<Response>(() => undefined);
+        const body = url.includes("asset-requests") ? [] : [];
+        return Promise.resolve(new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } }));
+      }),
+    );
+    renderPanel();
+
+    const picker = await screen.findByLabelText("Choose an image to upload");
+    fireEvent.change(picker, { target: { files: [file()] } });
+    expect(await screen.findByRole("status")).toBeTruthy();
+    expect(screen.getByRole("progressbar", { name: "Uploading image" })).toBeTruthy();
   });
 });

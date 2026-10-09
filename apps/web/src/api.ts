@@ -21,6 +21,8 @@ import type { IdentityStatus } from "@forma/bindings/IdentityStatus";
 import type { Onboarding } from "@forma/bindings/Onboarding";
 import type { Project } from "@forma/bindings/Project";
 import type { Status } from "@forma/bindings/Status";
+import type { Template } from "@forma/bindings/Template";
+import type { TemplateDraft } from "@forma/bindings/TemplateDraft";
 import type { ValidationReport } from "@forma/bindings/ValidationReport";
 import type { Version } from "@forma/bindings/Version";
 
@@ -30,6 +32,7 @@ import { accessToken } from "./identity";
 
 export type { BrandKitDraft } from "@forma/bindings/BrandKitDraft";
 export type { Export, ExportScope };
+export type { Template, TemplateDraft };
 
 export type {
   ApiKey,
@@ -196,6 +199,10 @@ export const putBrand = (projectId: string, draft: BrandKitDraft) =>
 export const getBrand = (projectId: string) =>
   request<BrandKit | null>(`/projects/${projectId}/brand`);
 
+/** Saves the current design as a project template. */
+export const createTemplate = (designId: string, draft: TemplateDraft) =>
+  request<Template>(`/designs/${designId}/template`, { method: "POST", body: draft });
+
 // --- designs --------------------------------------------------------------
 
 export const listDesigns = (projectId: string) =>
@@ -352,4 +359,3 @@ export const getIdentity = () => request<IdentityStatus>("/identity");
 export const getOnboarding = () => request<Onboarding>("/onboarding");
 
 export const createAccount = () => request<unknown>("/accounts", { method: "POST" });
-
