@@ -32,6 +32,26 @@ function mockFetch(brand: unknown) {
             projects: 1,
             max_ops_per_batch: 20,
           }
+        : url.endsWith("/projects/p1")
+          ? { id: "p1", name: "Acme Studio", brand_id: "b1", created_at: "2026-01-01T00:00:00Z" }
+          : url.endsWith("/projects/p1/assets")
+            ? [
+                {
+                  id: "a1",
+                  project_id: "p1",
+                  hash: "abc",
+                  kind: "raster",
+                  mime_type: "image/png",
+                  width: 400,
+                  height: 200,
+                  byte_size: 12,
+                  storage_key: "a1.png",
+                  original_filename: "brand-mark.png",
+                  origin: "user_upload",
+                  attribution: null,
+                  created_at: "2026-01-01T00:00:00Z",
+                },
+              ]
         : method === "PUT"
           ? { ...(body as object), id: "b1", project_id: "p1", version: 1 }
           : brand;
@@ -90,10 +110,10 @@ describe("the brand panel", () => {
     mockFetch(null);
     renderPanel();
 
-    // The consequence, not just the absence: this is the state that made a
-    // design silently fail to render.
-    expect(await screen.findByText(/cannot resolve/i)).toBeTruthy();
-    expect(screen.getByText("Create a Brand Kit")).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "No Brand Kit yet" })).toBeTruthy();
+    expect(screen.getByText(/A Brand Kit keeps this project’s colours, fonts and voice together/i)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Set up Brand Kit" })).toBeTruthy();
+    expect(screen.queryByText(/\$brand\./)).toBeNull();
   });
 
   it("loads the kit the project already has", async () => {
@@ -103,6 +123,11 @@ describe("the brand panel", () => {
     expect(await screen.findByDisplayValue("Acme")).toBeTruthy();
     expect(screen.getByDisplayValue("#FF5436")).toBeTruthy();
     expect(screen.getByDisplayValue("Direct and brief.")).toBeTruthy();
+    expect(screen.getByText("Shared by every design in Acme Studio.")).toBeTruthy();
+    for (const label of ["Primary", "Secondary", "Accent", "Background", "Surface", "Text", "Text on dark", "Muted"]) {
+      expect(screen.getByLabelText(`${label} hex colour`)).toBeTruthy();
+    }
+    expect(screen.getByRole("combobox", { name: "Logo" }).querySelector("option[value=\"a1\"]")?.textContent).toBe("brand-mark.png");
   });
 
   /// The rule that matters: a family the renderer lacks is FONT_NOT_FOUND at
@@ -112,7 +137,11 @@ describe("the brand panel", () => {
     renderPanel();
 
     await screen.findByDisplayValue("Acme");
-    const selects = screen.getAllByRole("combobox");
+    const selects = [
+      screen.getByRole("combobox", { name: "Display font" }),
+      screen.getByRole("combobox", { name: "Body font" }),
+      screen.getByRole("combobox", { name: "Mono font" }),
+    ];
     expect(selects).toHaveLength(3);
 
     const options = [...selects[0].querySelectorAll("option")].map((o) => o.textContent);
@@ -139,14 +168,18 @@ describe("the brand panel", () => {
     expect(body).not.toHaveProperty("version");
   });
 
-  it("does not offer to save what has not changed", async () => {
+  it("keeps Save disabled and quiet until a value changes", async () => {
     mockFetch(existing);
     renderPanel();
 
     await screen.findByDisplayValue("Acme");
-    expect(screen.getByText("Saved")).toBeTruthy();
+    const save = screen.getByRole("button", { name: "Save Brand Kit" });
+    expect((save as HTMLButtonElement).disabled).toBe(true);
+    expect(save.className).not.toContain("bg-signal");
+    expect(screen.getByText("Saving changes how every design in this project looks, right away.")).toBeTruthy();
 
     fireEvent.change(screen.getByDisplayValue("Acme"), { target: { value: "Acme Ltd" } });
-    expect(screen.getByText("Save Brand Kit")).toBeTruthy();
+    expect((save as HTMLButtonElement).disabled).toBe(false);
+    expect(save.className).toContain("bg-signal");
   });
 });

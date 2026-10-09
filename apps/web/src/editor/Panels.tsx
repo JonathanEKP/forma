@@ -304,17 +304,22 @@ function PropertyValue({ label: name, value }: { label: string; value: string | 
 }
 
 export function Panel({
+  id,
   title,
   children,
   onClose,
+  footer,
 }: {
+  id?: string;
   title: string;
   children: React.ReactNode;
   onClose?: () => void;
+  footer?: React.ReactNode;
 }) {
   return (
     <aside
-      className={`editor-pane ${onClose ? "editor-flyout-pane" : "editor-properties-pane"} w-64 shrink-0 overflow-y-auto scroll-thin`}
+      id={id}
+      className={`editor-pane ${onClose ? "editor-flyout-pane" : "editor-properties-pane"} flex min-h-0 min-w-0 w-64 shrink-0 flex-col`}
       aria-label={title}
     >
       <header className="editor-pane-heading">
@@ -325,7 +330,8 @@ export function Panel({
           </button>
         )}
       </header>
-      <div className="px-3 pb-4">{children}</div>
+      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-3 pb-4 scroll-thin">{children}</div>
+      {footer && <footer className="editor-pane-footer">{footer}</footer>}
     </aside>
   );
 }

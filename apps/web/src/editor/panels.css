@@ -1,0 +1,35 @@
+.editor-pane-footer {
+  display: grid;
+  flex: none;
+  gap: 12px;
+  border-top: 1px solid var(--color-edge);
+  background: var(--color-ink);
+  padding: 16px;
+}
+
+.editor-template-button {
+  border: 0;
+  background: transparent;
+}
+
+.editor-template-form {
+  width: min(256px, calc(100vw - 24px));
+}
+
+@media (max-width: 680px) {
+  .editor-workspace[data-panel-open="true"] .editor-flyout-pane {
+    position: relative;
+    inset: auto;
+    z-index: auto;
+    width: 100%;
+    max-height: none;
+    min-height: 0;
+    flex: 1 1 auto;
+    box-shadow: none;
+  }
+
+  .editor-workspace[data-panel-open="true"] .editor-canvas-room,
+  .editor-workspace[data-panel-open="true"] .editor-properties {
+    display: none;
+  }
+}

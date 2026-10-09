@@ -20,6 +20,7 @@ export const keys = {
   apiKeys: ["api-keys"] as const,
   projects: ["projects"] as const,
   project: (id: string) => ["project", id] as const,
+  templates: (projectId: string) => ["templates", projectId] as const,
   brand: (projectId: string) => ["brand", projectId] as const,
   designs: (projectId: string) => ["designs", projectId] as const,
   design: (id: string) => ["design", id] as const,
@@ -36,6 +37,13 @@ export const useStatus = () =>
 
 export const useProjects = () =>
   useQuery({ queryKey: keys.projects, queryFn: api.listProjects });
+
+export const useProject = (projectId: string | null) =>
+  useQuery({
+    queryKey: keys.project(projectId ?? ""),
+    queryFn: () => api.getProject(projectId ?? ""),
+    enabled: projectId !== null,
+  });
 
 export const useBrand = (projectId: string | null) =>
   useQuery({
@@ -162,6 +170,17 @@ export function useCreateDesign(projectId: string | null) {
     onSuccess: (record) => {
       client.setQueryData(keys.design(record.id), record);
       void client.invalidateQueries({ queryKey: keys.designs(record.project_id) });
+    },
+  });
+}
+
+export function useCreateTemplate(projectId: string | null, designId: string | null) {
+  const client = useQueryClient();
+
+  return useMutation({
+    mutationFn: (name: string) => api.createTemplate(designId ?? "", { name, description: "" }),
+    onSuccess: () => {
+      if (projectId) void client.invalidateQueries({ queryKey: keys.templates(projectId) });
     },
   });
 }
