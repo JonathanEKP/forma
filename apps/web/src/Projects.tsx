@@ -852,23 +852,26 @@ function DesignCard({
         onClick={onOpen}
         disabled={confirming}
         aria-label={`Open ${design.name}`}
-        className="group relative block w-full overflow-hidden bg-surface-2 text-left disabled:cursor-default"
-        style={{ aspectRatio: `${width} / ${height}` }}
+        className="group relative block w-full overflow-hidden bg-surface text-left disabled:cursor-default"
       >
-        <span className="absolute inset-0 grid place-items-center text-xs text-faint" aria-hidden={pageId !== null && previewLoaded && !previewFailed}>
-          {previewFailed ? "Preview unavailable" : "Page 1 preview"}
+        <span className="relative flex h-[180px] w-full items-center justify-center overflow-hidden bg-surface p-3 sm:h-[216px] sm:p-4">
+          {(!previewLoaded || previewFailed || !pageId) && (
+            <span className="absolute inset-0 grid place-items-center text-xs text-faint">
+              {previewFailed ? "Preview unavailable" : "Page 1 preview"}
+            </span>
+          )}
+          {pageId && !previewFailed && (
+            <img
+              ref={previewRef}
+              src={previewSrc ?? undefined}
+              alt={`Page 1 of ${design.name}`}
+              loading="lazy"
+              onLoad={() => setPreviewLoaded(true)}
+              onError={() => setPreviewFailed(true)}
+              className={`h-full w-full object-contain transition-opacity duration-200 ${previewLoaded ? "opacity-100" : "opacity-0"} ${confirming ? "opacity-35 grayscale" : ""}`}
+            />
+          )}
         </span>
-        {pageId && !previewFailed && (
-          <img
-            ref={previewRef}
-            src={previewSrc ?? undefined}
-            alt={`Page 1 of ${design.name}`}
-            loading="lazy"
-            onLoad={() => setPreviewLoaded(true)}
-            onError={() => setPreviewFailed(true)}
-            className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-200 ${previewLoaded ? "opacity-100" : "opacity-0"} ${confirming ? "opacity-35 grayscale" : ""}`}
-          />
-        )}
         {confirming && <span className="absolute inset-0 bg-ink/35" aria-hidden="true" />}
       </button>
 

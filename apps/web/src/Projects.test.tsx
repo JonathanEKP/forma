@@ -114,15 +114,19 @@ function renderProjects(onOpen = vi.fn(), options: Parameters<typeof createBacke
   return { ...view, backend, onOpen };
 }
 
+function stubPreviewObjectUrls() {
+  const TestURL = class extends URL {};
+  Object.defineProperty(TestURL, "createObjectURL", { value: vi.fn(() => "blob:preview") });
+  Object.defineProperty(TestURL, "revokeObjectURL", { value: vi.fn() });
+  vi.stubGlobal("URL", TestURL);
+  vi.stubGlobal("IntersectionObserver", undefined);
+}
+
 afterEach(() => vi.unstubAllGlobals());
 
 describe("the projects home", () => {
   it("shows project details, design history, page-one preview and image requests", async () => {
-    const TestURL = class extends URL {};
-    Object.defineProperty(TestURL, "createObjectURL", { value: vi.fn(() => "blob:preview") });
-    Object.defineProperty(TestURL, "revokeObjectURL", { value: vi.fn() });
-    vi.stubGlobal("URL", TestURL);
-    vi.stubGlobal("IntersectionObserver", undefined);
+    stubPreviewObjectUrls();
     const request = {
       id: "r1",
       project_id: "p1",
@@ -151,9 +155,56 @@ describe("the projects home", () => {
     expect(screen.getByText("2 h ago", { selector: "time" }).className).toContain("whitespace-nowrap");
     const preview = await screen.findByRole("img", { name: /page 1 of launch cover/i });
     expect(preview.getAttribute("loading")).toBe("lazy");
+    expect(preview.className).toContain("object-contain");
+    expect(preview.parentElement?.className).toContain("h-[180px]");
+    expect(preview.parentElement?.className).toContain("sm:h-[216px]");
+    expect(preview.parentElement?.className).toContain("bg-surface");
+    expect(preview.parentElement?.className).toContain("p-3");
+    expect(screen.getByText("Page 1 preview")).toBeTruthy();
+    fireEvent.load(preview);
+    expect(screen.queryByText("Page 1 preview")).toBeNull();
     expect(backend.calls.some((call) => call.path === "/api/v1/designs/d1/pages/page-1/preview.png"))
       .toBe(true);
     expect(screen.getByText("Design details")).toBeTruthy();
+  });
+
+  it("shows the quiet placeholder when the page preview fails to load", async () => {
+    stubPreviewObjectUrls();
+    renderProjects();
+    fireEvent.click(await screen.findByRole("button", { name: /launch campaign/i }));
+
+    const preview = await screen.findByRole("img", { name: /page 1 of launch cover/i });
+    fireEvent.error(preview);
+
+    const placeholder = screen.getByText("Preview unavailable");
+    expect(placeholder.className).toContain("text-faint");
+    expect(screen.queryByRole("img", { name: /page 1 of launch cover/i })).toBeNull();
+  });
+
+  it("uses one fixed preview well for square, portrait, story, and landscape designs", async () => {
+    const dimensions = [
+      [1080, 1080],
+      [1080, 1350],
+      [1080, 1920],
+      [1920, 1080],
+    ];
+    const designs = dimensions.map(([width, height], index) => ({
+      ...summary,
+      id: `d${index + 1}`,
+      name: ["Square", "Portrait", "Story", "Landscape"][index],
+      format: { preset: "custom", width, height },
+      first_page_id: `page-${index + 1}`,
+    }));
+    renderProjects(vi.fn(), { designs });
+    fireEvent.click(await screen.findByRole("button", { name: /launch campaign/i }));
+
+    for (const name of ["Square", "Portrait", "Story", "Landscape"]) {
+      const open = await screen.findByRole("button", { name: `Open ${name}` });
+      const well = open.firstElementChild;
+      expect(well?.className).toContain("h-[180px]");
+      expect(well?.className).toContain("sm:h-[216px]");
+      expect(well?.className).toContain("bg-surface");
+    }
   });
 
   it("offers a blank design form with the requested format choices and opens the created design", async () => {

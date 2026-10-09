@@ -19,8 +19,9 @@ prototype is not built (as in UX batch 1, C-6).
   an unknown agent is **"An agent"**; `System` is **"Forma"**.
 - **P-3 Thumbnails are page 1's existing preview.** `DesignSummary` gains `first_page_id`; the card shows
   `/designs/{id}/pages/{page}/preview.png` (cached per version by the server), loaded lazily
-  (`loading="lazy"`) with a quiet placeholder until it arrives, and the format's aspect ratio reserved so the
-  grid never jumps.
+  (`loading="lazy"`) inside a fixed-height Surface preview well (216px desktop, 180px mobile) with padding and
+  `object-fit: contain`. The quiet placeholder stays until the image loads or falls back on error, keeping cards
+  the same height across formats.
 - **P-4 "Save as template" is added to the editor.** The route exists (`POST /designs/{id}/template`) and no
   screen offers it, so without it the home page's template picker would be empty. A small action beside Export,
   asking only for a name. The home page shows "Start from a template" only when the project has templates.
