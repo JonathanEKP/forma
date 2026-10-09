@@ -138,7 +138,7 @@ describe("public entry points", () => {
 
     await waitFor(() =>
       expect(
-        screen.getByRole("heading", { name: "This authorization cannot be shown" }),
+        screen.getByRole("heading", { name: "This connection cannot be shown" }),
       ).toBeTruthy(),
     );
   });
