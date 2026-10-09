@@ -87,25 +87,32 @@ test("the base product is fully usable while Pontis is absent", async ({ page })
 
   // The page that would carry a connection status, if anything did.
   await page.getByRole("link", { name: "Connect an agent" }).click();
-  await expect(page.getByRole("heading", { name: "Chat in the editor" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Use Forma from your AI app" })).toBeVisible();
   await expectNoPresenceClaim(page, "the agents page");
   await page.getByRole("link", { name: "← Projects" }).click();
 
   // --- a project opens ------------------------------------------------------
-  await page.getByPlaceholder("New project").fill("Standalone");
-  await page.getByPlaceholder("New project").press("Enter");
-  await page.getByRole("button", { name: /Standalone/ }).click();
+  await expect(page.getByText("Loading projects…")).toHaveCount(0);
+  if (await page.getByRole("button", { name: "Create your first project" }).isVisible().catch(() => false)) {
+    await page.getByRole("button", { name: "Create your first project" }).click();
+  } else {
+    await page.getByRole("button", { name: "New project", exact: true }).click();
+  }
+  await page.getByLabel("Project name").fill("Standalone");
+  await page.getByRole("button", { name: "Create project" }).click();
+  await expect(page.getByRole("heading", { name: "Standalone", exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "Set up" }).click();
-  await page.getByRole("button", { name: "Create a Brand Kit" }).click();
+  await page.getByRole("button", { name: "Set up Brand Kit" }).click();
   await page.getByRole("button", { name: "Save Brand Kit" }).click();
-  await expect(page.getByRole("button", { name: "Saved" })).toBeVisible();
+  await expect(page.getByRole("status")).toHaveText("All changes saved");
   await page.getByRole("button", { name: "Close" }).click();
 
   // --- a design renders its preview -----------------------------------------
-  await page.getByPlaceholder("New design").fill("Offline");
+  await page.getByRole("button", { name: "New design" }).click();
+  await page.getByLabel("Design name").fill("Offline");
   const firstPreview = previewOf(page, 1);
-  await page.getByPlaceholder("New design").press("Enter");
+  await page.getByRole("button", { name: "Create & open" }).click();
   await expect(page.getByRole("button", { name: "Open Projects" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Layers & pages", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByLabel(/Canvas zoom \d+ percent/)).toBeVisible();
@@ -127,9 +134,9 @@ test("the base product is fully usable while Pontis is absent", async ({ page })
   // --- an export completes --------------------------------------------------
   await page.getByRole("button", { name: "Export", exact: true }).click();
   const download = page.waitForEvent("download");
-  await page.getByRole("button", { name: /^Export \d+ page/ }).click();
+  await page.getByRole("button", { name: "Export PNG" }).click();
 
-  const link = page.getByRole("link", { name: /\.png/ }).first();
+  const link = page.getByRole("link", { name: /Download .*\.png/ }).first();
   await expect(link).toBeVisible({ timeout: 30_000 });
   await link.click();
 

@@ -30,6 +30,25 @@ type Access =
   | { at: "accountless" }
   | { at: "ready" };
 
+type InitialTool = "layers" | "images" | "brand";
+
+interface DesignAddress {
+  readonly designId: string | null;
+  readonly initialTool?: InitialTool;
+}
+
+function readDesignAddress(): DesignAddress {
+  const params = new URLSearchParams(window.location.search);
+  const designId = params.get("design");
+  const panel = params.get("panel");
+  const initialTool = panel === "layers" || panel === "images" || panel === "brand" ? panel : undefined;
+  return designId === null ? { designId: null } : { designId, ...(initialTool ? { initialTool } : {}) };
+}
+
+function isFormaDesignState(state: unknown): boolean {
+  return typeof state === "object" && state !== null && "formaDesign" in state && state.formaDesign === true;
+}
+
 function useAccess(): [Access, () => void] {
   const [access, setAccess] = useState<Access>({ at: "unknown" });
   const [attempt, setAttempt] = useState(0);
@@ -73,23 +92,47 @@ function useAccess(): [Access, () => void] {
 }
 
 export function App() {
-  const [designId, setDesignId] = useState<string | null>(null);
+  const [address, setAddress] = useState<DesignAddress>(readDesignAddress);
+  const { designId, initialTool } = address;
   const [project, setProject] = useState<{ readonly id: string; readonly name: string } | null>(null);
   const openDesignId = useRef(designId);
   openDesignId.current = designId;
   const [access, recheck] = useAccess();
   const queries = useQueryClient();
 
+  useEffect(() => {
+    const onPopState = () => {
+      const next = readDesignAddress();
+      if (openDesignId.current !== next.designId) useEditor.getState().selectPage(null);
+      openDesignId.current = next.designId;
+      setAddress(next);
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
   // Opening a design is a navigation, so it clears what was selected in the
   // last one — a layer id from another design would otherwise survive the
   // switch. The channel calls this, and so could anything else; it is not an
   // agent-only path.
-  const openDesign = useCallback((next: string) => {
+  const openDesign = useCallback((next: string, tool?: InitialTool) => {
+    const params = new URLSearchParams({ design: next });
+    if (tool) params.set("panel", tool);
+    window.history.pushState({ formaDesign: true }, "", `/?${params.toString()}`);
+    setAddress({ designId: next, ...(tool ? { initialTool: tool } : {}) });
+    if (openDesignId.current !== next) useEditor.getState().selectPage(null);
     openDesignId.current = next;
-    setDesignId((current) => {
-      if (current !== next) useEditor.getState().selectPage(null);
-      return next;
-    });
+  }, []);
+
+  const goHome = useCallback(() => {
+    if (isFormaDesignState(window.history.state)) {
+      window.history.back();
+      return;
+    }
+    window.history.replaceState(null, "", "/");
+    setAddress({ designId: null });
+    openDesignId.current = null;
+    setProject(null);
   }, []);
 
   // The four editor actions of plan §3.2, answered by this window.
@@ -144,7 +187,12 @@ export function App() {
     return (
       <div className="flex h-full">
         <div className="h-full min-w-0 flex-1 overflow-y-auto">
-          <Projects onOpen={openDesign} onProjectChange={setProject} chat={chat.enabled ? <ChatToggle chat={chat} open={chatOpen} onToggle={toggleChat} /> : null} />
+          <Projects
+            onOpen={openDesign}
+            onProjectChange={setProject}
+            selectedProjectId={project?.id ?? null}
+            chat={chat.enabled ? <ChatToggle chat={chat} open={chatOpen} onToggle={toggleChat} /> : null}
+          />
         </div>
         {chat.enabled && chatOpen && <ChatPanel chat={chat} onClose={() => setChatOpen(false)} />}
       </div>
@@ -155,10 +203,8 @@ export function App() {
     <div className="h-full min-w-0">
       <Editor
         designId={designId}
-        onBack={() => {
-          setDesignId(null);
-          setProject(null);
-        }}
+        onBack={goHome}
+        {...(initialTool ? { initialTool } : {})}
         {...(chat.enabled ? { chat, chatOpen, onToggleChat: toggleChat } : {})}
       />
     </div>

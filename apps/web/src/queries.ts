@@ -80,6 +80,13 @@ export const useAssets = (projectId: string | null) =>
     enabled: projectId !== null,
   });
 
+export const useTemplates = (projectId: string | null) =>
+  useQuery({
+    queryKey: keys.templates(projectId ?? ""),
+    queryFn: () => api.listTemplates(projectId ?? ""),
+    enabled: projectId !== null,
+  });
+
 /**
  * The rendered page, keyed by version.
  *
@@ -162,6 +169,23 @@ export function useCreateProject() {
   });
 }
 
+export function useDeleteProject() {
+  const client = useQueryClient();
+
+  return useMutation({
+    mutationFn: (projectId: string) => api.deleteProject(projectId),
+    onSuccess: (_, projectId) => {
+      void client.invalidateQueries({ queryKey: keys.projects });
+      client.removeQueries({ queryKey: keys.project(projectId) });
+      client.removeQueries({ queryKey: keys.brand(projectId) });
+      client.removeQueries({ queryKey: keys.designs(projectId) });
+      client.removeQueries({ queryKey: keys.assets(projectId) });
+      client.removeQueries({ queryKey: keys.assetRequests(projectId) });
+      client.removeQueries({ queryKey: keys.templates(projectId) });
+    },
+  });
+}
+
 export function useCreateDesign(projectId: string | null) {
   const client = useQueryClient();
 
@@ -170,6 +194,44 @@ export function useCreateDesign(projectId: string | null) {
     onSuccess: (record) => {
       client.setQueryData(keys.design(record.id), record);
       void client.invalidateQueries({ queryKey: keys.designs(record.project_id) });
+    },
+  });
+}
+
+export function useCreateDesignWithFormat(projectId: string | null) {
+  const client = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ name, format }: { name: string; format: api.FormatRequest }) =>
+      api.createDesignWithFormat(projectId ?? "", name, format),
+    onSuccess: (record) => {
+      client.setQueryData(keys.design(record.id), record);
+      void client.invalidateQueries({ queryKey: keys.designs(record.project_id) });
+    },
+  });
+}
+
+export function useCreateDesignFromTemplate(projectId: string | null) {
+  const client = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ templateId, name }: { templateId: string; name: string }) =>
+      api.createDesignFromTemplate(templateId, name),
+    onSuccess: (record) => {
+      client.setQueryData(keys.design(record.id), record);
+      void client.invalidateQueries({ queryKey: keys.designs(projectId ?? record.project_id) });
+    },
+  });
+}
+
+export function useDeleteDesign(projectId: string | null) {
+  const client = useQueryClient();
+
+  return useMutation({
+    mutationFn: (designId: string) => api.deleteDesign(designId),
+    onSuccess: (_, designId) => {
+      client.removeQueries({ queryKey: keys.design(designId) });
+      void client.invalidateQueries({ queryKey: keys.designs(projectId ?? "") });
     },
   });
 }

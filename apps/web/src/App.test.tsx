@@ -4,6 +4,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
 
+vi.mock("./editor/Editor", () => ({
+  Editor: ({
+    designId,
+    initialTool,
+    onBack,
+  }: {
+    designId: string;
+    initialTool?: string;
+    onBack: () => void;
+  }) => (
+    <main>
+      <h1>Editing {designId}</h1>
+      <p>Initial tool: {initialTool ?? "layers"}</p>
+      <button type="button" onClick={onBack}>Back to projects</button>
+    </main>
+  ),
+}));
+
 /**
  * A Forma with no identity provider, which is what a local build is and what CI
  * builds — `apps/web/.env` is gitignored, so `VITE_SUPABASE_*` is absent there.
@@ -99,7 +117,7 @@ describe("the project view", () => {
 
     // A local tool that silently shows nothing is worse than one that says the
     // server is down: there is exactly one thing to start.
-    expect(await screen.findByText(/forma-server is not reachable/i)).toBeTruthy();
+    expect(await screen.findByText(/forma can't connect right now/i)).toBeTruthy();
   });
 });
 
@@ -149,7 +167,13 @@ describe("the project view with a live server", () => {
     vi.stubGlobal(
       "fetch",
       mockFetch({
+        "/identity": { required: false },
         "/status": status,
+        "/projects/p1/designs": [],
+        "/projects/p1/brand": null,
+        "/projects/p1/templates": [],
+        "/projects/p1/assets": [],
+        "/projects/p1/asset-requests": [],
         "/projects": [
           { id: "p1", name: "Launch campaign", created_at: "2026-08-28T00:00:00.000Z", updated_at: "2026-08-28T00:00:00.000Z" },
         ],
@@ -161,13 +185,15 @@ describe("the project view with a live server", () => {
     vi.unstubAllGlobals();
   });
 
-  it("lists projects and reports what the renderer can draw", async () => {
+  it("lists projects and puts renderer details under About Forma", async () => {
     renderApp();
 
-    expect(await screen.findByText("Launch campaign")).toBeTruthy();
-    // The font catalog is on screen because an agent or a user must not name a
-    // family the renderer does not have.
-    await waitFor(() => expect(screen.getByText(/fonts: Geist/)).toBeTruthy());
+    expect(await screen.findByRole("heading", { name: "Launch campaign" })).toBeTruthy();
+    const about = screen.getByText(/fonts: Geist/).closest("details");
+    expect(about?.open).toBe(false);
+    fireEvent.click(screen.getByText("About Forma"));
+    expect(await screen.findByText(/fonts: Geist/)).toBeTruthy();
+    expect(about?.open).toBe(true);
   });
 
   it("keeps duplicate brand colors from creating duplicate React keys", async () => {
@@ -197,6 +223,9 @@ describe("the project view with a live server", () => {
           version: 1,
         },
         "/projects/p1/designs": [],
+        "/projects/p1/templates": [],
+        "/projects/p1/assets": [],
+        "/projects/p1/asset-requests": [],
         "/projects": [
           { id: "p1", name: "Launch campaign", created_at: "2026-08-28T00:00:00.000Z", updated_at: "2026-08-28T00:00:00.000Z" },
         ],
@@ -205,12 +234,76 @@ describe("the project view with a live server", () => {
 
     try {
       renderApp();
-      fireEvent.click(await screen.findByText("Launch campaign"));
       expect(await screen.findByText("Acme")).toBeTruthy();
       expect(errors.mock.calls.some(([message]) => String(message).includes("same key"))).toBe(false);
     } finally {
       errors.mockRestore();
     }
+  });
+});
+
+describe("design address state", () => {
+  beforeEach(() => {
+    window.history.replaceState({}, "", "/");
+    vi.stubGlobal("fetch", mockFetch({
+      "/identity": { required: false },
+      "/status": status,
+      "/projects/p1/designs": [{
+        id: "d1",
+        project_id: "p1",
+        name: "Launch cover",
+        version: 12,
+        format: { preset: "square", width: 1080, height: 1080 },
+        page_count: 1,
+        created_at: "2026-10-01T00:00:00.000Z",
+        updated_at: "2026-10-08T10:00:00.000Z",
+        actor_type: "human",
+        actor_id: null,
+        edited_at: "2026-10-08T10:00:00.000Z",
+        first_page_id: "page-1",
+      }],
+      "/projects/p1/brand": null,
+      "/projects/p1/templates": [],
+      "/projects/p1/assets": [],
+      "/projects/p1/asset-requests": [{
+        id: "r1",
+        project_id: "p1",
+        design_id: "d1",
+        purpose: "Campaign photo",
+        description: "A bright street scene",
+        status: "pending",
+        created_at: "2026-10-08T10:00:00.000Z",
+      }],
+      "/projects": [
+        { id: "p1", name: "Launch campaign", created_at: "2026-10-01T00:00:00.000Z", updated_at: "2026-10-01T00:00:00.000Z" },
+      ],
+    }));
+  });
+
+  afterEach(() => {
+    window.history.replaceState({}, "", "/");
+    vi.unstubAllGlobals();
+  });
+
+  it("opens an image request with Images selected and browser Back returns home", async () => {
+    renderApp();
+    fireEvent.click(await screen.findByRole("link", { name: "Campaign photo" }));
+
+    expect(await screen.findByRole("heading", { name: "Editing d1" })).toBeTruthy();
+    expect(screen.getByText("Initial tool: images")).toBeTruthy();
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/?design=d1&panel=images");
+
+    window.history.back();
+    expect(await screen.findByRole("heading", { name: "Launch campaign" })).toBeTruthy();
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/");
+  });
+
+  it("restores a design and tool from the current address", async () => {
+    window.history.replaceState({}, "", "/?design=d1&panel=images");
+    renderApp();
+
+    expect(await screen.findByRole("heading", { name: "Editing d1" })).toBeTruthy();
+    expect(screen.getByText("Initial tool: images")).toBeTruthy();
   });
 });
 

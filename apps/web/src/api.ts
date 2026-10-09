@@ -17,6 +17,7 @@ import type { DesignRecord } from "@forma/bindings/DesignRecord";
 import type { DesignSummary } from "@forma/bindings/DesignSummary";
 import type { Export } from "@forma/bindings/Export";
 import type { ExportScope } from "@forma/bindings/ExportScope";
+import type { FormatRequest } from "@forma/bindings/FormatRequest";
 import type { IdentityStatus } from "@forma/bindings/IdentityStatus";
 import type { Onboarding } from "@forma/bindings/Onboarding";
 import type { Project } from "@forma/bindings/Project";
@@ -31,7 +32,7 @@ import type { VersionSummary } from "@forma/bindings/VersionSummary";
 import { accessToken } from "./identity";
 
 export type { BrandKitDraft } from "@forma/bindings/BrandKitDraft";
-export type { Export, ExportScope };
+export type { Export, ExportScope, FormatRequest };
 export type { Template, TemplateDraft };
 
 export type {
@@ -185,6 +186,9 @@ export const listProjects = () => request<Project[]>("/projects");
 export const createProject = (name: string) =>
   request<Project>("/projects", { method: "POST", body: { name } });
 
+export const deleteProject = (id: string) =>
+  request<void>(`/projects/${id}`, { method: "DELETE" });
+
 export const getProject = (id: string) => request<Project>(`/projects/${id}`);
 
 /**
@@ -210,6 +214,28 @@ export const listDesigns = (projectId: string) =>
 
 export const createDesign = (projectId: string, name: string) =>
   request<DesignRecord>(`/projects/${projectId}/designs`, {
+    method: "POST",
+    body: { name },
+  });
+
+export const createDesignWithFormat = (
+  projectId: string,
+  name: string,
+  format: FormatRequest,
+) =>
+  request<DesignRecord>(`/projects/${projectId}/designs`, {
+    method: "POST",
+    body: { name, format },
+  });
+
+export const deleteDesign = (id: string) =>
+  request<void>(`/designs/${id}`, { method: "DELETE" });
+
+export const listTemplates = (projectId: string) =>
+  request<Template[]>(`/projects/${projectId}/templates`);
+
+export const createDesignFromTemplate = (templateId: string, name: string) =>
+  request<DesignRecord>(`/templates/${templateId}/designs`, {
     method: "POST",
     body: { name },
   });
@@ -331,6 +357,21 @@ export const previewPngUrl = (
   version: Version,
   scale = 1,
 ) => `/api/v1/designs/${designId}/pages/${pageId}/preview.png?scale=${scale}&v=${version}`;
+
+export async function fetchPreviewPng(
+  designId: string,
+  pageId: string,
+  version: Version,
+  scale = 1,
+  signal?: AbortSignal,
+): Promise<Blob> {
+  const response = await fetch(previewPngUrl(designId, pageId, version, scale), {
+    headers: await authorization(),
+    signal,
+  });
+  if (!response.ok) await fail(response);
+  return await response.blob();
+}
 
 export async function fetchPreviewSvg(
   designId: string,
