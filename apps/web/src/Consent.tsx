@@ -1,12 +1,9 @@
 /**
  * Authorizing an agent (plan §111.3).
  *
- * The provider sends a person here with an `authorization_id`, and this page's
- * whole job is to let them decide knowingly. Two things it must not do: compose
- * a redirect URL of its own — the code and state in it are the provider's — and
- * imply that the scopes being requested are Forma permissions. They are not.
- * Supabase's scopes govern identity data; what a connection can reach in Forma
- * is decided by the account boundary, and that is what the wording explains.
+ * The provider owns both the authorization question and the URL that follows
+ * the answer. Forma explains the connection in terms of its own account
+ * boundary and never treats provider identity scopes as Forma permissions.
  */
 
 import { useEffect, useState } from "react";
@@ -19,22 +16,32 @@ import {
   supabase,
   type ConsentDetails,
 } from "./identity";
-import { SignIn } from "./SignIn";
+import { IdentityFrame, SignIn } from "./SignIn";
 
 type State =
   | { at: "loading" }
   | { at: "anonymous" }
   | { at: "decide"; details: ConsentDetails }
+  | { at: "sending"; details: ConsentDetails; allow: boolean }
+  | { at: "outcome"; details: ConsentDetails; allow: boolean; redirectUrl: string }
   | { at: "failed"; why: string };
+
+function isLocalAddress(address: string) {
+  try {
+    const hostname = new URL(address).hostname.replace(/^\[|\]$/g, "").toLowerCase();
+    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+  } catch {
+    return false;
+  }
+}
 
 export function Consent() {
   const authorizationId = new URLSearchParams(window.location.search).get("authorization_id");
   const [state, setState] = useState<State>({ at: "loading" });
-  const [pending, setPending] = useState(false);
 
   useEffect(() => {
     if (!authorizationId) {
-      setState({ at: "failed", why: "This link is missing its authorization." });
+      setState({ at: "failed", why: "This connection link is missing or has expired." });
       return;
     }
 
@@ -43,8 +50,7 @@ export function Consent() {
       try {
         // The server decides whether this deployment has identity, not the
         // bundle's own configuration — a build can carry provider values while
-        // the server it is served by runs in local mode, and then an
-        // authorization means nothing here.
+        // the server it is served by runs in local mode.
         if (!(await getIdentity()).required || !supabase) {
           if (live) {
             setState({
@@ -62,18 +68,15 @@ export function Consent() {
         const consent = await authorizationDetails(authorizationId);
         if (!live) return;
 
-        // Already answered: send them on rather than asking twice.
+        // Already answered: send them on without asking twice.
         if (consent.kind === "already") {
           window.location.assign(consent.redirectUrl);
           return;
         }
         setState({ at: "decide", details: consent.details });
-      } catch (cause) {
+      } catch {
         if (live) {
-          setState({
-            at: "failed",
-            why: cause instanceof Error ? cause.message : "the authorization could not be read",
-          });
+          setState({ at: "failed", why: "This connection link is missing or has expired." });
         }
       }
     })();
@@ -83,18 +86,17 @@ export function Consent() {
   }, [authorizationId]);
 
   async function answer(allow: boolean) {
-    if (!authorizationId) return;
-    setPending(true);
+    if (!authorizationId || state.at !== "decide") return;
+    const details = state.details;
+    setState({ at: "sending", details, allow });
     try {
       // Exactly what the provider returned. Anything assembled here would be a
       // redirect the client did not ask for.
-      window.location.assign(await decide(authorizationId, allow));
-    } catch (cause) {
-      setState({
-        at: "failed",
-        why: cause instanceof Error ? cause.message : "the decision could not be recorded",
-      });
-      setPending(false);
+      const redirectUrl = await decide(authorizationId, allow);
+      setState({ at: "outcome", details, allow, redirectUrl });
+      window.location.assign(redirectUrl);
+    } catch {
+      setState({ at: "failed", why: "Your answer could not be recorded. Start the connection again from the application." });
     }
   }
 
@@ -106,80 +108,165 @@ export function Consent() {
 
   if (state.at === "failed") {
     return (
-      <Frame title="This authorization cannot be shown">
-        <p className="text-sm leading-6 text-muted">{state.why}</p>
-        <p className="mt-3 text-xs text-faint">
+      <IdentityFrame wide footer={false}>
+        <h1 className="mb-4 text-[28px] font-medium leading-tight tracking-tight md:text-[32px]">
+          This connection cannot be shown
+        </h1>
+        <p className="text-base leading-relaxed text-paper">{state.why}</p>
+        <p className="mt-4 text-base leading-relaxed text-muted">
           Start the connection again from the application that sent you here.
         </p>
-      </Frame>
+      </IdentityFrame>
+    );
+  }
+
+  if (state.at === "outcome") {
+    const { client } = state.details;
+    return (
+      <IdentityFrame wide footer={false}>
+        <h1 className="mb-4 text-[28px] font-medium leading-tight tracking-tight md:text-[32px]">
+          {state.allow ? "Connection allowed" : "Connection denied"}
+        </h1>
+        {state.allow ? (
+          <>
+            <p className="text-base leading-relaxed text-paper">
+              Forma is connected to {client.name}.
+            </p>
+            <p className="mt-4 text-sm leading-relaxed text-muted">
+              Your browser is going back to the app to finish connecting.
+            </p>
+            <dl className="mt-6 border-y border-edge py-6">
+              <Detail label="Returns to" destination={state.details.redirect_uri} />
+            </dl>
+            <p className="mt-5 text-xs leading-relaxed text-muted">
+              To disconnect later, open <a className="text-paper underline underline-offset-4" href="/agents/mcp">AI apps (MCP)</a>
+              {" "}→ Connected applications. Disconnecting ends its access immediately.
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="text-base leading-relaxed text-paper">{client.name} was not connected.</p>
+            <p className="mt-4 text-sm leading-relaxed text-muted">
+              To try again, start the connection again from {client.name}.
+            </p>
+            <dl className="mt-6 border-y border-edge py-6">
+              <Detail label="Returns to" destination={state.details.redirect_uri} />
+            </dl>
+          </>
+        )}
+        <a
+          className="mt-5 inline-flex min-h-11 items-center text-xs text-muted underline underline-offset-4"
+          href={state.redirectUrl}
+        >
+          Go back to {client.name}
+        </a>
+      </IdentityFrame>
     );
   }
 
   const { client, user } = state.details;
+  const website = client.uri.trim();
+  const sending = state.at === "sending";
+  const answerInProgress = sending ? state.allow : null;
 
   return (
-    <Frame title={`${client.name} wants to use Forma`}>
-      <p className="text-sm leading-6 text-muted">
-        This connection can use Forma&rsquo;s agent tools on projects in your account, including
-        reading branding and assets and creating or editing designs, previews and exports.
-      </p>
-      <p className="mt-3 text-sm leading-6 text-muted">
-        It cannot access projects belonging to another Forma account.
-      </p>
+    <IdentityFrame wide footer={false}>
+      <div aria-busy={sending}>
+        <h1 className="mb-4 text-[28px] font-medium leading-tight tracking-tight md:text-[32px]">
+          {client.name} wants to use Forma
+        </h1>
+        <p className="text-base leading-relaxed text-muted">
+          Allow this app to use Forma’s design tools across <strong className="font-medium text-paper">all projects in your account</strong>.
+        </p>
 
-      <dl className="mt-5 space-y-1.5 rounded-xl border border-edge bg-surface px-3.5 py-3 text-xs">
-        <Row label="Application">{client.name}</Row>
-        {client.uri && <Row label="Website">{client.uri}</Row>}
-        <Row label="Returns to">{state.details.redirect_uri}</Row>
-        <Row label="Signed in as">{user.email}</Row>
-      </dl>
+        <section className="mt-8" aria-labelledby="consent-capabilities">
+          <h2 id="consent-capabilities" className="mb-3 text-base font-medium">
+            What this app can do
+          </h2>
+          <ul className="grid gap-2 pl-6 text-base leading-relaxed marker:text-muted">
+            <li>See your projects, Brand Kits and images</li>
+            <li>Create and edit designs</li>
+            <li>Make previews and exports</li>
+            <li>Ask for images it needs</li>
+          </ul>
+          <p className="mt-4 text-sm leading-relaxed text-muted">
+            It cannot create or delete projects, change a Brand Kit, or access anyone else’s Forma account.
+          </p>
+        </section>
 
-      <div className="mt-4 flex gap-2">
-        <button
-          type="button"
-          disabled={pending}
-          onClick={() => void answer(false)}
-          className="flex-1 rounded-xl border border-edge px-3.5 py-2.5 text-sm disabled:opacity-40"
-        >
-          Deny
-        </button>
-        <button
-          type="button"
-          disabled={pending}
-          onClick={() => void answer(true)}
-          className="flex-1 rounded-xl bg-signal px-3.5 py-2.5 text-sm font-medium text-ink disabled:opacity-40"
-        >
-          Allow
-        </button>
-      </div>
+        <dl className="mt-8 grid gap-5 border-y border-edge py-6">
+          <Detail label="Application">{client.name}</Detail>
+          {website && <Detail label="Website">{website}</Detail>}
+          <Detail label="Returns to" destination={state.details.redirect_uri} />
+          <Detail label="Signed in as">{user.email}</Detail>
+        </dl>
 
-      <p className="mt-4 text-[11px] leading-relaxed text-faint">
-        You can disconnect this application at any time from the Agents page. Doing so ends its
-        access immediately.
-      </p>
-    </Frame>
-  );
-}
+        <p className="mt-4 text-xs leading-relaxed text-muted">
+          The app supplies its name{website ? " and website" : ""}; Forma does not verify {website ? "them" : "it"}.{" "}
+          {website ? (
+            "Check that the return address matches the app you meant to connect."
+          ) : (
+            <strong className="font-medium text-paper">
+              Check the return address above. Continue only if it belongs to the app you meant to connect.
+            </strong>
+          )}
+        </p>
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex justify-between gap-4">
-      <dt className="text-faint">{label}</dt>
-      <dd className="truncate text-right text-paper">{children}</dd>
-    </div>
-  );
-}
-
-function Frame({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <main className="grid min-h-screen place-items-center px-6">
-      <div className="w-full max-w-md">
-        <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-signal">
-          Forma
+        <div className="mt-8 flex gap-2">
+          <button
+            type="button"
+            disabled={sending}
+            onClick={() => void answer(false)}
+            className="min-h-12 flex-1 rounded-lg border border-edge px-4 py-3 text-sm disabled:opacity-50"
+          >
+            {answerInProgress === false ? "Sending…" : "Deny"}
+          </button>
+          <button
+            type="button"
+            disabled={sending}
+            onClick={() => void answer(true)}
+            className="min-h-12 flex-1 rounded-lg bg-signal px-4 py-3 text-sm font-semibold text-ink disabled:opacity-50"
+          >
+            {answerInProgress === true ? "Sending…" : "Allow"}
+          </button>
         </div>
-        <h1 className="text-2xl font-medium tracking-tight">{title}</h1>
-        <div className="mt-3">{children}</div>
+        <p role="status" className="mt-2 min-h-6 text-right text-xs leading-relaxed text-muted">
+          {sending ? "Sending your answer…" : ""}
+        </p>
+        <p className="mt-3 text-xs leading-relaxed text-muted">
+          You can disconnect this application later from <a className="text-paper underline underline-offset-4" href="/agents/mcp">AI apps (MCP)</a>, under Connected applications. Disconnecting ends its access immediately.
+        </p>
       </div>
-    </main>
+    </IdentityFrame>
+  );
+}
+
+function Detail({
+  label,
+  children,
+  destination,
+}: {
+  label: string;
+  children?: string;
+  destination?: string;
+}) {
+  return (
+    <div className="grid min-w-0 grid-cols-1 gap-1 md:grid-cols-[112px_minmax(0,1fr)] md:gap-4">
+      <dt className="text-sm text-muted">{label}</dt>
+      <dd className="min-w-0 text-sm leading-relaxed text-paper [overflow-wrap:anywhere]">
+        {destination ? (
+          <>
+            <span className="font-mono text-[13px] leading-relaxed [overflow-wrap:anywhere]">{destination}</span>
+            {isLocalAddress(destination) && (
+              <span className="mt-2 block text-xs leading-relaxed text-muted">
+                A local address means the app runs on this computer.
+              </span>
+            )}
+          </>
+        ) : (
+          children
+        )}
+      </dd>
+    </div>
   );
 }
