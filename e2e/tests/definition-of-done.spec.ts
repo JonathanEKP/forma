@@ -55,13 +55,16 @@ test("every hosted SPA entry point reaches the application shell", async ({ page
     ["/login", "Sign in to Forma"],
     // Local has no provider, so the consent page says that rather than
     // offering a sign-in that could never complete.
-    ["/oauth/consent?authorization_id=request-1", "This authorization cannot be shown"],
+    ["/oauth/consent?authorization_id=request-1", "This connection cannot be shown"],
     ["/agents", "Chat in the editor"],
   ]) {
     const response = await page.goto(path);
     expect(response?.status(), `${path} did not serve the SPA`).toBe(200);
     expect(response?.headers()["content-security-policy"]).toBe(LOCAL_CSP);
     await expect(page.getByRole("heading", { name: heading })).toBeVisible();
+    if (path.startsWith("/oauth/consent")) {
+      await expect(page.getByText("This Forma has no identity provider", { exact: false })).toBeVisible();
+    }
   }
   expect(cspViolations, "the application emitted a CSP violation").toEqual([]);
 });
@@ -156,7 +159,7 @@ test("a new user gets from an empty Forma to a PNG on disk", async ({ page }) =>
   await createProjectWithBrand(page, "Launch");
 
   // --- step 5: upload a photo ------------------------------------------------
-  // Done from the editor's assets panel, so a design has to exist first.
+  // Done from the editor's Images panel, so a design has to exist first.
   await createDesign(page, "Teaser");
   await page.getByRole("button", { name: "Images", exact: true }).click();
   await page.locator('input[type="file"]').first().setInputFiles(HERO);
