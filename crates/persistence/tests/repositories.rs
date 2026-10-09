@@ -326,6 +326,46 @@ async fn history_records_who_made_each_version() {
 }
 
 #[tokio::test]
+async fn design_summaries_include_latest_actor_time_and_first_page() {
+    let harness = Harness::start().await;
+    let project = harness.project().await;
+    let designs = harness.designs();
+
+    let created = designs
+        .create(
+            account(),
+            project.id,
+            "Carousel",
+            &document("v1"),
+            &Actor::human(),
+        )
+        .await
+        .unwrap();
+    let edited = designs
+        .save(
+            account(),
+            created.id,
+            created.version,
+            &document("v2"),
+            &Actor::agent("agent:claude-code"),
+        )
+        .await
+        .unwrap();
+
+    let summaries = designs
+        .list_for_project(account(), project.id)
+        .await
+        .unwrap();
+
+    assert_eq!(summaries.len(), 1);
+    let summary = &summaries[0];
+    assert_eq!(summary.actor_type, ActorType::Agent);
+    assert_eq!(summary.actor_id.as_deref(), Some("agent:claude-code"));
+    assert_eq!(summary.edited_at, edited.updated_at);
+    assert_eq!(summary.first_page_id, Some(edited.document.pages[0].id));
+}
+
+#[tokio::test]
 async fn a_missing_design_is_not_a_conflict() {
     let harness = Harness::start().await;
     let designs = harness.designs();

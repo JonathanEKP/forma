@@ -139,9 +139,12 @@ impl DesignRepository for SqliteDesignRepository {
         project_id: ProjectId,
     ) -> Result<Vec<DesignSummary>> {
         let rows = sqlx::query(&format!(
-            "SELECT id, name, version, document_json, created_at, updated_at
-             FROM designs WHERE project_id = ? AND project_id IN {OWNED_PROJECTS}
-             ORDER BY updated_at DESC",
+            "SELECT d.id, d.name, d.version, d.document_json, d.created_at, d.updated_at,
+                    v.actor_type, v.actor_id, v.created_at AS edited_at
+             FROM designs AS d
+             JOIN design_versions AS v ON v.design_id = d.id AND v.version = d.version
+             WHERE d.project_id = ? AND d.project_id IN {OWNED_PROJECTS}
+             ORDER BY d.updated_at DESC",
         ))
         .bind(project_id.to_string())
         .bind(account.to_string())
@@ -161,6 +164,10 @@ impl DesignRepository for SqliteDesignRepository {
                     page_count: document.pages.len(),
                     created_at: row.get("created_at"),
                     updated_at: row.get("updated_at"),
+                    actor_type: actor_type_from(&row.get::<String, _>("actor_type")),
+                    actor_id: row.get("actor_id"),
+                    edited_at: row.get("edited_at"),
+                    first_page_id: document.pages.first().map(|page| page.id),
                 })
             })
             .collect()
