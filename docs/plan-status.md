@@ -125,18 +125,14 @@ taken; this is the cleanup those decisions will have earned. It belongs after
 PV-1 has shown which classes are actually load-bearing — designing it before
 that would be guessing at the shape.
 
-### Four approved page designs wait to be built
+### The four approved page designs are built
 
-The owner approved four OpenDesign prototypes on 2026-10-08, while the Pontis
-fixes are pending: the projects home (`projects.html`), sign-in and first visit
-(`signin.html`), approving an AI app (`consent.html`) and the editor's side
-panels (`panels.html`). They are in
-[ux/opendesign/prototypes/](ux/opendesign/prototypes/README.md), whose table
-notes what each needs when built. None needs Pontis. Two need small server
-work: the home page's "edited by" line and image-request counts per design read
-data the design list does not return today, and the expired sign-in link needs
-the provider's error read from the return URL. Not scheduled; the owner picks
-the order.
+The owner approved four OpenDesign prototypes on 2026-10-08 and they were built the same day as
+[pages batch 2](ux/pages-batch-2.md): the projects home (with deleting designs and projects, the format and
+template choice, image requests that open their design's Images panel, and "Edited by … · when" from the
+latest version), sign-in and first visit (including expired links and the 60-second resend wait), approving an
+AI app, and the editor's Brand, Images, Export and Checks panels plus "Save as template". Evidence is in
+`ux/evidence/pages/`. None of it needed Pontis.
 
 ### Later: Forma's own connection guide per app
 
