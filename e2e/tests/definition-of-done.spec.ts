@@ -66,29 +66,40 @@ test("every hosted SPA entry point reaches the application shell", async ({ page
   expect(cspViolations, "the application emitted a CSP violation").toEqual([]);
 });
 
-/** Section 79 steps 3 and 4: a project, and the Brand Kit everything assumes. */
-async function createProjectWithBrand(page: Page, name: string) {
+async function createProject(page: Page, name: string) {
   await page.goto("/");
   await expect(page.getByRole("button", { name: "Undo" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Export", exact: true })).toHaveCount(0);
+  await expect(page.getByText("Loading projects…")).toHaveCount(0);
 
-  await page.getByPlaceholder("New project").fill(name);
-  await page.getByPlaceholder("New project").press("Enter");
-  await page.getByRole("button", { name: new RegExp(name) }).click();
+  if (await page.getByRole("button", { name: "Create your first project" }).isVisible().catch(() => false)) {
+    await page.getByRole("button", { name: "Create your first project" }).click();
+  } else {
+    await page.getByRole("button", { name: "New project", exact: true }).click();
+  }
+  await page.getByLabel("Project name").fill(name);
+  await page.getByRole("button", { name: "Create project" }).click();
+  await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
+}
+
+/** Section 79 steps 3 and 4: a project, and the Brand Kit everything assumes. */
+async function createProjectWithBrand(page: Page, name: string) {
+  await createProject(page, name);
 
   // A project starts with no Brand Kit, and says what that costs.
   await expect(page.getByText(/No Brand Kit yet/)).toBeVisible();
 
   await page.getByRole("button", { name: "Set up" }).click();
-  await page.getByRole("button", { name: "Create a Brand Kit" }).click();
+  await page.getByRole("button", { name: "Set up Brand Kit" }).click();
   await page.getByRole("button", { name: "Save Brand Kit" }).click();
-  await expect(page.getByRole("button", { name: "Saved" })).toBeVisible();
+  await expect(page.getByRole("status")).toHaveText("All changes saved");
   await page.getByRole("button", { name: "Close" }).click();
 }
 
 async function createDesign(page: Page, name: string) {
-  await page.getByPlaceholder("New design").fill(name);
-  await page.getByPlaceholder("New design").press("Enter");
+  await page.getByRole("button", { name: "New design" }).click();
+  await page.getByLabel("Design name").fill(name);
+  await page.getByRole("button", { name: "Create & open" }).click();
   // Creating a design opens it.
   await expect(page.getByRole("button", { name: "Open Projects" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Undo" })).toBeVisible();
@@ -101,13 +112,40 @@ async function createDesign(page: Page, name: string) {
   await expect(page.locator("[aria-modal]")).toHaveCount(0);
 }
 
+test("design and project deletion require review and confirmation", async ({ page }) => {
+  const projectName = `Lifecycle ${Date.now()}`;
+  const designName = "Disposable draft";
+  await createProject(page, projectName);
+  await createDesign(page, designName);
+
+  await page.getByRole("button", { name: "Open Projects" }).click();
+  const designCard = page.getByRole("article", { name: `${designName} design` });
+  await expect(designCard).toBeVisible();
+  await designCard.getByRole("button", { name: `Delete ${designName}` }).click();
+  await expect(designCard.getByLabel("Delete design confirmation")).toBeVisible();
+  await designCard.getByRole("button", { name: "Keep design" }).click();
+  await expect(designCard.getByLabel("Delete design confirmation")).toHaveCount(0);
+
+  await designCard.getByRole("button", { name: `Delete ${designName}` }).click();
+  await designCard.getByRole("button", { name: "Delete design", exact: true }).click();
+  await expect(designCard).toHaveCount(0);
+
+  await page.getByRole("button", { name: `Delete project ${projectName}` }).click();
+  const confirmation = page.getByRole("region", { name: "Delete project confirmation" });
+  await expect(confirmation).toContainText("0 designs");
+  await confirmation.getByLabel(new RegExp(`Type ${projectName} to confirm`)).fill(projectName);
+  await confirmation.getByRole("button", { name: "Delete project" }).click();
+  await expect(page.getByRole("heading", { name: projectName, exact: true })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Start with a project." })).toBeVisible();
+});
+
 /// A page nothing links to is a page most people do not have.
 test("the agents page can be reached by navigating, not only by knowing its URL", async ({
   page,
 }) => {
   await page.goto("/");
   await page.getByRole("link", { name: "Connect an agent" }).click();
-  await expect(page.getByRole("heading", { name: "Chat in the editor" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Use Forma from your AI app" })).toBeVisible();
 
   await page.getByRole("link", { name: "← Projects" }).click();
   await expect(page.getByRole("heading", { name: "Give visual ideas a form." })).toBeVisible();
@@ -120,9 +158,9 @@ test("a new user gets from an empty Forma to a PNG on disk", async ({ page }) =>
   // --- step 5: upload a photo ------------------------------------------------
   // Done from the editor's assets panel, so a design has to exist first.
   await createDesign(page, "Teaser");
-  await page.getByRole("button", { name: "Assets", exact: true }).click();
+  await page.getByRole("button", { name: "Images", exact: true }).click();
   await page.locator('input[type="file"]').first().setInputFiles(HERO);
-  await expect(page.getByTitle(/Place hero.png/)).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("button", { name: "Place hero.png on this page" })).toBeVisible({ timeout: 15_000 });
   await page.getByRole("button", { name: "Layers & pages", exact: true }).click();
 
   // --- build a piece by hand, which is Phase 6's acceptance ------------------
@@ -134,9 +172,9 @@ test("a new user gets from an empty Forma to a PNG on disk", async ({ page }) =>
   await expect(textLayer).toBeVisible();
 
   // Place the uploaded photo through the same operation an agent would send.
-  await page.getByRole("button", { name: "Assets", exact: true }).click();
+  await page.getByRole("button", { name: "Images", exact: true }).click();
   const versionBeforePlacement = await readVersion(page);
-  await page.getByTitle(/Place hero.png/).click();
+  await page.getByRole("button", { name: "Place hero.png on this page" }).click();
   // Wait for the layer to land before starting the next version assertion.
   await expect.poll(() => readVersion(page)).toBe(versionBeforePlacement + 1);
 
@@ -161,17 +199,17 @@ test("a new user gets from an empty Forma to a PNG on disk", async ({ page }) =>
     .toBe(versionBefore + 1);
 
   // --- steps 10 and 11: validate, and see the render ------------------------
-  await page.getByRole("button", { name: /Open validation:/ }).click();
-  await expect(page.getByRole("region", { name: "Validation" })).toBeVisible();
+  await page.getByRole("button", { name: "Open checks" }).click();
+  await expect(page.getByRole("complementary", { name: "Checks" })).toBeVisible();
   await expect(page.getByText(/No errors|error/)).toBeVisible({ timeout: 15_000 });
-  await page.getByRole("button", { name: "Close validation" }).click();
+  await page.getByRole("button", { name: "Close Checks" }).click();
 
   // --- step 14: export, and verify the download -----------------------------
   await page.getByRole("button", { name: "Export", exact: true }).click();
   const download = page.waitForEvent("download");
-  await page.getByRole("button", { name: /^Export \d+ page/ }).click();
+  await page.getByRole("button", { name: "Export PNG" }).click();
 
-  const link = page.getByRole("link", { name: /\.png/ }).first();
+  const link = page.getByRole("link", { name: /Download .*\.png/ }).first();
   await expect(link).toBeVisible({ timeout: 30_000 });
   await link.click();
 

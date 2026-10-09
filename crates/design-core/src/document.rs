@@ -9,8 +9,10 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::error::DomainError;
+use crate::ids::PageId;
 use crate::layer::Layer;
 use crate::page::Page;
+use crate::version::ActorType;
 
 pub const SCHEMA_VERSION: u32 = 1;
 
@@ -90,21 +92,10 @@ pub struct DesignSummary {
     pub page_count: usize,
     pub created_at: String,
     pub updated_at: String,
-}
-
-impl DesignRecord {
-    pub fn summary(&self) -> DesignSummary {
-        DesignSummary {
-            id: self.id,
-            project_id: self.project_id,
-            name: self.name.clone(),
-            version: self.version,
-            format: self.document.format,
-            page_count: self.document.pages.len(),
-            created_at: self.created_at.clone(),
-            updated_at: self.updated_at.clone(),
-        }
-    }
+    pub actor_type: ActorType,
+    pub actor_id: Option<String>,
+    pub edited_at: String,
+    pub first_page_id: Option<PageId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]

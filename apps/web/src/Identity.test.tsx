@@ -83,7 +83,7 @@ describe("the first screen", () => {
 
     // No sign-in screen is ever shown for a deployment that has nothing to sign
     // in to, not even for a moment.
-    await waitFor(() => expect(screen.getByText(/Projects/i)).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("complementary", { name: "Projects" })).toBeTruthy());
     expect(screen.queryByText(/Sign in to Forma/i)).toBeNull();
   });
 

@@ -145,13 +145,14 @@ function renderApp() {
 }
 
 async function openDesign(name: string) {
-  fireEvent.click(await screen.findByText("Launch campaign"));
-  fireEvent.click(await screen.findByText(name));
+  fireEvent.click(await screen.findByRole("button", { name: /^Launch campaign\b/u }));
+  fireEvent.click(await screen.findByRole("button", { name: `Open ${name}` }));
   await screen.findByText(`v${backend.designs[name === "Cover" ? "d1" : "d2"]?.version ?? 1}`, { selector: "span" });
 }
 
 beforeEach(() => {
   sessionStorage.clear();
+  window.history.pushState({}, "", "/");
   useEditor.setState({ selectedPageId: null, selectedLayerId: null, zoom: 1, panel: "properties", draft: null, notice: null });
   backend = new Backend();
   vi.stubGlobal("fetch", backend.fetch);
@@ -170,7 +171,7 @@ describe("where there is no agent", () => {
       return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
     });
     renderApp();
-    await screen.findByText(/No projects yet/);
+    await screen.findByRole("heading", { name: /start with a project/i });
     expect(screen.queryByRole("button", { name: "Agent" })).toBeNull();
     expect(backend.calls.some((call) => call.path === "/agent/context" || call.path === "/pons/v1/events")).toBe(false);
   });
@@ -196,7 +197,7 @@ describe("the chat of a window", () => {
 
   it("keeps editor chrome off the projects view until a design is open", async () => {
     renderApp();
-    expect(await screen.findByText("Launch campaign")).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Launch campaign" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /^(Undo|Redo|Export)$/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /Valid|issues/ })).toBeNull();
   });
@@ -396,17 +397,17 @@ describe("the chat of a window", () => {
 
     // Back to the project list: the panel is still open and still holds the conversation.
     fireEvent.click(screen.getByRole("button", { name: "Open Projects" }));
-    await screen.findByText("Launch campaign");
+    await screen.findByRole("heading", { name: "Launch campaign" });
     expect(within(within(screen.getByLabelText("Agent chat")).getByRole("log")).getByText("Make the headline bigger")).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText("Message the agent"), { target: { value: "Ask from the project list" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     await waitFor(() => expect(backend.intents()).toContainEqual({
       type: "session.input",
-      payload: { sessionId: SESSION, text: "Ask from the project list" },
+      payload: { sessionId: SESSION, text: "Ask from the project list", view: { projectId: "p1" } },
     }), { timeout: 4_000 });
 
-    fireEvent.click(screen.getByText("Launch campaign"));
+    fireEvent.click(screen.getByRole("button", { name: /^Launch campaign\b/u }));
     await screen.findByText("Designs");
     fireEvent.change(screen.getByLabelText("Message the agent"), { target: { value: "Ask from the selected project" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -417,8 +418,8 @@ describe("the chat of a window", () => {
     expect(within(screen.getByLabelText("Agent chat")).getByRole("status", { name: "Current message context" }).textContent).toContain("Project “Launch campaign”");
 
     // And into another design.
-    fireEvent.click(screen.getByText("Launch campaign"));
-    fireEvent.click(await screen.findByText("Square post"));
+    fireEvent.click(screen.getByRole("button", { name: /^Launch campaign\b/u }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open Square post" }));
     await screen.findByText("Square post", { selector: "span" });
     expect(within(within(screen.getByLabelText("Agent chat")).getByRole("log")).getByText("Make the headline bigger")).toBeTruthy();
     // One session throughout: moving between designs started nothing.
@@ -468,7 +469,7 @@ describe("the chat of a window", () => {
     // A reload: the page is new, the tab's storage is not, and the history comes back from the page.
     first.unmount();
     renderApp();
-    await openDesign("Cover");
+    await screen.findByText("Cover", { selector: "span" });
     fireEvent.focus(await screen.findByRole("textbox", { name: "Ask the agent…" }));
     await screen.findByText("Hi.", {}, { timeout: 4_000 });
     const lines = screen.getAllByRole("listitem").map((item) => item.getAttribute("data-kind"));
@@ -548,7 +549,7 @@ describe("when the agent writes to the open design", () => {
     await screen.findByText("The agent updated the design (v2)", {}, { timeout: 4_000 });
     // The list was read when the project was opened, at v1; it must not be served as it was.
     fireEvent.click(screen.getByRole("button", { name: "Open Projects" }));
-    fireEvent.click(await screen.findByText("Launch campaign"));
+    fireEvent.click(await screen.findByRole("button", { name: /^Launch campaign\b/u }));
     expect(await screen.findByText(/v2 · 1 page/)).toBeTruthy();
   });
 });
