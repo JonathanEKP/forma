@@ -34,7 +34,10 @@ prototype is not built (as in UX batch 1, C-6).
   fragment (`error_code=otp_expired`), shown as the prototype's state G, and the fragment is cleared.
 - **P-8 Proof.** Each task tests first (Vitest/RTL), then shows its page in a real browser against its prototype,
   state by state at desktop and 390px, with screenshots in `docs/ux/evidence/pages/`. The Playwright walkthrough
-  (`e2e/`) gains deleting a design and the new home page.
+  (`e2e/`) gains deleting a design and the new home page. Every task runs `pnpm e2e` (after `cargo build --bin
+  forma-server` and `pnpm build`, as CI does) and has it green before `worker_done`: a page rebuilt after its
+  prototype changes wording the walkthrough asserts, and batch 2 merged a renamed consent heading that only CI
+  caught.
 
 ## Tasks and file ownership
 
