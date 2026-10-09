@@ -136,7 +136,8 @@ AI app, and the editor's Brand, Images, Export and Checks panels plus "Save as t
 
 ### Later: Forma's own connection guide per app
 
-An idea from the owner (2026-10-08), recorded so it is not lost, not scheduled.
+An idea from the owner (2026-10-08), recorded so it is not lost. **On standby by
+the owner's decision (2026-10-09)**; not scheduled.
 Today each app on the MCP page links "Official guide" to that vendor's own
 documentation ([ux/mcp-host-instructions.md](ux/mcp-host-instructions.md)). A
 Forma-hosted guide per app, with screenshots step by step, would be friendlier.
@@ -261,7 +262,11 @@ that lets it in. Nothing enters this list because it would be interesting.
    401 to a visitor rather than serving an app whose every call then fails. The
    SPA has nowhere to hold a token. §57 calls this "first remote testing" and the
    phase's acceptance is the agent half, which is what this delivers.
-10. **Phase 11.5, hosted identity and agent distribution** — specified in
+
+10. ~~**Phase 11.5, hosted identity and agent distribution**~~ — **done**, both
+    slices, deployed and verified against the real provider on the live domain:
+    `scripts/oauth-flow.py` reports 8/8, and [deploy/status.md](deploy/status.md)
+    keeps the rows that are weaker than they look. Specified in
     **plan §105 to §117**, the first amendment the plan has taken. It moves the
     boundary from a deployment-wide secret to hosted identity plus account
     scoping, which is what Phase 11 deliberately stopped short of.
@@ -282,22 +287,25 @@ that lets it in. Nothing enters this list because it would be interesting.
     deprecated on the reference date. Build the boundary first; plug identity
     into a boundary that is already proven.
 
-    **Slice 1 is complete.** Accounts own every project and every repository
+    **Slice 1, the boundary:** accounts own every project and every repository
     method is scoped by `AccountId`; the real HTTP routes prove cross-account
     objects are indistinguishable from absent ids. Local auth derives the actor
     from `AuthContext`, machine-local commands control admission and owner
-    recovery, and MCP credentials now travel with each request instead of with
-    the process. Slice 2, including provider identity and OAuth, has not begun.
+    recovery, and MCP credentials travel with each request instead of with the
+    process.
 
-    Written against the code rather than the plan, in
-    [phase-11.5-review.md](phase-11.5-review.md), which is the working paper
-    behind §105–§117 and keeps the reasoning that the plan states as decisions.
-    Three findings sit *below* identity and land in slice 1: the bind guard stops
-    meaning anything once `FORMA_REMOTE_TOKEN` is retired (§109.1), `forma-mcp`
-    holds one credential for its whole lifetime (§109.2), and the error envelope
-    has no 403 at all (§109.3). A fourth was measured rather than reasoned:
-    `/login`, `/oauth/consent` and `/agents` all **404 today**, so the OAuth flow
-    would fail at the moment the provider hands the person back (§110.3).
+    **Slice 2, identity:** hosted sign-in by email link, invitations and the
+    legacy claim, OAuth for agents (the consent page at `/oauth/consent`),
+    personal access tokens, and the Agents page.
+
+    The reasoning is in [phase-11.5-review.md](phase-11.5-review.md), the
+    working paper behind §105–§117, written against the code rather than the
+    plan. Four of its findings were fixed on the way: the bind guard that would
+    have stopped meaning anything once `FORMA_REMOTE_TOKEN` was retired (§109.1),
+    `forma-mcp` holding one credential for its whole lifetime (§109.2), the error
+    envelope with no 403 (§109.3), and `/login`, `/oauth/consent` and `/agents`
+    answering 404, which would have failed the OAuth flow at the moment the
+    provider handed the person back (§110.3).
 
 11. **Phase 12, Supabase** — optional. Behind 10 rather than ahead of it: it
     unblocks nothing currently blocked, and is a persistence adapter for a scale
